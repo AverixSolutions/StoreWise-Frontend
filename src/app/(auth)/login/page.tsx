@@ -1,9 +1,31 @@
 // src/app/(auth)/login/page.tsx
 "use client";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import Image from "next/image";
 import LoginForm from "@/components/auth/LoginForm";
+import SplashScreen from "@/components/ui/SplashScreen";
+import { getCurrentUser } from "@/hooks/useAuth";
 
 export default function LoginPage() {
+  const router = useRouter();
+  const [checkingAuth, setCheckingAuth] = useState(true);
+
+  useEffect(() => {
+    const { token } = getCurrentUser();
+    const timer = setTimeout(() => {
+      if (token) {
+        router.replace("/dashboard");
+      } else {
+        setCheckingAuth(false);
+      }
+    }, 1500);
+
+    return () => clearTimeout(timer);
+  }, [router]);
+
+  if (checkingAuth) return <SplashScreen />;
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
       <div className="flex w-full max-w-5xl shadow-2xl rounded-2xl overflow-hidden">

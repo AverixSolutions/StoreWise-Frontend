@@ -1,7 +1,12 @@
-// src/components/ui/Sidebar.tsx
 "use client";
-import { useRouter } from "next/navigation";
-import { Package, ShoppingCart, CreditCard, Settings } from "lucide-react";
+import { useRouter, usePathname } from "next/navigation";
+import {
+  LayoutDashboard,
+  FilePlus,
+  Database,
+  BarChart2,
+  Settings,
+} from "lucide-react";
 
 interface Tab {
   name: string;
@@ -10,10 +15,10 @@ interface Tab {
 }
 
 const tabs: Tab[] = [
-  { name: "Dashboard", icon: Package, path: "/dashboard" },
-  { name: "Sales", icon: ShoppingCart, path: "/dashboard/sales" },
-  { name: "Items", icon: Package, path: "/dashboard/items" },
-  { name: "Payments", icon: CreditCard, path: "/dashboard/payment" },
+  { name: "Dashboard", icon: LayoutDashboard, path: "/dashboard" },
+  { name: "Entries", icon: FilePlus, path: "/dashboard/entries" },
+  { name: "Master", icon: Database, path: "/dashboard/master" },
+  { name: "Report", icon: BarChart2, path: "/dashboard/report" },
   { name: "Settings", icon: Settings, path: "/dashboard/settings" },
 ];
 
@@ -23,24 +28,37 @@ interface SidebarProps {
 
 export default function Sidebar({ topOffset = 0 }: SidebarProps) {
   const router = useRouter();
+  const pathname = usePathname();
 
   return (
     <aside
-      className="w-72 bg-white shadow-lg border-gray-200 p-4 flex flex-col space-y-3 overflow-y-auto"
+      className="w-56 bg-white shadow-lg border-gray-200 p-3 pt-7 flex flex-col space-y-4 overflow-y-auto"
       style={{ position: "sticky", top: topOffset }}
     >
-      {tabs.map((tab) => (
-        <div
-          key={tab.name}
-          onClick={() => router.push(tab.path)}
-          className="flex items-center p-3 rounded-xl hover:bg-gray-100 cursor-pointer transition"
-        >
-          <div className="w-8 h-8 flex items-center justify-center text-averix-red-dark mr-3">
-            <tab.icon className="w-5 h-5" />
+      {tabs.map((tab) => {
+        const isActive = pathname === tab.path;
+
+        return (
+          <div
+            key={tab.name}
+            onClick={() => router.push(tab.path)}
+            className={`flex items-center p-2 rounded-xl cursor-pointer transition ${
+              isActive
+                ? "bg-averix-red-dark text-white"
+                : "hover:bg-gray-100 text-gray-700"
+            }`}
+          >
+            <div
+              className={`w-8 h-8 flex items-center justify-center mr-3 ${
+                isActive ? "text-white" : "text-averix-red-dark"
+              }`}
+            >
+              <tab.icon className="w-5 h-5" />
+            </div>
+            <span className="font-medium">{tab.name}</span>
           </div>
-          <span className="font-medium text-gray-700">{tab.name}</span>
-        </div>
-      ))}
+        );
+      })}
     </aside>
   );
 }
