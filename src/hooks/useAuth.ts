@@ -15,30 +15,61 @@ interface LoginResponse {
 }
 
 export async function login(userId: string, password: string, role: string) {
-  const res = await api.post<LoginResponse>("/auth/login", {
-    userId,
-    password,
-    role,
-    deviceInfo: navigator.userAgent,
-  });
-
-  const data = res.data;
-
-  localStorage.setItem("token", data.token);
-  localStorage.setItem("sessionId", data.sessionId);
-  localStorage.setItem("role", data.user.role);
-  localStorage.setItem("userName", data.user.userId);
-  if (data.user.licenseName) {
-    localStorage.setItem("licenseName", data.user.licenseName);
+  if (!navigator.onLine) {
+    alert("⚠️ Cannot logout without internet connection.");
+    return;
   }
 
-  return data.user;
+  try {
+    const res = await api.post<LoginResponse>("/auth/login", {
+      userId,
+      password,
+      role,
+      deviceInfo: navigator.userAgent,
+    });
+
+    const data = res.data;
+
+    localStorage.setItem("token", data.token);
+    localStorage.setItem("sessionId", data.sessionId);
+    localStorage.setItem("role", data.user.role);
+    localStorage.setItem("userName", data.user.userId);
+    if (data.user.licenseName) {
+      localStorage.setItem("licenseName", data.user.licenseName);
+    }
+
+    return data.user;
+  } catch (err: any) {
+    if (err.message === "Network Error" || err.code === "ECONNABORTED") {
+      throw new Error("⚠️ No internet connection. Please connect to login.");
+    }
+
+    throw new Error(
+      err.response?.data?.message || "❌ Login failed. Check credentials."
+    );
+  }
 }
 
-export function logout() {
+export async function logout() {
+  if (!navigator.onLine) {
+    alert("⚠️ Cannot logout without internet connection.");
+    return;
+  }
+
   const sessionId = localStorage.getItem("sessionId");
-  localStorage.clear();
-  return api.post("/auth/logout", { sessionId });
+
+  if (!sessionId) {
+    console.warn("⚠️ No sessionId found in localStorage");
+    return;
+  }
+
+  try {
+    await api.post("/auth/logout", { sessionId });
+    localStorage.clear();
+  } catch (err) {
+    console.error("❌ Logout failed:", err);
+    alert("Logout failed. Please try again when online.");
+  }
 }
 
 export function getCurrentUser() {

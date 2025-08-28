@@ -3,13 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
+    "dev": "concurrently \"npm run dev:next\" \"npm run dev:electron\"",
+    "dev:next": "cross-env NODE_ENV=development next dev",
+    "dev:electron": "wait-on tcp:3000 && cross-env NODE_ENV=development electron electron/main.js",
+    "build": "next build && next export",
+    "start": "cross-env NODE_ENV=production next start",
+    "dist": "npm run build && electron-builder"
   },
   "dependencies": {
     "axios": "^1.11.0",
+    "better-sqlite3": "^12.2.0",
     "framer-motion": "^12.23.12",
     "lucide-react": "^0.540.0",
     "next": "15.5.0",
@@ -23,9 +26,35 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.0.0",
+    "electron": "^37.4.0",
+    "electron-builder": "^26.0.12",
+    "electron-rebuild": "^3.2.9",
     "eslint": "^9",
     "eslint-config-next": "15.5.0",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "wait-on": "^8.0.4"
+  },
+  "build": {
+    "appId": "com.storwise.app",
+    "productName": "Storwise",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out",
+      "electron"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
   }
 }
