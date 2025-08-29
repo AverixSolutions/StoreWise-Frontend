@@ -1,4 +1,4 @@
-// src/components/ui/ProductFormModal.tsx
+// src/components/products/ProductFormModal.tsx
 "use client";
 
 import { useEffect, useState } from "react";
@@ -142,7 +142,6 @@ export default function ProductFormModal({
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
       <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0 transition-opacity bg-white/5 backdrop-blur-xs">
-        <div className="fixed inset-0" onClick={onClose}></div>
         <div className="inline-block w-full max-w-2xl my-8 overflow-hidden text-left align-middle transition-all transform bg-white shadow-xl rounded-xl">
           <div className="bg-gradient-to-r from-averix-red-dark to-averix-red-accent p-4">
             <div className="flex items-center justify-between">
@@ -157,7 +156,10 @@ export default function ProductFormModal({
                 </p>
               </div>
               <button
-                onClick={onClose}
+                type="button"
+                onClick={() => {
+                  onClose();
+                }}
                 className="text-white hover:text-gray-200 p-1"
               >
                 <svg
@@ -221,35 +223,6 @@ export default function ProductFormModal({
               </div>
             </div>
 
-            {/* Category and HSN */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Category
-                </label>
-                <input
-                  type="text"
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  placeholder="Enter category"
-                  className="w-full border-2 border-gray-200 rounded-lg p-2.5 focus:border-averix-red-dark focus:outline-none transition-colors"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  HSN Code
-                </label>
-                <input
-                  type="text"
-                  value={hsn}
-                  onChange={(e) => setHsn(e.target.value)}
-                  placeholder="Enter HSN code"
-                  className="w-full border-2 border-gray-200 rounded-lg p-2.5 focus:border-averix-red-dark focus:outline-none transition-colors"
-                />
-              </div>
-            </div>
-
             {/* Unit and Tax */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
@@ -275,6 +248,35 @@ export default function ProductFormModal({
                   options={taxOptions}
                   placeholder="Select tax rate"
                   required
+                />
+              </div>
+            </div>
+
+            {/* Category and HSN */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Category
+                </label>
+                <input
+                  type="text"
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  placeholder="Enter category"
+                  className="w-full border-2 border-gray-200 rounded-lg p-2.5 focus:border-averix-red-dark focus:outline-none transition-colors"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  HSN Code
+                </label>
+                <input
+                  type="text"
+                  value={hsn}
+                  onChange={(e) => setHsn(e.target.value)}
+                  placeholder="Enter HSN code"
+                  className="w-full border-2 border-gray-200 rounded-lg p-2.5 focus:border-averix-red-dark focus:outline-none transition-colors"
                 />
               </div>
             </div>
@@ -341,7 +343,9 @@ export default function ProductFormModal({
             <div className="flex gap-3 pt-4 border-t border-gray-200">
               <button
                 type="button"
-                onClick={onClose}
+                onClick={() => {
+                  onClose();
+                }}
                 className="flex-1 bg-gray-200 text-gray-800 font-semibold py-3 px-6 rounded-lg hover:bg-gray-300 transition-colors"
               >
                 Cancel

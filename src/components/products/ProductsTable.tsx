@@ -1,4 +1,4 @@
-// src/components/ui/ProductsTable.tsx
+// src/components/products/ProductsTable.tsx
 "use client";
 
 import { useState, useEffect } from "react";
@@ -79,34 +79,34 @@ export default function ProductsTable({
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full bg-white rounded-lg shadow-sm border border-gray-200">
+      <table className="w-full bg-white rounded-xl shadow-md border border-gray-100 overflow-hidden">
         <thead className="bg-gray-50">
           <tr>
-            <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">
+            <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
               Code
             </th>
-            <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">
+            <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
               Name
             </th>
-            <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">
+            <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
               Brand
             </th>
-            <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">
+            <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
               Category
             </th>
-            <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">
+            <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
               Unit
             </th>
-            <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">
+            <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
               Cost Price
             </th>
-            <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">
+            <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
               Sale Price
             </th>
-            <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900">
+            <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
               Stock
             </th>
-            <th className="px-4 py-3 text-center text-sm font-semibold text-gray-900">
+            <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
               Actions
             </th>
           </tr>
@@ -114,35 +114,35 @@ export default function ProductsTable({
         <tbody className="divide-y divide-gray-200">
           {products.map((product) => (
             <tr key={product.id} className="hover:bg-gray-50">
-              <td className="px-4 py-3 text-sm font-mono text-gray-900">
+              <td className="px-4 py-3 text-center text-sm font-mono text-gray-900">
                 {product.code}
               </td>
-              <td className="px-4 py-3 text-sm text-gray-900 font-medium">
+              <td className="px-4 py-3 text-center text-sm text-gray-900 font-medium">
                 {product.name}
               </td>
-              <td className="px-4 py-3 text-sm text-gray-600">
+              <td className="px-4 py-3 text-center text-sm text-gray-600">
                 {product.brand || "-"}
               </td>
-              <td className="px-4 py-3 text-sm text-gray-600">
+              <td className="px-4 py-3 text-center text-sm text-gray-600">
                 {product.category || "-"}
               </td>
-              <td className="px-4 py-3 text-sm text-gray-600">
+              <td className="px-4 py-3 text-center text-sm text-gray-600">
                 {product.unit}
               </td>
-              <td className="px-4 py-3 text-sm text-gray-600">
+              <td className="px-4 py-3 text-center text-sm text-gray-600">
                 ₹{product.costPrice.toFixed(2)}
               </td>
-              <td className="px-4 py-3 text-sm text-gray-600">
+              <td className="px-4 py-3 text-center text-sm text-gray-600">
                 {product.salePrice ? `₹${product.salePrice.toFixed(2)}` : "-"}
               </td>
-              <td className="px-4 py-3 text-sm text-gray-600">
+              <td className="px-4 py-3 text-center text-sm text-gray-600">
                 {product.stock}
               </td>
               <td className="px-4 py-3 text-center">
                 <div className="flex justify-center space-x-2">
                   <button
                     onClick={() => onEdit(product)}
-                    className="text-blue-600 hover:text-blue-800 p-1"
+                    className="p-2 rounded-lg text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
                     title="Edit"
                   >
                     <svg
@@ -161,7 +161,7 @@ export default function ProductsTable({
                   </button>
                   <button
                     onClick={() => handleDelete(product.id, product.name)}
-                    className="text-red-600 hover:text-red-800 p-1"
+                    className="p-2 rounded-lg text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
                     title="Delete"
                   >
                     <svg

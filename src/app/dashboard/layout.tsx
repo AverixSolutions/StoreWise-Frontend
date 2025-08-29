@@ -3,6 +3,7 @@
 
 import Header from "@/components/ui/Header";
 import Sidebar from "@/components/ui/Sidebar";
+import SyncProvider from "@/components/SyncProvider";
 
 export default function DashboardLayout({
   children,
@@ -13,6 +14,7 @@ export default function DashboardLayout({
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
+      <SyncProvider />
       <Header />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar topOffset={headerHeight} />

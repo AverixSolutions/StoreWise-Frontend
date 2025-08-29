@@ -1,9 +1,9 @@
 // electron/ipc/products.js
+const { v4: uuidv4 } = require("uuid");
 const { ipcMain } = require("electron");
 const db = require("../db");
 
 function registerProductHandlers() {
-  // Get next code
   ipcMain.handle("get-next-code", (event, licenseId) => {
     const seq = db
       .prepare("SELECT lastCodeNumber FROM code_sequence WHERE licenseId = ?")
@@ -13,15 +13,16 @@ function registerProductHandlers() {
     return String(nextCodeNumber).padStart(5, "0");
   });
 
-  // Create product
   ipcMain.handle("create-product", (event, product) => {
+    const newId = product.id || uuidv4();
     db.prepare(
       `
       INSERT INTO products 
-        (licenseId, code, codeNumber, name, brand, category, unit, tax, hsn, costPrice, salePrice, stock) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, licenseId, code, codeNumber, name, brand, category, unit, tax, hsn, costPrice, salePrice, stock) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
     ).run(
+      newId,
       product.licenseId,
       product.code,
       product.codeNumber,
@@ -47,13 +48,12 @@ function registerProductHandlers() {
     return { success: true };
   });
 
-  // Get all products
   ipcMain.handle("get-products", (event, licenseId) => {
     const products = db
       .prepare(
         `SELECT id, code, name, brand, category, unit, tax, hsn, costPrice, salePrice, stock, createdAt 
          FROM products 
-         WHERE licenseId = ? 
+         WHERE licenseId = ? AND deletedAt IS NULL
          ORDER BY codeNumber ASC`
       )
       .all(licenseId);
@@ -61,14 +61,15 @@ function registerProductHandlers() {
     return products;
   });
 
-  // Update product
   ipcMain.handle("update-product", (event, productId, product) => {
     const result = db
       .prepare(
         `
       UPDATE products 
       SET name = ?, brand = ?, category = ?, unit = ?, tax = ?, hsn = ?, 
-          costPrice = ?, salePrice = ?, stock = ?, updatedAt = datetime('now')
+          costPrice = ?, salePrice = ?, stock = ?, updatedAt = datetime('now'),
+          isSynced = 0,
+          syncedAt = NULL
       WHERE id = ?
     `
       )
@@ -92,10 +93,14 @@ function registerProductHandlers() {
     return { success: true };
   });
 
-  // Delete product
   ipcMain.handle("delete-product", (event, productId) => {
     const result = db
-      .prepare("DELETE FROM products WHERE id = ?")
+      .prepare(
+        `
+      UPDATE products
+      SET deletedAt = datetime('now'), updatedAt = datetime('now'), isSynced = 0, syncedAt = NULL WHERE id = ?
+      `
+      )
       .run(productId);
 
     if (result.changes === 0) {
@@ -112,6 +117,40 @@ function registerProductHandlers() {
       .get(productId);
 
     return product;
+  });
+
+  ipcMain.handle("get-dirty-products", (event, licenseId, limit = 200) => {
+    return db
+      .prepare(
+        `
+    SELECT *
+    FROM products
+    WHERE licenseId = ?
+      AND (
+        syncedAt IS NULL
+        OR updatedAt > syncedAt
+        OR (deletedAt IS NOT NULL AND (syncedAt IS NULL OR deletedAt > syncedAt))
+      )
+    ORDER BY updatedAt ASC, id ASC
+    LIMIT ?
+  `
+      )
+      .all(licenseId, limit);
+  });
+
+  ipcMain.handle("mark-products-synced", (event, ids, serverSyncedAt) => {
+    const ts = serverSyncedAt || new Date().toISOString();
+    const trx = db.transaction((ids) => {
+      const stmt = db.prepare(`
+      UPDATE products
+      SET isSynced = 1,
+          syncedAt = ?
+      WHERE id = ?
+    `);
+      ids.forEach((id) => stmt.run(ts, id));
+    });
+    trx(ids);
+    return { success: true, syncedAt: ts };
   });
 }
 

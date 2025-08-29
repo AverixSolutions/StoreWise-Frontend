@@ -60,7 +60,7 @@ export default function ItemsPage() {
           </div>
           <button
             onClick={handleAddProduct}
-            className="bg-gradient-to-r from-averix-red-dark to-averix-red-accent text-white font-semibold py-2.5 px-6 rounded-lg hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-200 flex items-center"
+            className="bg-gradient-to-r from-averix-red-dark to-averix-red-accent text-white font-semibold py-2.5 px-6 rounded-lg hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-200 flex items-center cursor-pointer"
           >
             <svg
               className="w-5 h-5 mr-2"
