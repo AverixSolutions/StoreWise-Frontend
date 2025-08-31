@@ -2,6 +2,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Pagination from "../ui/Pagination";
+import TableSkeleton from "../ui/TableSkeleton";
+import EmptyState from "../ui/EmptyState";
+import { PackagePlus } from "lucide-react";
 
 interface Product {
   id: string;
@@ -20,21 +24,44 @@ interface ProductsTableProps {
   onEdit: (product: Product) => void;
   onDelete: (id: string) => void;
   refreshTrigger: number;
+  nameFilter?: string;
+  categoryFilter?: string;
 }
 
 export default function ProductsTable({
   onEdit,
   onDelete,
   refreshTrigger,
+  nameFilter = "",
+  categoryFilter = "",
 }: ProductsTableProps) {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(10);
+  const [total, setTotal] = useState(0);
+
   const loadProducts = async () => {
     try {
       const licenseId = localStorage.getItem("licenseId") || "demo-license";
-      const productList = await window.electronAPI.getProducts(licenseId);
-      setProducts(productList);
+
+      let result: { products: Product[]; total: number };
+      if (nameFilter || categoryFilter) {
+        result = await window.electronAPI.getFilteredProducts(
+          licenseId,
+          { name: nameFilter || null, category: categoryFilter || null },
+          { page, pageSize }
+        );
+      } else {
+        result = await window.electronAPI.getProducts(licenseId, {
+          page,
+          pageSize,
+        });
+      }
+
+      setProducts(result.products);
+      setTotal(result.total);
     } catch (error) {
       console.error("Error loading products:", error);
     } finally {
@@ -44,7 +71,11 @@ export default function ProductsTable({
 
   useEffect(() => {
     loadProducts();
-  }, [refreshTrigger]);
+  }, [refreshTrigger, nameFilter, categoryFilter, page]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [nameFilter, categoryFilter]);
 
   const handleDelete = async (id: string, name: string) => {
     if (window.confirm(`Are you sure you want to delete "${name}"?`)) {
@@ -60,89 +91,93 @@ export default function ProductsTable({
   };
 
   if (loading) {
-    return (
-      <div className="flex justify-center items-center py-8">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-averix-red-dark"></div>
-      </div>
-    );
+    return <TableSkeleton columns={9} rows={6} />;
   }
 
   if (products.length === 0) {
     return (
-      <div className="text-center py-8">
-        <p className="text-gray-500">
-          No products found. Add your first product to get started.
-        </p>
-      </div>
+      <EmptyState
+        title="No Products Found"
+        description="Add your first product to get started with your inventory."
+        icon={<PackagePlus size={32} />}
+        action={
+          <button
+            onClick={() => onEdit(null as any)}
+            className="mt-4 bg-averix-red-dark text-white px-4 py-2 rounded-lg hover:shadow"
+          >
+            Add Product
+          </button>
+        }
+      />
     );
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full bg-white rounded-xl shadow-md border border-gray-100 overflow-hidden">
-        <thead className="bg-gray-50">
+    <div className="overflow-hidden rounded-xl border border-gray-200 shadow-sm bg-white">
+      <table className="w-full text-sm text-gray-700">
+        {/* Header */}
+        <thead className="bg-gradient-to-r from-averix-red-dark to-averix-red-accent text-white">
           <tr>
-            <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
-              Code
-            </th>
-            <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
-              Name
-            </th>
-            <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
-              Brand
-            </th>
-            <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
-              Category
-            </th>
-            <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
-              Unit
-            </th>
-            <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
-              Cost Price
-            </th>
-            <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
-              Sale Price
-            </th>
-            <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
-              Stock
-            </th>
-            <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">
-              Actions
-            </th>
+            {[
+              "Code",
+              "Name",
+              "Brand",
+              "Category",
+              "Unit",
+              "Cost Price",
+              "Sale Price",
+              "Stock",
+              "Actions",
+            ].map((heading) => (
+              <th
+                key={heading}
+                className="px-4 py-4 text-center text-xs font-semibold uppercase tracking-wider"
+              >
+                {heading}
+              </th>
+            ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-200">
-          {products.map((product) => (
-            <tr key={product.id} className="hover:bg-gray-50">
-              <td className="px-4 py-3 text-center text-sm font-mono text-gray-900">
+
+        {/* Body */}
+        <tbody className="divide-y divide-gray-100">
+          {products.map((product, idx) => (
+            <tr
+              key={product.id}
+              className={`transition-colors duration-150 ${
+                idx % 2 === 0 ? "bg-white" : "bg-gray-50"
+              } hover:bg-gray-100`}
+            >
+              <td className="px-4 py-3 text-center font-mono font-medium text-gray-900">
                 {product.code}
               </td>
-              <td className="px-4 py-3 text-center text-sm text-gray-900 font-medium">
+              <td className="px-4 py-3 text-center font-medium text-gray-900">
                 {product.name}
               </td>
-              <td className="px-4 py-3 text-center text-sm text-gray-600">
+              <td className="px-4 py-3 text-center text-gray-600">
                 {product.brand || "-"}
               </td>
-              <td className="px-4 py-3 text-center text-sm text-gray-600">
+              <td className="px-4 py-3 text-center text-gray-600">
                 {product.category || "-"}
               </td>
-              <td className="px-4 py-3 text-center text-sm text-gray-600">
+              <td className="px-4 py-3 text-center text-gray-600">
                 {product.unit}
               </td>
-              <td className="px-4 py-3 text-center text-sm text-gray-600">
+              <td className="px-4 py-3 text-center font-medium text-gray-700">
                 ₹{product.costPrice.toFixed(2)}
               </td>
-              <td className="px-4 py-3 text-center text-sm text-gray-600">
+              <td className="px-4 py-3 text-center font-medium text-gray-700">
                 {product.salePrice ? `₹${product.salePrice.toFixed(2)}` : "-"}
               </td>
-              <td className="px-4 py-3 text-center text-sm text-gray-600">
+              <td className="px-4 py-3 text-center font-medium text-gray-700">
                 {product.stock}
               </td>
               <td className="px-4 py-3 text-center">
                 <div className="flex justify-center space-x-2">
+                  {/* Edit */}
                   <button
                     onClick={() => onEdit(product)}
-                    className="p-2 rounded-lg text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                    className="p-2 rounded-md bg-blue-50 text-blue-600 hover:bg-blue-100 transition cursor-pointer"
                     title="Edit"
                   >
                     <svg
@@ -159,9 +194,11 @@ export default function ProductsTable({
                       />
                     </svg>
                   </button>
+
+                  {/* Delete */}
                   <button
                     onClick={() => handleDelete(product.id, product.name)}
-                    className="p-2 rounded-lg text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                    className="p-2 rounded-md bg-red-50 text-red-600 hover:bg-red-100 transition cursor-pointer"
                     title="Delete"
                   >
                     <svg
@@ -184,6 +221,12 @@ export default function ProductsTable({
           ))}
         </tbody>
       </table>
+      <Pagination
+        page={page}
+        total={total}
+        pageSize={pageSize}
+        onPageChange={setPage}
+      />
     </div>
   );
 }

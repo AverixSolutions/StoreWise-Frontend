@@ -1,30 +1,25 @@
 // src/components/SyncProvider.tsx
 "use client";
-"use client";
 import { useEffect } from "react";
-import {
-  startProductsSync,
-  stopProductsSync,
-  triggerSyncNow,
-} from "@/sync/productsSync";
+import { startProductsSync, stopProductsSync } from "@/sync/productsSync";
 import { getCurrentUser } from "@/hooks/useAuth";
+import { triggerSync } from "@/sync/core";
 
 export default function SyncProvider() {
   useEffect(() => {
     const { token } = getCurrentUser();
     if (!token) return;
 
-    startProductsSync(30_000, 200);
+    startProductsSync();
 
-    const onOnline = () => triggerSyncNow();
+    const onOnline = () => triggerSync("products");
     const onVisibility = () => {
-      if (document.visibilityState === "visible") triggerSyncNow();
+      if (document.visibilityState === "visible") triggerSync("products");
     };
+    const onFocus = () => triggerSync("products");
 
     window.addEventListener("online", onOnline);
     document.addEventListener("visibilitychange", onVisibility);
-
-    const onFocus = () => triggerSyncNow();
     window.addEventListener("focus", onFocus);
 
     return () => {

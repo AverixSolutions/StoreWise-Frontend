@@ -15,11 +15,12 @@ function registerProductHandlers() {
 
   ipcMain.handle("create-product", (event, product) => {
     const newId = product.id || uuidv4();
+    const now = new Date().toISOString();
     db.prepare(
       `
       INSERT INTO products 
-        (id, licenseId, code, codeNumber, name, brand, category, unit, tax, hsn, costPrice, salePrice, stock) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, licenseId, code, codeNumber, name, brand, category, unit, tax, hsn, costPrice, salePrice, stock, createdAt, updatedAt) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
     ).run(
       newId,
@@ -34,7 +35,9 @@ function registerProductHandlers() {
       product.hsn,
       product.costPrice,
       product.salePrice,
-      product.stock
+      product.stock,
+      now,
+      now
     );
 
     db.prepare(
@@ -48,26 +51,78 @@ function registerProductHandlers() {
     return { success: true };
   });
 
-  ipcMain.handle("get-products", (event, licenseId) => {
-    const products = db
-      .prepare(
-        `SELECT id, code, name, brand, category, unit, tax, hsn, costPrice, salePrice, stock, createdAt 
-         FROM products 
-         WHERE licenseId = ? AND deletedAt IS NULL
-         ORDER BY codeNumber ASC`
-      )
-      .all(licenseId);
+  ipcMain.handle(
+    "get-products",
+    (event, licenseId, { page = 1, pageSize = 10 } = {}) => {
+      const offset = (page - 1) * pageSize;
 
-    return products;
-  });
+      const products = db
+        .prepare(
+          `SELECT id, code, name, brand, category, unit, tax, hsn, costPrice, salePrice, stock, createdAt 
+     FROM products 
+     WHERE licenseId = ? AND deletedAt IS NULL
+     ORDER BY codeNumber ASC
+     LIMIT ? OFFSET ?`
+        )
+        .all(licenseId, pageSize, offset);
+
+      const total = db
+        .prepare(
+          `SELECT COUNT(*) as count FROM products WHERE licenseId = ? AND deletedAt IS NULL`
+        )
+        .get(licenseId).count;
+
+      return { products, total };
+    }
+  );
+
+  ipcMain.handle(
+    "get-filtered-products",
+    (event, licenseId, filters, { page = 1, pageSize = 10 } = {}) => {
+      let query = `
+    SELECT id, code, name, brand, category, unit, tax, hsn, costPrice, salePrice, stock, createdAt
+    FROM products 
+    WHERE licenseId = ? AND deletedAt IS NULL
+  `;
+      let countQuery = `SELECT COUNT(*) as count FROM products WHERE licenseId = ? AND deletedAt IS NULL`;
+
+      const params = [licenseId];
+      const countParams = [licenseId];
+
+      if (filters.name) {
+        query += " AND name LIKE ?";
+        countQuery += " AND name LIKE ?";
+        params.push(`%${filters.name}%`);
+        countParams.push(`%${filters.name}%`);
+      }
+
+      if (filters.category) {
+        query += " AND category = ?";
+        countQuery += " AND category = ?";
+        params.push(filters.category);
+        countParams.push(filters.category);
+      }
+
+      const offset = (page - 1) * pageSize;
+      query += " ORDER BY codeNumber ASC LIMIT ? OFFSET ?";
+      params.push(pageSize, offset);
+
+      const products = db.prepare(query).all(...params);
+      const total = db.prepare(countQuery).get(...countParams).count;
+
+      return { products, total };
+    }
+  );
 
   ipcMain.handle("update-product", (event, productId, product) => {
+    const now = new Date().toISOString();
+
     const result = db
       .prepare(
         `
       UPDATE products 
       SET name = ?, brand = ?, category = ?, unit = ?, tax = ?, hsn = ?, 
-          costPrice = ?, salePrice = ?, stock = ?, updatedAt = datetime('now'),
+          costPrice = ?, salePrice = ?, stock = ?, updatedAt = ?,
           isSynced = 0,
           syncedAt = NULL
       WHERE id = ?
@@ -83,6 +138,7 @@ function registerProductHandlers() {
         product.costPrice,
         product.salePrice,
         product.stock,
+        now,
         productId
       );
 
@@ -94,14 +150,15 @@ function registerProductHandlers() {
   });
 
   ipcMain.handle("delete-product", (event, productId) => {
+    const now = new Date().toISOString();
     const result = db
       .prepare(
         `
       UPDATE products
-      SET deletedAt = datetime('now'), updatedAt = datetime('now'), isSynced = 0, syncedAt = NULL WHERE id = ?
+      SET deletedAt = ?, updatedAt = ?, isSynced = 0, syncedAt = NULL WHERE id = ?
       `
       )
-      .run(productId);
+      .run(now, now, productId);
 
     if (result.changes === 0) {
       throw new Error("Product not found");

@@ -1,9 +1,10 @@
 // src/app/dashboard/items/page.tsx
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import ProductsTable from "@/components/products/ProductsTable";
 import ProductFormModal from "@/components/products/ProductFormModal";
+import SearchableDropdown from "@/components/ui/SearchableDropdown";
 
 interface Product {
   id: string;
@@ -23,6 +24,31 @@ export default function ItemsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  const [nameFilter, setNameFilter] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
+
+  const [categories, setCategories] = useState<string[]>([]);
+  const [products, setProducts] = useState<string[]>([]);
+
+  useEffect(() => {
+    const licenseId = localStorage.getItem("licenseId") || "demo-license";
+
+    window.electronAPI
+      .getProducts(licenseId, { page: 1, pageSize: 1000 })
+      .then((result) => {
+        setProducts(result.products.map((p) => p.name));
+        setCategories(
+          Array.from(
+            new Set(
+              result.products
+                .map((p) => p.category)
+                .filter((c): c is string => !!c)
+            )
+          )
+        );
+      });
+  }, [refreshTrigger]);
 
   const handleAddProduct = () => {
     setEditProduct(null);
@@ -47,13 +73,31 @@ export default function ItemsPage() {
     setRefreshTrigger((prev) => prev + 1);
   };
 
+  useEffect(() => {
+    const handleShortcut = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "n") {
+        e.preventDefault();
+        handleAddProduct();
+      }
+      if (e.altKey && e.key.toLowerCase() === "a") {
+        e.preventDefault();
+        handleAddProduct();
+      }
+    };
+
+    window.addEventListener("keydown", handleShortcut);
+    return () => {
+      window.removeEventListener("keydown", handleShortcut);
+    };
+  }, []);
+
   return (
-    <main className="min-h-screen bg-gray-50 py-4">
+    <main className="min-h-screen bg-gray-50 py-6">
       <div className="max-w-7xl mx-auto px-6">
-        {/* Header */}
+        {/* Page Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">
+            <h1 className="text-3xl font-bold text-gray-900">
               Items Management
             </h1>
             <p className="text-gray-600 mt-1">Manage your inventory products</p>
@@ -79,21 +123,43 @@ export default function ItemsPage() {
           </button>
         </div>
 
-        {/* Table Card */}
-        <div className="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
-          <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 border-b border-gray-200">
-            <h3 className="text-lg font-semibold text-gray-800">
-              Product List
-            </h3>
-          </div>
-          <div className="p-6">
-            <ProductsTable
-              onEdit={handleEditProduct}
-              onDelete={handleDeleteProduct}
-              refreshTrigger={refreshTrigger}
-            />
-          </div>
+        {/* Filters */}
+        <div className="flex gap-4 mb-6">
+          <SearchableDropdown
+            value={nameFilter}
+            onChange={setNameFilter}
+            options={products.map((p) => ({ value: p, label: p }))}
+            placeholder="Filter by product name"
+          />
+
+          <SearchableDropdown
+            value={categoryFilter}
+            onChange={setCategoryFilter}
+            options={categories.map((c) => ({ value: c, label: c }))}
+            placeholder="Filter by category"
+          />
+
+          {(nameFilter || categoryFilter) && (
+            <button
+              onClick={() => {
+                setNameFilter("");
+                setCategoryFilter("");
+              }}
+              className="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300 text-gray-700 cursor-pointer"
+            >
+              Clear
+            </button>
+          )}
         </div>
+
+        {/* Table */}
+        <ProductsTable
+          onEdit={handleEditProduct}
+          onDelete={handleDeleteProduct}
+          refreshTrigger={refreshTrigger}
+          nameFilter={nameFilter}
+          categoryFilter={categoryFilter}
+        />
 
         {/* Modal */}
         <ProductFormModal

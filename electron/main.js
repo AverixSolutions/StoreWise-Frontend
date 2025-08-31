@@ -26,6 +26,8 @@ function createWindow() {
   } else {
     win.loadFile(path.join(__dirname, "../out/index.html"));
   }
+
+  win.webContents.openDevTools();
 }
 
 app.whenReady().then(() => {

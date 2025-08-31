@@ -6,6 +6,7 @@ const Database = require("better-sqlite3");
 const dbPath = path.join(app.getPath("userData"), "storewise.db");
 const db = new Database(dbPath);
 
+db.pragma("busy_timeout = 5000");
 db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");
 
@@ -33,8 +34,8 @@ db.prepare(
     costPrice REAL NOT NULL,
     salePrice REAL,
     stock INTEGER DEFAULT 0,
-    createdAt TEXT DEFAULT (datetime('now')),
-    updatedAt TEXT DEFAULT (datetime('now')),
+    createdAt TEXT,
+    updatedAt TEXT,
     isSynced INTEGER DEFAULT 0,
     syncedAt TEXT,
     UNIQUE(licenseId, code),
@@ -65,7 +66,7 @@ db.prepare(
     purchaseDate TEXT DEFAULT (datetime('now')),
     totalAmount REAL NOT NULL,
     discount REAL DEFAULT 0,
-    createdAt TEXT DEFAULT (datetime('now')),
+    createdAt TEXT,
     isSynced INTEGER DEFAULT 0,
     syncedAt TEXT
   )
@@ -103,8 +104,8 @@ db.prepare(
     salePrice REAL,
     profit REAL,
     totalCost REAL NOT NULL,
-    createdAt TEXT DEFAULT (datetime('now')),
-    updatedAt TEXT DEFAULT (datetime('now')),
+    createdAt TEXT,
+    updatedAt TEXT,
     isSynced INTEGER DEFAULT 0,
     syncedAt TEXT,
     FOREIGN KEY (purchaseId) REFERENCES purchases(id) ON DELETE CASCADE,

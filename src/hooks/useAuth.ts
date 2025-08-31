@@ -1,6 +1,7 @@
 // src/hooks/useAuth.ts
 import api from "@/lib/axios";
-import { stopProductsSync, pushDirtyProductsOnce } from "@/sync/productsSync";
+import { stopProductsSync } from "@/sync/productsSync";
+import { bootstrapProducts } from "@/bootstrap/products";
 
 interface LoginResponse {
   token: string;
@@ -61,19 +62,7 @@ export async function login(userId: string, password: string, role: string) {
     localStorage.setItem("licenseId", data.user.licenseId);
 
   try {
-    const boot = await api.get<BootstrapResponse>("/sync/product/bootstrap");
-
-    await (window as any).electronAPI.bulkUpsertProducts(
-      boot.data.products.map((p) => ({
-        ...p,
-        costPrice: Number(p.costPrice),
-        salePrice: p.salePrice != null ? Number(p.salePrice) : null,
-        syncedAt: boot.data.serverTime,
-      }))
-    );
-    await (window as any).electronAPI.setSyncState("products", {
-      lastPulledAt: boot.data.serverTime,
-    });
+    await bootstrapProducts();
   } catch (e) {
     console.error("Bootstrap failed:", e);
   }
@@ -96,8 +85,6 @@ export async function logout() {
 
   try {
     stopProductsSync();
-
-    await pushDirtyProductsOnce(1000);
 
     await (window as any).electronAPI.wipeLocalData();
 

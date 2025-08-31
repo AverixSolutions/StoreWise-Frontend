@@ -1,7 +1,7 @@
 // src/components/products/ProductFormModal.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Dropdown from "@/components/ui/Dropdown";
 
 interface Product {
@@ -41,6 +41,58 @@ export default function ProductFormModal({
   const [costPrice, setCostPrice] = useState("");
   const [salePrice, setSalePrice] = useState("");
   const [stock, setStock] = useState("");
+
+  const nameRef = useRef<HTMLInputElement>(null);
+  const brandRef = useRef<HTMLInputElement>(null);
+  const unitRef = useRef<HTMLButtonElement>(null);
+  const taxRef = useRef<HTMLButtonElement>(null);
+  const categoryRef = useRef<HTMLInputElement>(null);
+  const hsnRef = useRef<HTMLInputElement>(null);
+  const costRef = useRef<HTMLInputElement>(null);
+  const saleRef = useRef<HTMLInputElement>(null);
+  const stockRef = useRef<HTMLInputElement>(null);
+
+  const inputRefs = [
+    nameRef,
+    brandRef,
+    unitRef,
+    taxRef,
+    categoryRef,
+    hsnRef,
+    costRef,
+    saleRef,
+    stockRef,
+  ];
+
+  const handleKeyDown = (
+    e: React.KeyboardEvent<HTMLElement>,
+    index: number
+  ) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (e.shiftKey) {
+        if (index > 0) inputRefs[index - 1].current?.focus();
+      } else {
+        if (index < inputRefs.length - 1) {
+          inputRefs[index + 1].current?.focus();
+        } else {
+          (document.activeElement as HTMLElement).blur();
+          const form = (e.currentTarget as HTMLElement).closest(
+            "form"
+          ) as HTMLFormElement | null;
+          form?.requestSubmit();
+        }
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      requestAnimationFrame(() => {
+        nameRef.current?.focus();
+      });
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     if (isOpen) {
@@ -140,7 +192,11 @@ export default function ProductFormModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
+    <div
+      className="fixed inset-0 z-50 overflow-y-auto"
+      role="dialog"
+      aria-modal="true"
+    >
       <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0 transition-opacity bg-white/5 backdrop-blur-xs">
         <div className="inline-block w-full max-w-2xl my-8 overflow-hidden text-left align-middle transition-all transform bg-white shadow-xl rounded-xl">
           <div className="bg-gradient-to-r from-averix-red-dark to-averix-red-accent p-4">
@@ -200,9 +256,11 @@ export default function ProductFormModal({
                   Product Name <span className="text-red-500">*</span>
                 </label>
                 <input
+                  ref={nameRef}
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
+                  onKeyDown={(e) => handleKeyDown(e, 0)}
                   required
                   placeholder="Enter product name"
                   className="w-full border-2 border-gray-200 rounded-lg p-2.5 focus:border-averix-red-dark focus:outline-none transition-colors"
@@ -214,9 +272,11 @@ export default function ProductFormModal({
                   Brand
                 </label>
                 <input
+                  ref={brandRef}
                   type="text"
                   value={brand}
                   onChange={(e) => setBrand(e.target.value)}
+                  onKeyDown={(e) => handleKeyDown(e, 1)}
                   placeholder="Enter brand name"
                   className="w-full border-2 border-gray-200 rounded-lg p-2.5 focus:border-averix-red-dark focus:outline-none transition-colors"
                 />
@@ -230,10 +290,12 @@ export default function ProductFormModal({
                   Unit <span className="text-red-500">*</span>
                 </label>
                 <Dropdown
+                  ref={unitRef}
                   value={unit}
                   onChange={setUnit}
                   options={unitOptions}
                   placeholder="Select unit"
+                  onEnter={() => inputRefs[3].current?.focus()}
                   required
                 />
               </div>
@@ -243,10 +305,12 @@ export default function ProductFormModal({
                   Tax Rate <span className="text-red-500">*</span>
                 </label>
                 <Dropdown
+                  ref={taxRef}
                   value={tax}
                   onChange={setTax}
                   options={taxOptions}
                   placeholder="Select tax rate"
+                  onEnter={() => inputRefs[4].current?.focus()}
                   required
                 />
               </div>
@@ -259,9 +323,11 @@ export default function ProductFormModal({
                   Category
                 </label>
                 <input
+                  ref={categoryRef}
                   type="text"
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
+                  onKeyDown={(e) => handleKeyDown(e, 4)}
                   placeholder="Enter category"
                   className="w-full border-2 border-gray-200 rounded-lg p-2.5 focus:border-averix-red-dark focus:outline-none transition-colors"
                 />
@@ -272,9 +338,11 @@ export default function ProductFormModal({
                   HSN Code
                 </label>
                 <input
+                  ref={hsnRef}
                   type="text"
                   value={hsn}
                   onChange={(e) => setHsn(e.target.value)}
+                  onKeyDown={(e) => handleKeyDown(e, 5)}
                   placeholder="Enter HSN code"
                   className="w-full border-2 border-gray-200 rounded-lg p-2.5 focus:border-averix-red-dark focus:outline-none transition-colors"
                 />
@@ -292,9 +360,11 @@ export default function ProductFormModal({
                     ₹
                   </span>
                   <input
+                    ref={costRef}
                     type="number"
                     value={costPrice}
                     onChange={(e) => setCostPrice(e.target.value)}
+                    onKeyDown={(e) => handleKeyDown(e, 6)}
                     required
                     min="0"
                     step="0.01"
@@ -313,9 +383,11 @@ export default function ProductFormModal({
                     ₹
                   </span>
                   <input
+                    ref={saleRef}
                     type="number"
                     value={salePrice}
                     onChange={(e) => setSalePrice(e.target.value)}
+                    onKeyDown={(e) => handleKeyDown(e, 7)}
                     min="0"
                     step="0.01"
                     placeholder="0.00"
@@ -329,9 +401,11 @@ export default function ProductFormModal({
                   Initial Stock
                 </label>
                 <input
+                  ref={stockRef}
                   type="number"
                   value={stock}
                   onChange={(e) => setStock(e.target.value)}
+                  onKeyDown={(e) => handleKeyDown(e, 8)}
                   min="0"
                   placeholder="0"
                   className="w-full border-2 border-gray-200 rounded-lg p-2.5 focus:border-averix-red-dark focus:outline-none transition-colors"
