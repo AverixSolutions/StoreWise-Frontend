@@ -1,5 +1,6 @@
 // electron/preload.js
 const { contextBridge, ipcRenderer } = require("electron");
+
 contextBridge.exposeInMainWorld("electronAPI", {
   getNextCode: (licenseId) => ipcRenderer.invoke("get-next-code", licenseId),
   createProduct: (product) => ipcRenderer.invoke("create-product", product),
