@@ -45,6 +45,7 @@ db.prepare(
 ).run();
 
 addColumnIfMissing("products", "deletedAt", "TEXT");
+addColumnIfMissing("products", "barcode", "TEXT");
 
 // Product Index
 db.prepare(
@@ -54,6 +55,10 @@ db.prepare(
 db.prepare(
   `CREATE INDEX IF NOT EXISTS idx_products_isSynced 
   ON products(isSynced)`
+).run();
+db.prepare(
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_products_barcode
+   ON products(licenseId, barcode)`
 ).run();
 
 // Purchase Table
@@ -73,12 +78,24 @@ db.prepare(
 `
 ).run();
 
+addColumnIfMissing("purchases", "slNo", "INTEGER");
 addColumnIfMissing("purchases", "deletedAt", "TEXT");
+addColumnIfMissing("purchases", "entryTime", "TEXT");
+addColumnIfMissing("purchases", "supplierName", "TEXT");
+addColumnIfMissing("purchases", "department", "TEXT");
+addColumnIfMissing("purchases", "debitAccount", "TEXT");
+addColumnIfMissing("purchases", "natureOfEntry", "TEXT");
 
 // Purchase Index
 db.prepare(
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_purchases_slno
+   ON purchases(licenseId, slNo)`
+).run();
+
+db.prepare(
   `CREATE INDEX IF NOT EXISTS idx_purchases_license_date ON purchases(licenseId, purchaseDate)`
 ).run();
+
 db.prepare(
   `CREATE INDEX IF NOT EXISTS idx_purchases_synced ON purchases(isSynced)`
 ).run();
@@ -115,6 +132,9 @@ db.prepare(
 ).run();
 
 addColumnIfMissing("purchase_items", "deletedAt", "TEXT");
+addColumnIfMissing("purchase_items", "barcode", "TEXT");
+addColumnIfMissing("purchase_items", "mrp", "REAL");
+addColumnIfMissing("purchase_items", "billedValue", "REAL");
 
 // Purchase Items Index
 db.prepare(
@@ -131,6 +151,16 @@ db.prepare(
   CREATE TABLE IF NOT EXISTS code_sequence (
     licenseId TEXT PRIMARY KEY,
     lastCodeNumber INTEGER DEFAULT 0
+  )
+`
+).run();
+
+// slno increment tracker for License
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS purchase_sequence (
+    licenseId TEXT PRIMARY KEY,
+    lastSlNo INTEGER DEFAULT 0
   )
 `
 ).run();

@@ -16,28 +16,6 @@ interface LoginResponse {
   };
 }
 
-type BootstrapResponse = {
-  serverTime: string;
-  products: Array<{
-    id: string;
-    licenseId: string;
-    code: string;
-    codeNumber: number;
-    name: string;
-    brand: string | null;
-    category: string | null;
-    unit: "KG" | "NOS" | "LTR" | "MTR";
-    tax: "NT" | "P5" | "P12" | "P18" | "P28";
-    hsn: string | null;
-    costPrice: string;
-    salePrice: string | null;
-    stock: number;
-    createdAt: string;
-    updatedAt: string;
-    deletedAt?: string | null;
-  }>;
-};
-
 export async function login(userId: string, password: string, role: string) {
   if (!navigator.onLine) {
     throw new Error("⚠️ No internet connection. Please connect to login.");

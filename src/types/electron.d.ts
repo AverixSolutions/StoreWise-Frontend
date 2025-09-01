@@ -37,6 +37,7 @@ declare global {
           costPrice: number;
           salePrice?: number;
           stock: number;
+          barcode?: string;
           createdAt?: string;
         }>;
         total: number;
@@ -95,7 +96,26 @@ declare global {
         salePrice?: number;
         stock: number;
         createdAt?: string;
+        barcode?: string;
       } | null>;
+
+      createPurchase: (
+        purchase: any,
+        items: any[]
+      ) => Promise<{
+        success: boolean;
+        purchaseId: string;
+        slNo: number;
+        totalAmount: number;
+      }>;
+      getPurchases: (
+        licenseId: string,
+        pagination?: { page?: number; pageSize?: number }
+      ) => Promise<{ purchases: any[]; total: number }>;
+      markPurchasesSynced: (
+        ids: string[],
+        serverSyncedAt?: string
+      ) => Promise<{ success: boolean; syncedAt: string }>;
 
       // Sync-specific methods
       getDirtyProducts: (licenseId: string, limit?: number) => Promise<any[]>;
