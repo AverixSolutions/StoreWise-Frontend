@@ -8,6 +8,7 @@ type BootstrapProductsResponse = {
     licenseId: string;
     code: string;
     codeNumber: number;
+    barcode: string | null;
     name: string;
     brand: string | null;
     category: string | null;
@@ -31,6 +32,7 @@ export async function bootstrapProducts() {
   await (window as any).electronAPI.bulkUpsertProducts(
     res.data.products.map((p) => ({
       ...p,
+      barcode: p.barcode ?? null,
       costPrice: Number(p.costPrice),
       salePrice: p.salePrice != null ? Number(p.salePrice) : null,
       syncedAt: res.data.serverTime,

@@ -19,6 +19,7 @@ export function startProductsSync() {
       licenseId: p.licenseId,
       code: p.code,
       codeNumber: Number(p.codeNumber),
+      barcode: p.barcode ?? null,
       name: p.name,
       brand: p.brand ?? null,
       category: p.category ?? null,

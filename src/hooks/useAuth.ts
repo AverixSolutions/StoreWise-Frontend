@@ -1,7 +1,9 @@
-// src/hooks/useAuth.ts
+// src/hooks/useAuth.ts (Updated)
 import api from "@/lib/axios";
-import { stopProductsSync } from "@/sync/productsSync";
+import { stopProductsSync, startProductsSync } from "@/sync/productsSync";
 import { bootstrapProducts } from "@/bootstrap/products";
+import { bootstrapSuppliers } from "@/bootstrap/suppliers";
+import { stopSuppliersSync, startSuppliersSync } from "@/sync/suppliersSync";
 
 interface LoginResponse {
   token: string;
@@ -40,7 +42,15 @@ export async function login(userId: string, password: string, role: string) {
     localStorage.setItem("licenseId", data.user.licenseId);
 
   try {
+    // Bootstrap products
     await bootstrapProducts();
+    stopProductsSync();
+    startProductsSync();
+
+    // Bootstrap suppliers
+    await bootstrapSuppliers();
+    stopSuppliersSync();
+    startSuppliersSync();
   } catch (e) {
     console.error("Bootstrap failed:", e);
   }
@@ -63,6 +73,7 @@ export async function logout() {
 
   try {
     stopProductsSync();
+    stopSuppliersSync();
 
     await (window as any).electronAPI.wipeLocalData();
 

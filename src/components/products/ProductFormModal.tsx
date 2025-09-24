@@ -10,6 +10,7 @@ interface Product {
   name: string;
   brand?: string;
   category?: string;
+  barcode?: string | null;
   unit: string;
   tax: string;
   hsn?: string;
@@ -34,6 +35,7 @@ export default function ProductFormModal({
   const [code, setCode] = useState<string>("00001");
   const [name, setName] = useState("");
   const [brand, setBrand] = useState("");
+  const [barcode, setBarcode] = useState("");
   const [category, setCategory] = useState("");
   const [unit, setUnit] = useState("NOS");
   const [tax, setTax] = useState("P5");
@@ -44,6 +46,7 @@ export default function ProductFormModal({
 
   const nameRef = useRef<HTMLInputElement>(null);
   const brandRef = useRef<HTMLInputElement>(null);
+  const barcodeRef = useRef<HTMLInputElement>(null);
   const unitRef = useRef<HTMLButtonElement>(null);
   const taxRef = useRef<HTMLButtonElement>(null);
   const categoryRef = useRef<HTMLInputElement>(null);
@@ -52,9 +55,23 @@ export default function ProductFormModal({
   const saleRef = useRef<HTMLInputElement>(null);
   const stockRef = useRef<HTMLInputElement>(null);
 
+  const IDX = {
+    NAME: 0,
+    BRAND: 1,
+    BARCODE: 2,
+    UNIT: 3,
+    TAX: 4,
+    CATEGORY: 5,
+    HSN: 6,
+    COST: 7,
+    SALE: 8,
+    STOCK: 9,
+  } as const;
+
   const inputRefs = [
     nameRef,
     brandRef,
+    barcodeRef,
     unitRef,
     taxRef,
     categoryRef,
@@ -101,6 +118,7 @@ export default function ProductFormModal({
         setCode(editProduct.code);
         setName(editProduct.name);
         setBrand(editProduct.brand || "");
+        setBarcode((editProduct as any).barcode || "");
         setCategory(editProduct.category || "");
         setUnit(editProduct.unit);
         setTax(editProduct.tax);
@@ -122,6 +140,7 @@ export default function ProductFormModal({
   const resetForm = () => {
     setName("");
     setBrand("");
+    setBarcode("");
     setCategory("");
     setUnit("NOS");
     setTax("P5");
@@ -143,6 +162,7 @@ export default function ProductFormModal({
         name,
         brand: brand || null,
         category: category || null,
+        barcode: barcode || null,
         unit,
         tax,
         hsn: hsn || null,
@@ -260,7 +280,7 @@ export default function ProductFormModal({
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  onKeyDown={(e) => handleKeyDown(e, 0)}
+                  onKeyDown={(e) => handleKeyDown(e, IDX.NAME)}
                   required
                   placeholder="Enter product name"
                   className="w-full border-2 border-gray-200 rounded-lg p-2.5 focus:border-averix-red-dark focus:outline-none transition-colors"
@@ -276,11 +296,27 @@ export default function ProductFormModal({
                   type="text"
                   value={brand}
                   onChange={(e) => setBrand(e.target.value)}
-                  onKeyDown={(e) => handleKeyDown(e, 1)}
+                  onKeyDown={(e) => handleKeyDown(e, IDX.BRAND)}
                   placeholder="Enter brand name"
                   className="w-full border-2 border-gray-200 rounded-lg p-2.5 focus:border-averix-red-dark focus:outline-none transition-colors"
                 />
               </div>
+            </div>
+
+            {/* Barcode */}
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                Barcode (optional)
+              </label>
+              <input
+                ref={barcodeRef}
+                type="text"
+                value={barcode}
+                onChange={(e) => setBarcode(e.target.value.trim())}
+                onKeyDown={(e) => handleKeyDown(e, IDX.BARCODE)}
+                placeholder="Scan or enter barcode"
+                className="w-full border-2 border-gray-200 rounded-lg p-2.5 focus:border-averix-red-dark focus:outline-none transition-colors font-mono"
+              />
             </div>
 
             {/* Unit and Tax */}
@@ -295,7 +331,7 @@ export default function ProductFormModal({
                   onChange={setUnit}
                   options={unitOptions}
                   placeholder="Select unit"
-                  onEnter={() => inputRefs[3].current?.focus()}
+                  onEnter={() => inputRefs[IDX.TAX].current?.focus()}
                   required
                 />
               </div>
@@ -310,7 +346,7 @@ export default function ProductFormModal({
                   onChange={setTax}
                   options={taxOptions}
                   placeholder="Select tax rate"
-                  onEnter={() => inputRefs[4].current?.focus()}
+                  onEnter={() => inputRefs[IDX.CATEGORY].current?.focus()}
                   required
                 />
               </div>
@@ -327,7 +363,7 @@ export default function ProductFormModal({
                   type="text"
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
-                  onKeyDown={(e) => handleKeyDown(e, 4)}
+                  onKeyDown={(e) => handleKeyDown(e, IDX.CATEGORY)}
                   placeholder="Enter category"
                   className="w-full border-2 border-gray-200 rounded-lg p-2.5 focus:border-averix-red-dark focus:outline-none transition-colors"
                 />
@@ -342,7 +378,7 @@ export default function ProductFormModal({
                   type="text"
                   value={hsn}
                   onChange={(e) => setHsn(e.target.value)}
-                  onKeyDown={(e) => handleKeyDown(e, 5)}
+                  onKeyDown={(e) => handleKeyDown(e, IDX.HSN)}
                   placeholder="Enter HSN code"
                   className="w-full border-2 border-gray-200 rounded-lg p-2.5 focus:border-averix-red-dark focus:outline-none transition-colors"
                 />
@@ -364,7 +400,7 @@ export default function ProductFormModal({
                     type="number"
                     value={costPrice}
                     onChange={(e) => setCostPrice(e.target.value)}
-                    onKeyDown={(e) => handleKeyDown(e, 6)}
+                    onKeyDown={(e) => handleKeyDown(e, IDX.COST)}
                     required
                     min="0"
                     step="0.01"
@@ -387,7 +423,7 @@ export default function ProductFormModal({
                     type="number"
                     value={salePrice}
                     onChange={(e) => setSalePrice(e.target.value)}
-                    onKeyDown={(e) => handleKeyDown(e, 7)}
+                    onKeyDown={(e) => handleKeyDown(e, IDX.SALE)}
                     min="0"
                     step="0.01"
                     placeholder="0.00"
@@ -405,7 +441,7 @@ export default function ProductFormModal({
                   type="number"
                   value={stock}
                   onChange={(e) => setStock(e.target.value)}
-                  onKeyDown={(e) => handleKeyDown(e, 8)}
+                  onKeyDown={(e) => handleKeyDown(e, IDX.STOCK)}
                   min="0"
                   placeholder="0"
                   className="w-full border-2 border-gray-200 rounded-lg p-2.5 focus:border-averix-red-dark focus:outline-none transition-colors"

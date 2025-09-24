@@ -18,6 +18,7 @@ declare global {
         costPrice: number;
         salePrice: number | null;
         stock?: number;
+        barcode?: string | null;
       }) => Promise<{ success: boolean }>;
 
       // Updated to return paginated results
@@ -60,6 +61,7 @@ declare global {
           costPrice: number;
           salePrice?: number;
           stock: number;
+          barcode?: string;
           createdAt?: string;
         }>;
         total: number;
@@ -80,6 +82,7 @@ declare global {
           costPrice: number;
           salePrice: number | null;
           stock?: number;
+          barcode?: string | null;
         }
       ) => Promise<{ success: boolean }>;
       deleteProduct: (productId: string) => Promise<{ success: boolean }>;

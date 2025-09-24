@@ -2,6 +2,8 @@
 "use client";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
+import { DebugPanel } from "@/components/DebugPanel";
+
 import {
   Package,
   ShoppingCart,
@@ -77,6 +79,8 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      <DebugPanel />
     </div>
   );
 }

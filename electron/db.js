@@ -175,4 +175,114 @@ db.prepare(
 `
 ).run();
 
+// --- Suppliers ---
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS suppliers (
+    id TEXT PRIMARY KEY,
+    licenseId TEXT NOT NULL,
+    name TEXT NOT NULL,
+    phone TEXT,
+    email TEXT,
+    gstin TEXT,
+    department TEXT,
+    addressLine1 TEXT,
+    addressLine2 TEXT,
+    city TEXT,
+    state TEXT,
+    pincode TEXT,
+    openingBalance REAL DEFAULT 0,  -- positive = we owe them
+    notes TEXT,
+    createdAt TEXT,
+    updatedAt TEXT,
+    isSynced INTEGER DEFAULT 0,
+    syncedAt TEXT,
+    deletedAt TEXT
+  )
+`
+).run();
+
+addColumnIfMissing("suppliers", "code", "TEXT");
+addColumnIfMissing("suppliers", "codeNumber", "INTEGER");
+addColumnIfMissing("suppliers", "category", "TEXT");
+addColumnIfMissing("suppliers", "native", "TEXT");
+addColumnIfMissing("suppliers", "language", "TEXT");
+addColumnIfMissing("suppliers", "aadhaar", "TEXT");
+addColumnIfMissing("suppliers", "pan", "TEXT");
+addColumnIfMissing("suppliers", "license1", "TEXT");
+addColumnIfMissing("suppliers", "license2", "TEXT");
+addColumnIfMissing("suppliers", "settlementDays", "INTEGER");
+addColumnIfMissing("suppliers", "creditLimit", "REAL");
+
+db.prepare(
+  `
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_suppliers_code
+  ON suppliers(licenseId, code)
+`
+).run();
+db.prepare(
+  `
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_suppliers_code_no
+  ON suppliers(licenseId, codeNumber)
+`
+).run();
+
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS supplier_sequence (
+    licenseId TEXT PRIMARY KEY,
+    lastCodeNumber INTEGER DEFAULT 0
+  )
+`
+).run();
+
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_suppliers_license ON suppliers(licenseId, name)`
+).run();
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_suppliers_synced ON suppliers(isSynced)`
+).run();
+
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_suppliers_dirty 
+   ON suppliers(licenseId, updatedAt, syncedAt, deletedAt)`
+).run();
+
+// --- Supplier Ledger ---
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS supplier_transactions (
+    id TEXT PRIMARY KEY,
+    licenseId TEXT NOT NULL,
+    supplierId TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK(kind IN ('OPENING','PURCHASE','RETURN','PAYMENT','ADJUSTMENT')),
+    refId TEXT,            -- e.g., purchaseId or paymentId
+    refNo TEXT,            -- human-readable bill no / receipt no
+    date TEXT NOT NULL,
+    amount REAL NOT NULL,  -- positive number
+    sign INTEGER NOT NULL CHECK(sign IN (1,-1)), -- +1 increases payable (we owe more); -1 decreases
+    notes TEXT,
+    createdAt TEXT,
+    updatedAt TEXT,
+    isSynced INTEGER DEFAULT 0,
+    syncedAt TEXT,
+    deletedAt TEXT,
+    FOREIGN KEY (supplierId) REFERENCES suppliers(id)
+  )
+`
+).run();
+
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_supl_tx_supplier ON supplier_transactions(licenseId, supplierId, date)`
+).run();
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_supl_tx_synced ON supplier_transactions(isSynced)`
+).run();
+
+// --- Purchases: link supplier ---
+addColumnIfMissing("purchases", "supplierId", "TEXT");
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_purchases_supplier ON purchases(licenseId, supplierId)`
+).run();
+
 module.exports = db;

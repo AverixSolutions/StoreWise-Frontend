@@ -1,7 +1,6 @@
 // src/components/ui/SearchableDropdown.tsx
 "use client";
-
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, forwardRef } from "react";
 import { ChevronDown } from "lucide-react";
 
 interface Option {
@@ -15,134 +14,218 @@ interface SearchableDropdownProps {
   options: Option[];
   placeholder?: string;
   className?: string;
+  allowCustom?: boolean;
+  onCreate?: (value: string) => void;
+  onEnter?: () => void;
 }
 
-export default function SearchableDropdown({
-  value,
-  onChange,
-  options,
-  placeholder = "Select...",
-  className = "",
-}: SearchableDropdownProps) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
-  const dropdownRef = useRef<HTMLDivElement>(null);
-  const searchInputRef = useRef<HTMLInputElement>(null);
+const SearchableDropdown = forwardRef<
+  HTMLButtonElement,
+  SearchableDropdownProps
+>(
+  (
+    {
+      value,
+      onChange,
+      options,
+      placeholder = "Select...",
+      className = "",
+      allowCustom,
+      onCreate,
+      onEnter,
+    },
+    ref
+  ) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const [searchTerm, setSearchTerm] = useState("");
+    const dropdownRef = useRef<HTMLDivElement>(null);
+    const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const selectedLabel =
-    options.find((opt) => opt.value === value)?.label || placeholder;
+    const selectedLabel =
+      options.find((opt) => opt.value === value)?.label || placeholder;
 
-  const filteredOptions = options.filter((opt) =>
-    opt.label.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+    const filteredOptions = options.filter((opt) =>
+      opt.label.toLowerCase().includes(searchTerm.toLowerCase())
+    );
 
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(e.target as Node)
-      ) {
-        setIsOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
+    const createFromSearch = () => {
+      const v = searchTerm.trim();
+      if (!v) return;
+      onChange(v);
+      onCreate?.(v);
+      setIsOpen(false);
+      onEnter?.();
     };
-  }, []);
 
-  useEffect(() => {
-    if (isOpen && searchInputRef.current) {
-      setSearchTerm("");
-      searchInputRef.current.focus();
-    }
-  }, [isOpen]);
+    useEffect(() => {
+      function handleClickOutside(e: PointerEvent) {
+        if (
+          dropdownRef.current &&
+          !dropdownRef.current.contains(e.target as Node)
+        ) {
+          setIsOpen(false);
+        }
+      }
+      document.addEventListener("pointerdown", handleClickOutside);
+      return () => {
+        document.removeEventListener("pointerdown", handleClickOutside);
+      };
+    }, []);
 
-  const handleOptionClick = (optionValue: string) => {
-    onChange(optionValue);
-    setIsOpen(false);
-  };
+    useEffect(() => {
+      if (isOpen) {
+        setSearchTerm("");
+        requestAnimationFrame(() => {
+          searchInputRef.current?.focus();
+          const el = searchInputRef.current;
+          if (el) el.setSelectionRange(el.value.length, el.value.length);
+        });
+      }
+    }, [isOpen]);
 
-  const handleClearSelection = () => {
-    onChange("");
-    setIsOpen(false);
-  };
+    const handleOptionClick = (optionValue: string) => {
+      onChange(optionValue);
+      setIsOpen(false);
+      onEnter?.();
+    };
 
-  return (
-    <div className={`relative ${className}`} ref={dropdownRef}>
-      <button
-        type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        className="border border-gray-200 rounded-lg px-4 py-2 w-56 flex items-center justify-between bg-white hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-averix-red-light focus:border-averix-red-light transition-all duration-200"
-      >
-        <span
-          className={`truncate max-w-[85%] text-left ${
-            value ? "text-gray-900" : "text-gray-500"
-          }`}
+    const handleClearSelection = () => {
+      onChange("");
+      setIsOpen(false);
+      onEnter?.();
+    };
+
+    const handleButtonKeyDown: React.KeyboardEventHandler<HTMLButtonElement> = (
+      e
+    ) => {
+      if (isOpen) return;
+      if (e.key === "Enter") {
+        e.preventDefault();
+        if (e.shiftKey) {
+          return;
+        }
+        setIsOpen(true);
+        requestAnimationFrame(() => searchInputRef.current?.focus());
+      } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        const ch = e.key;
+        setIsOpen(true);
+        requestAnimationFrame(() => {
+          setSearchTerm(ch);
+          searchInputRef.current?.focus();
+        });
+      } else if (e.key === "ArrowDown" || e.key === " ") {
+        e.preventDefault();
+        setIsOpen(true);
+        requestAnimationFrame(() => searchInputRef.current?.focus());
+      }
+    };
+
+    return (
+      <div className={`relative ${className}`} ref={dropdownRef}>
+        <button
+          ref={ref}
+          type="button"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => {
+            setIsOpen((prev) => {
+              const next = !prev;
+              if (next) {
+                requestAnimationFrame(() => searchInputRef.current?.focus());
+              }
+              return next;
+            });
+          }}
+          onKeyDown={handleButtonKeyDown}
+          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-averix-red-light focus:border-transparent flex items-center justify-between bg-white hover:border-gray-400 transition-colors"
         >
-          {selectedLabel}
-        </span>
-        <ChevronDown
-          className={`w-4 h-4 text-gray-500 transform transition-transform duration-200 ${
-            isOpen ? "rotate-180" : ""
-          }`}
-        />
-      </button>
+          <span
+            className={`truncate text-left ${
+              value ? "text-gray-900" : "text-gray-500"
+            }`}
+          >
+            {selectedLabel}
+          </span>
+          <ChevronDown
+            className={`w-4 h-4 text-gray-500 transform transition-transform duration-200 ml-2 flex-shrink-0 ${
+              isOpen ? "rotate-180" : ""
+            }`}
+          />
+        </button>
 
-      {/* Dropdown menu */}
-      {isOpen && (
-        <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-hidden">
-          {/* Search input */}
-          <div className="sticky top-0 bg-white p-3 border-b border-gray-200">
-            <input
-              ref={searchInputRef}
-              type="text"
-              placeholder="Search..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-averix-red-light focus:border-averix-red-light"
-            />
-          </div>
+        {isOpen && (
+          <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-hidden">
+            <div className="sticky top-0 bg-white p-2 border-b border-gray-200">
+              <input
+                ref={searchInputRef}
+                type="text"
+                placeholder="Search..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-averix-red-light focus:border-transparent"
+                onMouseDown={(e) => e.stopPropagation()}
+                onKeyDown={(e) => {
+                  if (
+                    allowCustom &&
+                    e.key === "Enter" &&
+                    !filteredOptions.length
+                  ) {
+                    e.preventDefault();
+                    createFromSearch();
+                  }
+                }}
+              />
+            </div>
 
-          {/* Options list */}
-          <div className="max-h-40 overflow-y-auto no-scrollbar">
-            {/* Clear option (if there's a selected value) */}
-            {value && (
-              <>
+            <div className="max-h-40 overflow-y-auto">
+              {value && (
                 <button
                   type="button"
                   onClick={handleClearSelection}
-                  className="w-full text-left px-4 py-2 text-sm text-gray-500 hover:bg-gray-100 border-b border-gray-100 cursor-pointer"
+                  className="w-full text-left px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 border-b border-gray-100 cursor-pointer"
                 >
                   Clear selection
                 </button>
-              </>
-            )}
+              )}
 
-            {/* Filtered options */}
-            {filteredOptions.length > 0 ? (
-              filteredOptions.map((opt) => (
+              {filteredOptions.length > 0 ? (
+                filteredOptions.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => handleOptionClick(opt.value)}
+                    className={`w-full text-left px-3 py-2 text-sm transition-colors duration-150 cursor-pointer ${
+                      value === opt.value
+                        ? "bg-averix-red-light text-white font-medium"
+                        : "text-gray-900 hover:bg-gray-100"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))
+              ) : (
+                <div className="px-3 py-2 text-gray-400 text-sm text-center">
+                  No results found
+                </div>
+              )}
+
+              {allowCustom && searchTerm.trim() && (
                 <button
-                  key={opt.value}
                   type="button"
-                  onClick={() => handleOptionClick(opt.value)}
-                  className={`w-full text-left px-4 py-2 text-sm transition-colors duration-150 cursor-pointer ${
-                    value === opt.value
-                      ? "bg-averix-red-light text-white font-medium"
-                      : "text-gray-900 hover:bg-gray-100"
-                  }`}
+                  onClick={createFromSearch}
+                  className="w-full text-left px-3 py-2 text-sm text-averix-red-dark hover:bg-averix-red-light/10 border-t border-gray-100 cursor-pointer"
                 >
-                  {opt.label}
+                  Use "{searchTerm.trim()}"
                 </button>
-              ))
-            ) : (
-              <div className="px-4 py-3 text-gray-400 text-sm text-center">
-                No results found
-              </div>
-            )}
+              )}
+            </div>
           </div>
-        </div>
-      )}
-    </div>
-  );
-}
+        )}
+      </div>
+    );
+  }
+);
+
+SearchableDropdown.displayName = "SearchableDropdown";
+
+export default SearchableDropdown;

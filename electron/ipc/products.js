@@ -19,8 +19,8 @@ function registerProductHandlers() {
     db.prepare(
       `
       INSERT INTO products 
-        (id, licenseId, code, codeNumber, name, brand, category, unit, tax, hsn, costPrice, salePrice, stock, createdAt, updatedAt) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, licenseId, code, codeNumber, name, brand, category, unit, tax, hsn, costPrice, salePrice, stock, barcode, createdAt, updatedAt) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
     ).run(
       newId,
@@ -36,6 +36,7 @@ function registerProductHandlers() {
       product.costPrice,
       product.salePrice,
       product.stock,
+      product.barcode || null,
       now,
       now
     );
@@ -58,7 +59,7 @@ function registerProductHandlers() {
 
       const products = db
         .prepare(
-          `SELECT id, code, name, brand, category, unit, tax, hsn, costPrice, salePrice, stock, createdAt 
+          `SELECT id, code, name, brand, category, unit, tax, hsn, costPrice, salePrice, stock, barcode, createdAt 
      FROM products 
      WHERE licenseId = ? AND deletedAt IS NULL
      ORDER BY codeNumber ASC
@@ -80,7 +81,7 @@ function registerProductHandlers() {
     "get-filtered-products",
     (event, licenseId, filters, { page = 1, pageSize = 10 } = {}) => {
       let query = `
-    SELECT id, code, name, brand, category, unit, tax, hsn, costPrice, salePrice, stock, createdAt
+    SELECT id, code, name, brand, category, unit, tax, hsn, costPrice, salePrice, stock, barcode, createdAt
     FROM products 
     WHERE licenseId = ? AND deletedAt IS NULL
   `;
@@ -122,7 +123,7 @@ function registerProductHandlers() {
         `
       UPDATE products 
       SET name = ?, brand = ?, category = ?, unit = ?, tax = ?, hsn = ?, 
-          costPrice = ?, salePrice = ?, stock = ?, updatedAt = ?,
+          costPrice = ?, salePrice = ?, stock = ?, updatedAt = ?, barcode = ?,
           isSynced = 0,
           syncedAt = NULL
       WHERE id = ?
@@ -139,6 +140,7 @@ function registerProductHandlers() {
         product.salePrice,
         product.stock,
         now,
+        product.barcode || null,
         productId
       );
 
@@ -208,6 +210,24 @@ function registerProductHandlers() {
     });
     trx(ids);
     return { success: true, syncedAt: ts };
+  });
+
+  ipcMain.handle("get-product-by-barcode", (event, licenseId, barcode) => {
+    if (!barcode) return null;
+    return db
+      .prepare(
+        "SELECT * FROM products WHERE licenseId = ? AND barcode = ? AND deletedAt IS NULL"
+      )
+      .get(licenseId, barcode);
+  });
+
+  ipcMain.handle("get-product-by-code", (event, licenseId, code) => {
+    if (!code) return null;
+    return db
+      .prepare(
+        "SELECT * FROM products WHERE licenseId = ? AND code = ? AND deletedAt IS NULL"
+      )
+      .get(licenseId, code);
   });
 }
 

@@ -5,7 +5,7 @@ import { useState, useEffect } from "react";
 import Pagination from "../ui/Pagination";
 import TableSkeleton from "../ui/TableSkeleton";
 import EmptyState from "../ui/EmptyState";
-import { PackagePlus } from "lucide-react";
+import { PackagePlus, Edit2, Trash2 } from "lucide-react";
 
 interface Product {
   id: string;
@@ -13,6 +13,7 @@ interface Product {
   name: string;
   brand?: string;
   category?: string;
+  barcode?: string | null;
   unit: string;
   tax: string;
   costPrice: number;
@@ -91,7 +92,7 @@ export default function ProductsTable({
   };
 
   if (loading) {
-    return <TableSkeleton columns={9} rows={6} />;
+    return <TableSkeleton columns={10} rows={6} />;
   }
 
   if (products.length === 0) {
@@ -103,7 +104,7 @@ export default function ProductsTable({
         action={
           <button
             onClick={() => onEdit(null as any)}
-            className="mt-4 bg-averix-red-dark text-white px-4 py-2 rounded-lg hover:shadow"
+            className="mt-4 bg-averix-red-dark text-white px-6 py-3 rounded-lg hover:bg-averix-red-accent transition-colors font-medium"
           >
             Add Product
           </button>
@@ -113,114 +114,118 @@ export default function ProductsTable({
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-gray-200 shadow-sm bg-white">
-      <table className="w-full text-sm text-gray-700">
-        {/* Header */}
-        <thead className="bg-gradient-to-r from-averix-red-dark to-averix-red-accent text-white">
-          <tr>
-            {[
-              "Code",
-              "Name",
-              "Brand",
-              "Category",
-              "Unit",
-              "Cost Price",
-              "Sale Price",
-              "Stock",
-              "Actions",
-            ].map((heading) => (
-              <th
-                key={heading}
-                className="px-4 py-4 text-center text-xs font-semibold uppercase tracking-wider"
-              >
-                {heading}
-              </th>
-            ))}
-          </tr>
-        </thead>
-
-        {/* Body */}
-        <tbody className="divide-y divide-gray-100">
-          {products.map((product, idx) => (
-            <tr
-              key={product.id}
-              className={`transition-colors duration-150 ${
-                idx % 2 === 0 ? "bg-white" : "bg-gray-50"
-              } hover:bg-gray-100`}
-            >
-              <td className="px-4 py-3 text-center font-mono font-medium text-gray-900">
-                {product.code}
-              </td>
-              <td className="px-4 py-3 text-center font-medium text-gray-900">
-                {product.name}
-              </td>
-              <td className="px-4 py-3 text-center text-gray-600">
-                {product.brand || "-"}
-              </td>
-              <td className="px-4 py-3 text-center text-gray-600">
-                {product.category || "-"}
-              </td>
-              <td className="px-4 py-3 text-center text-gray-600">
-                {product.unit}
-              </td>
-              <td className="px-4 py-3 text-center font-medium text-gray-700">
-                ₹{product.costPrice.toFixed(2)}
-              </td>
-              <td className="px-4 py-3 text-center font-medium text-gray-700">
-                {product.salePrice ? `₹${product.salePrice.toFixed(2)}` : "-"}
-              </td>
-              <td className="px-4 py-3 text-center font-medium text-gray-700">
-                {product.stock}
-              </td>
-              <td className="px-4 py-3 text-center">
-                <div className="flex justify-center space-x-2">
-                  {/* Edit */}
-                  <button
-                    onClick={() => onEdit(product)}
-                    className="p-2 rounded-md bg-blue-50 text-blue-600 hover:bg-blue-100 transition cursor-pointer"
-                    title="Edit"
-                  >
-                    <svg
-                      className="w-4 h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                      />
-                    </svg>
-                  </button>
-
-                  {/* Delete */}
-                  <button
-                    onClick={() => handleDelete(product.id, product.name)}
-                    className="p-2 rounded-md bg-red-50 text-red-600 hover:bg-red-100 transition cursor-pointer"
-                    title="Delete"
-                  >
-                    <svg
-                      className="w-4 h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                      />
-                    </svg>
-                  </button>
-                </div>
-              </td>
+    <div className="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full">
+          <thead>
+            <tr className="bg-gradient-to-r from-averix-red-dark to-averix-red-accent">
+              {[
+                { key: "code", label: "Code", width: "w-24" },
+                { key: "name", label: "Product Name", width: "w-48" },
+                { key: "brand", label: "Brand", width: "w-32" },
+                { key: "category", label: "Category", width: "w-32" },
+                { key: "barcode", label: "Barcode", width: "w-36" },
+                { key: "unit", label: "Unit", width: "w-20" },
+                { key: "cost", label: "Cost Price", width: "w-28" },
+                { key: "sale", label: "Sale Price", width: "w-28" },
+                { key: "stock", label: "Stock", width: "w-20" },
+                { key: "actions", label: "Actions", width: "w-24" },
+              ].map((col) => (
+                <th
+                  key={col.key}
+                  className={`${col.width} px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wide`}
+                >
+                  {col.label}
+                </th>
+              ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {products.map((product, idx) => (
+              <tr
+                key={product.id}
+                className={`transition-all duration-200 hover:bg-blue-50/30 ${
+                  idx % 2 === 0 ? "bg-white" : "bg-gray-50/30"
+                }`}
+              >
+                <td className="px-6 py-4">
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-gray-100 text-gray-800 text-xs font-mono font-medium">
+                    {product.code}
+                  </span>
+                </td>
+                <td className="px-6 py-4">
+                  <div className="font-medium text-gray-900 text-sm">
+                    {product.name}
+                  </div>
+                </td>
+                <td className="px-6 py-4">
+                  <span className="text-gray-600 text-sm">
+                    {product.brand || "—"}
+                  </span>
+                </td>
+                <td className="px-6 py-4">
+                  <span className="text-gray-600 text-sm">
+                    {product.category || "—"}
+                  </span>
+                </td>
+                <td className="px-6 py-4">
+                  <span className="text-gray-500 text-xs font-mono">
+                    {product.barcode || "—"}
+                  </span>
+                </td>
+                <td className="px-6 py-4">
+                  <span className="inline-flex items-center px-2 py-1 rounded-md bg-blue-100 text-blue-800 text-xs font-medium">
+                    {product.unit}
+                  </span>
+                </td>
+                <td className="px-6 py-4">
+                  <span className="text-gray-900 font-medium text-sm">
+                    ₹{product.costPrice.toFixed(2)}
+                  </span>
+                </td>
+                <td className="px-6 py-4">
+                  <span className="text-green-700 font-medium text-sm">
+                    {product.salePrice
+                      ? `₹${product.salePrice.toFixed(2)}`
+                      : "—"}
+                  </span>
+                </td>
+                <td className="px-6 py-4">
+                  <span
+                    className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium ${
+                      product.stock <= 5
+                        ? "bg-red-100 text-red-800"
+                        : product.stock <= 20
+                        ? "bg-yellow-100 text-yellow-800"
+                        : "bg-green-100 text-green-800"
+                    }`}
+                  >
+                    {product.stock}
+                  </span>
+                </td>
+                <td className="px-6 py-4">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => onEdit(product)}
+                      className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 hover:scale-105 transition-all duration-200"
+                      title="Edit Product"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(product.id, product.name)}
+                      className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 hover:scale-105 transition-all duration-200"
+                      title="Delete Product"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       <Pagination
         page={page}
         total={total}

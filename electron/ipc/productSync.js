@@ -9,9 +9,9 @@ function registerProductSyncHandlers() {
       const insertOrReplace = db.prepare(`
         INSERT INTO products (
           id, licenseId, code, codeNumber, name, brand, category, unit, tax, hsn,
-          costPrice, salePrice, stock, createdAt, updatedAt, deletedAt, isSynced, syncedAt
+          costPrice, salePrice, stock, barcode, createdAt, updatedAt, deletedAt, isSynced, syncedAt
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, COALESCE(?, datetime('now')))
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, COALESCE(?, datetime('now')))
         ON CONFLICT(id) DO UPDATE SET
           code=excluded.code,
           codeNumber=excluded.codeNumber,
@@ -24,6 +24,7 @@ function registerProductSyncHandlers() {
           costPrice=excluded.costPrice,
           salePrice=excluded.salePrice,
           stock=excluded.stock,
+          barcode=excluded.barcode,
           updatedAt=excluded.updatedAt,
           deletedAt=excluded.deletedAt,
           isSynced=1,
@@ -51,6 +52,7 @@ function registerProductSyncHandlers() {
           r.costPrice,
           r.salePrice,
           r.stock,
+          r.barcode ?? null,
           r.createdAt,
           r.updatedAt,
           r.deletedAt,
