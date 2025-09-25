@@ -135,10 +135,18 @@ addColumnIfMissing("purchase_items", "deletedAt", "TEXT");
 addColumnIfMissing("purchase_items", "barcode", "TEXT");
 addColumnIfMissing("purchase_items", "mrp", "REAL");
 addColumnIfMissing("purchase_items", "billedValue", "REAL");
+addColumnIfMissing("purchase_items", "batchNo", "TEXT");
+addColumnIfMissing("purchase_items", "mfgDate", "TEXT");
+addColumnIfMissing("purchase_items", "expiryDate", "TEXT");
+addColumnIfMissing("purchase_items", "discountType", "TEXT");
+addColumnIfMissing("purchase_items", "lineNo", "INTEGER");
 
 // Purchase Items Index
 db.prepare(
   `CREATE INDEX IF NOT EXISTS idx_purchase_items_synced ON purchase_items(isSynced)`
+).run();
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_purchase_items_purchase ON purchase_items(purchaseId, lineNo)`
 ).run();
 db.prepare(
   `CREATE INDEX IF NOT EXISTS idx_purchase_items_dirty 

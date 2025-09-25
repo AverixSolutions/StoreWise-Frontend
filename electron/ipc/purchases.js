@@ -28,60 +28,72 @@ function registerPurchaseHandlers() {
     let totalAmount = 0;
 
     const insertPurchase = db.prepare(`
-      INSERT INTO purchases (
-        id, slNo, userId, licenseId, billNo, supplierName, department,
-        debitAccount, natureOfEntry, purchaseDate, entryTime,
-        totalAmount, discount, createdAt, isSynced
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
-    `);
+    INSERT INTO purchases (
+      id, slNo, userId, licenseId, billNo, supplierId, supplierName, department,
+      debitAccount, natureOfEntry, purchaseDate, entryTime,
+      totalAmount, discount, createdAt, isSynced
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+  `);
 
     const insertItem = db.prepare(`
-      INSERT INTO purchase_items (
-        id, purchaseId, productId, barcode, quantity, unit, rate, mrp,
-        taxPercent, taxAmount, discount, salePrice, profit, totalCost, billedValue,
-        createdAt, updatedAt, isSynced
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
-    `);
+    INSERT INTO purchase_items (
+      id, purchaseId, productId, barcode, quantity, unit, rate, mrp,
+      taxPercent, taxAmount, discount, salePrice, profit, totalCost, billedValue,
+      batchNo, mfgDate, expiryDate, discountType, lineNo,
+      createdAt, updatedAt, isSynced
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+  `);
 
     const trx = db.transaction((purchase, items) => {
-      items.forEach((item) => {
-        const taxPercentValue = parseInt(item.taxPercent.replace("P", "")) || 0;
+      items.forEach((item, index) => {
+        const taxPercentValue =
+          parseInt(String(item.taxPercent).replace("P", "")) || 0;
         const taxAmount = item.rate * item.quantity * (taxPercentValue / 100);
         const totalCost = item.rate * item.quantity + taxAmount;
 
-        // profit% → salePrice
+        // optional profit% -> salePrice (UI already sends salePrice; this is defensive)
         let salePrice = item.salePrice;
         if (item.profitPercent) {
           salePrice =
-            (item.rate + taxAmount / item.quantity) *
+            (item.rate + taxAmount / Math.max(1, item.quantity)) *
             (1 + item.profitPercent / 100);
         }
 
-        const profit = salePrice
-          ? salePrice - (item.rate + taxAmount / item.quantity)
-          : null;
-        const billedValue = totalCost - (item.discount || 0);
+        const discountAbs =
+          item.discountType === "PCT"
+            ? totalCost * (Math.max(0, Math.min(100, item.discount)) / 100)
+            : item.discount || 0;
 
+        const profit = salePrice
+          ? salePrice - (item.rate + taxAmount / Math.max(1, item.quantity))
+          : null;
+
+        const billedValue = Math.max(0, totalCost - discountAbs);
         totalAmount += billedValue;
 
         insertItem.run(
           uuidv4(),
           newId,
           item.productId,
-          item.barcode || item.code,
+          item.barcode || item.code || null,
           item.quantity,
           item.unit,
           item.rate,
           item.mrp || null,
           item.taxPercent,
           taxAmount,
-          item.discount || 0,
+          discountAbs,
           salePrice || null,
           profit,
           totalCost,
           billedValue,
+          item.batchNo || null,
+          item.mfgDate || null,
+          item.expiryDate || null,
+          item.discountType || "ABS",
+          item.lineNo || index + 1,
           now,
           now
         );
@@ -93,6 +105,7 @@ function registerPurchaseHandlers() {
         purchase.userId,
         purchase.licenseId,
         purchase.billNo || null,
+        purchase.supplierId || null,
         purchase.supplierName || null,
         purchase.department || null,
         purchase.debitAccount || null,
@@ -103,6 +116,30 @@ function registerPurchaseHandlers() {
         purchase.discount || 0,
         now
       );
+
+      // Ledger (+) payable to supplier
+      if (purchase.supplierId) {
+        db.prepare(
+          `
+        INSERT INTO supplier_transactions
+        (id, licenseId, supplierId, kind, refId, refNo, date, amount, sign, notes, createdAt, updatedAt, isSynced)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?, 0)
+        `
+        ).run(
+          uuidv4(),
+          purchase.licenseId,
+          purchase.supplierId,
+          "PURCHASE",
+          newId,
+          purchase.billNo || null,
+          now,
+          Math.max(0, totalAmount - (purchase.discount || 0)),
+          1,
+          "Purchase",
+          now,
+          now
+        );
+      }
     });
 
     trx(purchase, items);

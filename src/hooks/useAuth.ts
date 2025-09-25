@@ -1,9 +1,17 @@
-// src/hooks/useAuth.ts (Updated)
+// src/hooks/useAuth.ts
+console.log("useAuth.ts loaded");
+
 import api from "@/lib/axios";
 import { stopProductsSync, startProductsSync } from "@/sync/productsSync";
 import { bootstrapProducts } from "@/bootstrap/products";
-import { bootstrapSuppliers } from "@/bootstrap/suppliers";
 import { stopSuppliersSync, startSuppliersSync } from "@/sync/suppliersSync";
+import {
+  initSyncRegistry,
+  getManager,
+  createProductsManager,
+  createSuppliersManager,
+} from "@/sync/registry";
+import { bootstrapSuppliers } from "@/bootstrap/suppliers";
 
 interface LoginResponse {
   token: string;
@@ -18,9 +26,11 @@ interface LoginResponse {
   };
 }
 
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export async function login(userId: string, password: string, role: string) {
   if (!navigator.onLine) {
-    throw new Error("⚠️ No internet connection. Please connect to login.");
+    throw new Error("No internet connection. Please connect to login.");
   }
 
   const res = await api.post<LoginResponse>("/auth/login", {
@@ -42,17 +52,70 @@ export async function login(userId: string, password: string, role: string) {
     localStorage.setItem("licenseId", data.user.licenseId);
 
   try {
-    // Bootstrap products
-    await bootstrapProducts();
-    stopProductsSync();
-    startProductsSync();
+    try {
+      initSyncRegistry((window as any).electronAPI);
+    } catch (err) {
+      console.error("Failed to initialize sync registry:", err);
+    }
 
-    // Bootstrap suppliers
-    await bootstrapSuppliers();
-    stopSuppliersSync();
-    startSuppliersSync();
+    try {
+      try {
+        stopProductsSync();
+      } catch {}
+      startProductsSync();
+      await delay(100);
+    } catch (err) {
+      console.error("Failed to start products sync:", err);
+    }
+
+    try {
+      await bootstrapProducts();
+    } catch (err) {
+      console.error("Products bootstrap failed (continuing):", err);
+    }
+
+    try {
+      try {
+        stopSuppliersSync();
+      } catch {}
+      startSuppliersSync();
+      await delay(100);
+    } catch (err) {
+      console.error("Failed to start suppliers sync:", err);
+    }
+
+    try {
+      await bootstrapSuppliers();
+    } catch (err) {
+      console.error("Suppliers bootstrap failed (continuing):", err);
+    }
+
+    try {
+      const pMgr = getManager("products");
+      const sMgr = getManager("suppliers");
+
+      if (!pMgr) {
+        console.warn(
+          "Products manager not found after start; attempting to create..."
+        );
+      }
+
+      setTimeout(async () => {
+        try {
+          const p = getManager("products");
+          const s = getManager("suppliers");
+          if (p) await p.triggerOnce();
+          await delay(300);
+          if (s) await s.triggerOnce();
+        } catch (err) {
+          console.error("Manual trigger failed:", err);
+        }
+      }, 3000);
+    } catch (err) {
+      console.error("Post-start registry check failed:", err);
+    }
   } catch (e) {
-    console.error("Bootstrap failed:", e);
+    console.error("Bootstrap/sync failed:", e);
   }
 
   return data.user;
@@ -60,30 +123,116 @@ export async function login(userId: string, password: string, role: string) {
 
 export async function logout() {
   if (!navigator.onLine) {
-    alert("⚠️ Cannot logout without internet connection.");
+    alert("Cannot logout without internet connection.");
     return;
   }
 
   const sessionId = localStorage.getItem("sessionId");
-
   if (!sessionId) {
-    console.warn("⚠️ No sessionId found in localStorage");
+    console.warn("No sessionId found in localStorage");
     return;
   }
 
+  // config
+  const MAX_WAIT_MS = 10_000;
+  const POLL_INTERVAL_MS = 500;
+
+  // helper: wait ms
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
   try {
-    stopProductsSync();
-    stopSuppliersSync();
+    try {
+      const pMgr = getManager("products");
+      const sMgr = getManager("suppliers");
 
-    await (window as any).electronAPI.wipeLocalData();
+      if (!pMgr) {
+        try {
+          createProductsManager();
+        } catch {}
+      }
+      if (!sMgr) {
+        try {
+          createSuppliersManager();
+        } catch {}
+      }
 
-    await api.post("/auth/logout", { sessionId });
+      const pm = getManager("products");
+      const sm = getManager("suppliers");
+      const triggers: Promise<void>[] = [];
+      if (pm?.triggerOnce) triggers.push(pm.triggerOnce());
+      if (sm?.triggerOnce) triggers.push(sm.triggerOnce());
+      Promise.allSettled(triggers).catch(() => {});
+    } catch (err) {
+      console.warn("Logout: error triggering managers (continuing):", err);
+    }
+
+    const licenseId = localStorage.getItem("licenseId");
+    if (!licenseId) {
+      console.warn("Logout: no licenseId, proceeding to logout");
+    } else {
+      const start = Date.now();
+      let ok = false;
+
+      while (Date.now() - start < MAX_WAIT_MS) {
+        const [dirtyProducts, dirtySuppliers] = await Promise.all([
+          (window as any).electronAPI
+            .getDirtyProducts(licenseId, 1)
+            .catch(() => []),
+          (window as any).electronAPI
+            .getDirtySuppliers(licenseId, 1)
+            .catch(() => []),
+        ]);
+
+        const pCount = (dirtyProducts && dirtyProducts.length) || 0;
+        const sCount = (dirtySuppliers && dirtySuppliers.length) || 0;
+
+        if (pCount === 0 && sCount === 0) {
+          ok = true;
+          break;
+        }
+
+        await wait(POLL_INTERVAL_MS);
+      }
+
+      if (!ok) {
+        alert(
+          "Unable to finish syncing local changes. Please try again after a moment (or check network). Logout cancelled."
+        );
+        return;
+      }
+    }
+
+    try {
+      try {
+        stopProductsSync();
+      } catch {}
+      try {
+        stopSuppliersSync();
+      } catch {}
+    } catch (err) {
+      console.warn("Logout: failed stopping sync managers:", err);
+    }
+
+    try {
+      await (window as any).electronAPI.wipeLocalData();
+    } catch (err) {
+      console.warn("Logout: failed wiping local data:", err);
+    }
+
+    try {
+      await api.post("/auth/logout", { sessionId });
+    } catch (err) {
+      console.warn("Logout: server logout failed (continuing):", err);
+    }
+
     localStorage.clear();
   } catch (err) {
-    console.error("❌ Logout failed:", err);
+    console.error("Logout encountered an error:", err);
 
-    localStorage.clear();
-    alert("Logout encountered an issue, but local data was cleared.");
+    try {
+      localStorage.clear();
+    } catch {}
+    alert("Logout encountered an issue. Local data cleared where possible.");
   }
 }
 

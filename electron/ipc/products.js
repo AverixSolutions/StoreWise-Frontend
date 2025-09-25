@@ -229,6 +229,71 @@ function registerProductHandlers() {
       )
       .get(licenseId, code);
   });
+
+  ipcMain.handle("bulk-update-product-prices", (event, updates) => {
+    if (!Array.isArray(updates) || updates.length === 0)
+      return { success: true, updated: 0 };
+
+    const now = new Date().toISOString();
+
+    const updateSale = db.prepare(`
+    UPDATE products
+    SET salePrice = ?, updatedAt = ?, isSynced = 0, syncedAt = NULL
+    WHERE id = ?
+  `);
+    const updateCostSale = db.prepare(`
+    UPDATE products
+    SET costPrice = ?, salePrice = ?, updatedAt = ?, isSynced = 0, syncedAt = NULL
+    WHERE id = ?
+  `);
+
+    const updateSaleUnit = db.prepare(`
+    UPDATE products
+    SET salePrice = ?, unit = ?, updatedAt = ?, isSynced = 0, syncedAt = NULL
+    WHERE id = ?
+  `);
+    const updateCostSaleUnit = db.prepare(`
+    UPDATE products
+    SET costPrice = ?, salePrice = ?, unit = ?, updatedAt = ?, isSynced = 0, syncedAt = NULL
+    WHERE id = ?
+  `);
+    const updateUnitOnly = db.prepare(`
+    UPDATE products
+    SET unit = ?, updatedAt = ?, isSynced = 0, syncedAt = NULL
+    WHERE id = ?
+  `);
+
+    const trx = db.transaction((items) => {
+      items.forEach((u) => {
+        const hasCost = typeof u.costPrice === "number";
+        const hasSale = typeof u.salePrice === "number";
+        const hasUnit =
+          typeof u.unit === "string" &&
+          ["NOS", "KG", "LTR", "MTR"].includes(u.unit);
+
+        if (hasCost && hasSale && hasUnit) {
+          updateCostSaleUnit.run(
+            u.costPrice,
+            u.salePrice,
+            u.unit,
+            now,
+            u.productId
+          );
+        } else if (hasCost && hasSale) {
+          updateCostSale.run(u.costPrice, u.salePrice, now, u.productId);
+        } else if (hasSale && hasUnit) {
+          updateSaleUnit.run(u.salePrice, u.unit, now, u.productId);
+        } else if (hasSale) {
+          updateSale.run(u.salePrice, now, u.productId);
+        } else if (hasUnit) {
+          updateUnitOnly.run(u.unit, now, u.productId);
+        }
+      });
+    });
+    trx(updates);
+
+    return { success: true, updated: updates.length };
+  });
 }
 
 module.exports = { registerProductHandlers };

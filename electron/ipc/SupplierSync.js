@@ -4,9 +4,9 @@ const db = require("../db");
 
 function registerSupplierSyncHandlers() {
   ipcMain.handle("get-dirty-suppliers", (event, licenseId, limit = 200) => {
-    console.log(
-      `Getting dirty suppliers for license: ${licenseId}, limit: ${limit}`
-    );
+    // console.log(
+    //   `Getting dirty suppliers for license: ${licenseId}, limit: ${limit}`
+    // );
 
     const result = db
       .prepare(
@@ -25,7 +25,7 @@ function registerSupplierSyncHandlers() {
       )
       .all(licenseId, limit);
 
-    console.log(`Found ${result.length} dirty suppliers`);
+    // console.log(`Found ${result.length} dirty suppliers`);
     return result;
   });
 

@@ -2,6 +2,7 @@
 "use client";
 
 import Header from "@/components/ui/Header";
+import { usePathname } from "next/navigation";
 import Sidebar from "@/components/ui/Sidebar";
 import SyncProvider from "@/components/SyncProvider";
 
@@ -11,13 +12,16 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const headerHeight = 72;
+  const pathname = usePathname();
+
+  const showSidebar = !pathname?.includes("/dashboard/purchase");
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
       <SyncProvider />
       <Header />
       <div className="flex flex-1 overflow-hidden">
-        <Sidebar topOffset={headerHeight} />
+        {showSidebar && <Sidebar topOffset={headerHeight} />}
         <main className="flex-1 p-6 overflow-y-auto">{children}</main>
       </div>
     </div>

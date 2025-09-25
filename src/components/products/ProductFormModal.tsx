@@ -166,7 +166,7 @@ export default function ProductFormModal({
         unit,
         tax,
         hsn: hsn || null,
-        costPrice: parseFloat(costPrice),
+        costPrice: costPrice ? parseFloat(costPrice) : 0,
         salePrice: salePrice ? parseFloat(salePrice) : null,
         stock: stock ? parseInt(stock, 10) : 0,
       };

@@ -17,6 +17,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("get-product-by-barcode", licenseId, barcode),
   getProductByCode: (licenseId, code) =>
     ipcRenderer.invoke("get-product-by-code", licenseId, code),
+  bulkUpdateProductPrices: (updates) =>
+    ipcRenderer.invoke("bulk-update-product-prices", updates),
 
   // Product sync
   getDirtyProducts: (licenseId, limit) =>

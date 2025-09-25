@@ -2,7 +2,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { DebugPanel } from "@/components/DebugPanel";
+import SyncInfoCard from "@/components/ui/SyncInfoCard";
 
 import {
   Package,
@@ -80,7 +80,8 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <DebugPanel />
+      {/* Sync Status Component */}
+      <SyncInfoCard />
     </div>
   );
 }

@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import SplashScreen from "@/components/ui/SplashScreen";
 import { getCurrentUser } from "@/hooks/useAuth";
-import { DebugPanel } from "@/components/DebugPanel";
 
 export default function HomePage() {
   const router = useRouter();
