@@ -19,7 +19,6 @@ function getNextPurchaseSlNo(licenseId) {
 }
 
 function registerPurchaseHandlers() {
-  // Create a purchase with items
   ipcMain.handle("create-purchase", (event, purchase, items) => {
     const newId = purchase.id || uuidv4();
     const now = new Date().toISOString();
@@ -31,9 +30,9 @@ function registerPurchaseHandlers() {
     INSERT INTO purchases (
       id, slNo, userId, licenseId, billNo, supplierId, supplierName, department,
       debitAccount, natureOfEntry, purchaseDate, entryTime,
-      totalAmount, discount, createdAt, isSynced
+      totalAmount, discount, createdAt, isSynced, purchaseType
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
   `);
 
     const insertItem = db.prepare(`
@@ -47,13 +46,31 @@ function registerPurchaseHandlers() {
   `);
 
     const trx = db.transaction((purchase, items) => {
+      insertPurchase.run(
+        newId,
+        slNo,
+        purchase.userId,
+        purchase.licenseId,
+        purchase.billNo || null,
+        purchase.supplierId || null,
+        purchase.supplierName || null,
+        purchase.department || null,
+        purchase.debitAccount || null,
+        purchase.natureOfEntry || null,
+        purchase.purchaseDate || now,
+        purchase.entryTime || now,
+        0,
+        purchase.discount || 0,
+        now,
+        purchase.purchaseType || "CREDIT"
+      );
+
       items.forEach((item, index) => {
         const taxPercentValue =
           parseInt(String(item.taxPercent).replace("P", "")) || 0;
         const taxAmount = item.rate * item.quantity * (taxPercentValue / 100);
         const totalCost = item.rate * item.quantity + taxAmount;
 
-        // optional profit% -> salePrice (UI already sends salePrice; this is defensive)
         let salePrice = item.salePrice;
         if (item.profitPercent) {
           salePrice =
@@ -99,26 +116,13 @@ function registerPurchaseHandlers() {
         );
       });
 
-      insertPurchase.run(
-        newId,
-        slNo,
-        purchase.userId,
-        purchase.licenseId,
-        purchase.billNo || null,
-        purchase.supplierId || null,
-        purchase.supplierName || null,
-        purchase.department || null,
-        purchase.debitAccount || null,
-        purchase.natureOfEntry || null,
-        purchase.purchaseDate || now,
-        purchase.entryTime || now,
-        totalAmount,
-        purchase.discount || 0,
-        now
-      );
+      db.prepare(
+        `UPDATE purchases
+         SET totalAmount = ?, discount = ?
+         WHERE id = ?`
+      ).run(totalAmount, purchase.discount || 0, newId);
 
-      // Ledger (+) payable to supplier
-      if (purchase.supplierId) {
+      if (purchase.purchaseType === "CREDIT" && purchase.supplierId) {
         db.prepare(
           `
         INSERT INTO supplier_transactions
@@ -146,7 +150,6 @@ function registerPurchaseHandlers() {
     return { success: true, purchaseId: newId, slNo, totalAmount };
   });
 
-  // Get purchases
   ipcMain.handle(
     "get-purchases",
     (event, licenseId, { page = 1, pageSize = 10 } = {}) => {
@@ -175,7 +178,6 @@ function registerPurchaseHandlers() {
     }
   );
 
-  // Mark purchases as synced
   ipcMain.handle("mark-purchases-synced", (event, ids, serverSyncedAt) => {
     const ts = serverSyncedAt || new Date().toISOString();
     const trx = db.transaction((ids) => {

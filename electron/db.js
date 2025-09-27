@@ -83,8 +83,10 @@ addColumnIfMissing("purchases", "deletedAt", "TEXT");
 addColumnIfMissing("purchases", "entryTime", "TEXT");
 addColumnIfMissing("purchases", "supplierName", "TEXT");
 addColumnIfMissing("purchases", "department", "TEXT");
+addColumnIfMissing("purchases", "billNo", "TEXT");
 addColumnIfMissing("purchases", "debitAccount", "TEXT");
 addColumnIfMissing("purchases", "natureOfEntry", "TEXT");
+addColumnIfMissing("purchases", "purchaseType", "TEXT");
 
 // Purchase Index
 db.prepare(
@@ -103,6 +105,106 @@ db.prepare(
 db.prepare(
   `CREATE INDEX IF NOT EXISTS idx_purchases_dirty 
   ON purchases(licenseId, createdAt, syncedAt, deletedAt)`
+).run();
+
+// --- Purchase Returns Table ---
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS purchase_returns (
+    id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    slNo INTEGER,
+    userId TEXT,
+    licenseId TEXT NOT NULL,
+    supplierId TEXT,
+    supplierName TEXT,
+    billNo TEXT,
+    department TEXT,
+    debitAccount TEXT,
+    natureOfEntry TEXT,
+    returnDate TEXT DEFAULT (datetime('now')),
+    entryTime TEXT,
+    totalAmount REAL NOT NULL,
+    discount REAL DEFAULT 0,
+    purchaseType TEXT,       -- CASH or CREDIT (usually CREDIT for returns too)
+    createdAt TEXT,
+    updatedAt TEXT,
+    isSynced INTEGER DEFAULT 0,
+    syncedAt TEXT,
+    deletedAt TEXT
+  )
+`
+).run();
+
+db.prepare(
+  `
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_purchase_returns_slno
+  ON purchase_returns(licenseId, slNo)
+`
+).run();
+
+db.prepare(
+  `
+  CREATE INDEX IF NOT EXISTS idx_purchase_returns_license_date
+  ON purchase_returns(licenseId, returnDate)
+`
+).run();
+
+db.prepare(
+  `
+  CREATE INDEX IF NOT EXISTS idx_purchase_returns_supplier
+  ON purchase_returns(licenseId, supplierId)
+`
+).run();
+
+// --- Purchase Return Items Table ---
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS purchase_return_items (
+    id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    returnId TEXT NOT NULL,
+    productId TEXT NOT NULL,
+    barcode TEXT,
+    quantity INTEGER NOT NULL,
+    unit TEXT NOT NULL CHECK (unit IN ('KG','NOS','LTR','MTR')),
+    rate REAL NOT NULL,
+    mrp REAL,
+    taxPercent TEXT NOT NULL CHECK (taxPercent IN ('NT','P5','P12','P18','P28')),
+    taxAmount REAL NOT NULL,
+    discount REAL DEFAULT 0,
+    discountType TEXT,     -- 'ABS' | 'PCT'
+    salePrice REAL,
+    profit REAL,
+    totalCost REAL NOT NULL,
+    billedValue REAL,
+    batchNo TEXT,
+    mfgDate TEXT,
+    expiryDate TEXT,
+    lineNo INTEGER,
+    createdAt TEXT,
+    updatedAt TEXT,
+    isSynced INTEGER DEFAULT 0,
+    syncedAt TEXT,
+    deletedAt TEXT,
+    FOREIGN KEY (returnId) REFERENCES purchase_returns(id) ON DELETE CASCADE
+  )
+`
+).run();
+
+db.prepare(
+  `
+  CREATE INDEX IF NOT EXISTS idx_purchase_return_items_return
+  ON purchase_return_items(returnId, lineNo)
+`
+).run();
+
+// --- Return sequence per license ---
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS purchase_return_sequence (
+    licenseId TEXT PRIMARY KEY,
+    lastSlNo INTEGER DEFAULT 0
+  )
+`
 ).run();
 
 // Purchase Items Table

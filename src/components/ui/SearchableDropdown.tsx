@@ -1,6 +1,13 @@
 // src/components/ui/SearchableDropdown.tsx
 "use client";
-import { useState, useRef, useEffect, forwardRef } from "react";
+import {
+  useState,
+  useRef,
+  useEffect,
+  useLayoutEffect,
+  forwardRef,
+} from "react";
+import { createPortal } from "react-dom";
 import { ChevronDown } from "lucide-react";
 
 interface Option {
@@ -14,6 +21,10 @@ interface SearchableDropdownProps {
   options: Option[];
   placeholder?: string;
   className?: string;
+  controlClassName?: string;
+  menuClassName?: string;
+  inputClassName?: string;
+  optionClassName?: string;
   allowCustom?: boolean;
   onCreate?: (value: string) => void;
   onEnter?: () => void;
@@ -30,6 +41,10 @@ const SearchableDropdown = forwardRef<
       options,
       placeholder = "Select...",
       className = "",
+      controlClassName = "",
+      menuClassName = "",
+      inputClassName = "",
+      optionClassName = "",
       allowCustom,
       onCreate,
       onEnter,
@@ -38,8 +53,20 @@ const SearchableDropdown = forwardRef<
   ) => {
     const [isOpen, setIsOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
-    const dropdownRef = useRef<HTMLDivElement>(null);
+    const rootRef = useRef<HTMLDivElement>(null);
+    const buttonRef = useRef<HTMLButtonElement>(null);
     const searchInputRef = useRef<HTMLInputElement>(null);
+    const menuRef = useRef<HTMLDivElement>(null);
+
+    // Merge forwarded ref with our local buttonRef
+    useEffect(() => {
+      if (!ref) return;
+      if (typeof ref === "function") {
+        ref(buttonRef.current);
+      } else {
+        (ref as any).current = buttonRef.current;
+      }
+    }, [ref]);
 
     const selectedLabel =
       options.find((opt) => opt.value === value)?.label || placeholder;
@@ -57,21 +84,25 @@ const SearchableDropdown = forwardRef<
       onEnter?.();
     };
 
+    // Close when clicking outside
     useEffect(() => {
       function handleClickOutside(e: PointerEvent) {
+        const t = e.target as Node | null;
+        // If click is inside button/root OR inside the portaled menu, ignore
         if (
-          dropdownRef.current &&
-          !dropdownRef.current.contains(e.target as Node)
+          (rootRef.current && rootRef.current.contains(t)) ||
+          (menuRef.current && menuRef.current.contains(t))
         ) {
-          setIsOpen(false);
+          return;
         }
+        setIsOpen(false);
       }
       document.addEventListener("pointerdown", handleClickOutside);
-      return () => {
+      return () =>
         document.removeEventListener("pointerdown", handleClickOutside);
-      };
     }, []);
 
+    // Focus search on open
     useEffect(() => {
       if (isOpen) {
         setSearchTerm("");
@@ -83,61 +114,76 @@ const SearchableDropdown = forwardRef<
       }
     }, [isOpen]);
 
-    const handleOptionClick = (optionValue: string) => {
-      onChange(optionValue);
-      setIsOpen(false);
-      onEnter?.();
-    };
-
-    const handleClearSelection = () => {
-      onChange("");
-      setIsOpen(false);
-      onEnter?.();
-    };
-
+    // Open with keyboard
     const handleButtonKeyDown: React.KeyboardEventHandler<HTMLButtonElement> = (
       e
     ) => {
       if (isOpen) return;
       if (e.key === "Enter") {
         e.preventDefault();
-        if (e.shiftKey) {
-          return;
-        }
+        if (e.shiftKey) return;
         setIsOpen(true);
-        requestAnimationFrame(() => searchInputRef.current?.focus());
       } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault();
-        const ch = e.key;
         setIsOpen(true);
         requestAnimationFrame(() => {
-          setSearchTerm(ch);
+          setSearchTerm(e.key);
           searchInputRef.current?.focus();
         });
       } else if (e.key === "ArrowDown" || e.key === " ") {
         e.preventDefault();
         setIsOpen(true);
-        requestAnimationFrame(() => searchInputRef.current?.focus());
       }
     };
 
+    // ====== PORTAL POSITIONING ======
+    const [menuStyle, setMenuStyle] = useState<React.CSSProperties>({});
+    const recalcPosition = () => {
+      const btn = buttonRef.current;
+      if (!btn) return;
+      const rect = btn.getBoundingClientRect();
+      const maxHeight = Math.min(240, window.innerHeight - rect.bottom - 8); // keep on screen
+      setMenuStyle({
+        position: "fixed",
+        top: rect.bottom + 4,
+        left: Math.max(
+          8,
+          Math.min(rect.left, window.innerWidth - rect.width - 8)
+        ),
+        width: rect.width,
+        maxHeight,
+        zIndex: 9999,
+      } as React.CSSProperties);
+    };
+
+    useLayoutEffect(() => {
+      if (!isOpen) return;
+      recalcPosition();
+      const onAnyScroll = () => recalcPosition();
+      const onResize = () => recalcPosition();
+      // capture true to catch scrolls on nested containers
+      window.addEventListener("scroll", onAnyScroll, true);
+      window.addEventListener("resize", onResize);
+      return () => {
+        window.removeEventListener("scroll", onAnyScroll, true);
+        window.removeEventListener("resize", onResize);
+      };
+    }, [isOpen]);
+
     return (
-      <div className={`relative ${className}`} ref={dropdownRef}>
+      <div className={`relative ${className}`} ref={rootRef}>
         <button
-          ref={ref}
+          ref={buttonRef}
           type="button"
           onMouseDown={(e) => e.preventDefault()}
-          onClick={() => {
-            setIsOpen((prev) => {
-              const next = !prev;
-              if (next) {
-                requestAnimationFrame(() => searchInputRef.current?.focus());
-              }
-              return next;
-            });
-          }}
+          onClick={() => setIsOpen((p) => !p)}
           onKeyDown={handleButtonKeyDown}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-averix-red-light focus:border-transparent flex items-center justify-between bg-white hover:border-gray-400 transition-colors"
+          className={
+            "w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 " +
+            "focus:ring-averix-red-light focus:border-transparent flex items-center " +
+            "justify-between bg-white hover:border-gray-400 transition-colors " +
+            controlClassName
+          }
         >
           <span
             className={`truncate text-left ${
@@ -153,79 +199,118 @@ const SearchableDropdown = forwardRef<
           />
         </button>
 
-        {isOpen && (
-          <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-hidden">
-            <div className="sticky top-0 bg-white p-2 border-b border-gray-200">
-              <input
-                ref={searchInputRef}
-                type="text"
-                placeholder="Search..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-averix-red-light focus:border-transparent"
-                onMouseDown={(e) => e.stopPropagation()}
-                onKeyDown={(e) => {
-                  if (
-                    allowCustom &&
-                    e.key === "Enter" &&
-                    !filteredOptions.length
-                  ) {
-                    e.preventDefault();
-                    createFromSearch();
+        {/* ====== PORTAL MENU ====== */}
+        {isOpen &&
+          createPortal(
+            <div
+              ref={menuRef}
+              onPointerDown={(e) => e.stopPropagation()}
+              style={menuStyle}
+              className={
+                "bg-white border border-gray-200 rounded-md shadow-lg overflow-hidden " +
+                "max-h-60 flex flex-col " +
+                "z-[9999] " +
+                menuClassName
+              }
+            >
+              <div className="sticky top-0 bg-white p-2 border-b border-gray-200">
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  placeholder="Search..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className={
+                    "w-full border border-gray-300 rounded-md px-3 py-2 text-sm " +
+                    "focus:outline-none focus:ring-2 focus:ring-averix-red-light " +
+                    "focus:border-transparent " +
+                    inputClassName
                   }
-                }}
-              />
-            </div>
+                  onKeyDown={(e) => {
+                    if (
+                      allowCustom &&
+                      e.key === "Enter" &&
+                      !filteredOptions.length
+                    ) {
+                      e.preventDefault();
+                      createFromSearch();
+                    }
+                  }}
+                />
+              </div>
 
-            <div className="max-h-40 overflow-y-auto">
-              {value && (
-                <button
-                  type="button"
-                  onClick={handleClearSelection}
-                  className="w-full text-left px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 border-b border-gray-100 cursor-pointer"
-                >
-                  Clear selection
-                </button>
-              )}
-
-              {filteredOptions.length > 0 ? (
-                filteredOptions.map((opt) => (
+              <div className="overflow-y-auto">
+                {value && (
                   <button
-                    key={opt.value}
                     type="button"
-                    onClick={() => handleOptionClick(opt.value)}
-                    className={`w-full text-left px-3 py-2 text-sm transition-colors duration-150 cursor-pointer ${
-                      value === opt.value
-                        ? "bg-averix-red-light text-white font-medium"
-                        : "text-gray-900 hover:bg-gray-100"
-                    }`}
+                    onClick={() => {
+                      onChange("");
+                      setIsOpen(false);
+                      onEnter?.();
+                    }}
+                    className={
+                      "w-full text-left px-3 py-2 text-sm text-gray-500 " +
+                      "hover:bg-gray-100 border-b border-gray-100 cursor-pointer " +
+                      optionClassName
+                    }
                   >
-                    {opt.label}
+                    Clear selection
                   </button>
-                ))
-              ) : (
-                <div className="px-3 py-2 text-gray-400 text-sm text-center">
-                  No results found
-                </div>
-              )}
+                )}
 
-              {allowCustom && searchTerm.trim() && (
-                <button
-                  type="button"
-                  onClick={createFromSearch}
-                  className="w-full text-left px-3 py-2 text-sm text-averix-red-dark hover:bg-averix-red-light/10 border-t border-gray-100 cursor-pointer"
-                >
-                  Use "{searchTerm.trim()}"
-                </button>
-              )}
-            </div>
-          </div>
-        )}
+                {filteredOptions.length > 0 ? (
+                  filteredOptions.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => {
+                        onChange(opt.value);
+                        setIsOpen(false);
+                        onEnter?.();
+                      }}
+                      className={
+                        "w-full text-left px-3 py-2 text-sm transition-colors duration-150 cursor-pointer " +
+                        (value === opt.value
+                          ? "bg-averix-red-light text-white font-medium "
+                          : "text-gray-900 hover:bg-gray-100 ") +
+                        optionClassName
+                      }
+                    >
+                      {opt.label}
+                    </button>
+                  ))
+                ) : (
+                  <div
+                    className={
+                      "px-3 py-2 text-gray-400 text-sm text-center " +
+                      optionClassName
+                    }
+                  >
+                    No results found
+                  </div>
+                )}
+
+                {allowCustom && searchTerm.trim() && (
+                  <button
+                    type="button"
+                    onClick={createFromSearch}
+                    className={
+                      "w-full text-left px-3 py-2 text-sm text-averix-red-dark " +
+                      "hover:bg-averix-red-light/10 border-t border-gray-100 cursor-pointer " +
+                      optionClassName
+                    }
+                  >
+                    Use "{searchTerm.trim()}"
+                  </button>
+                )}
+              </div>
+            </div>,
+            document.body
+          )}
       </div>
     );
   }
 );
 
 SearchableDropdown.displayName = "SearchableDropdown";
-
 export default SearchableDropdown;
