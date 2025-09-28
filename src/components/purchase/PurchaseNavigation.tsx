@@ -10,7 +10,7 @@ export default function PurchaseNavigation({
 }: PurchaseNavigationProps) {
   return (
     <div className="bg-white border-b border-gray-200">
-      <div className="px-6 py-3 flex items-center justify-between">
+      <div className="px-0 py-3 flex items-center justify-between">
         <button
           onClick={() => onNavigate("/dashboard")}
           className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"

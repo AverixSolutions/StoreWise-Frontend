@@ -5,20 +5,16 @@ import { toDateInput, fromDateInput, round2 } from "./utils";
 import SearchableDropdown from "@/components/ui/SearchableDropdown";
 import CompactDropdown from "@/components/ui/CompactDropdown";
 
-// Normalized control classes for consistency
 const cellInput =
   "w-full h-8 px-2 text-xs border border-gray-300 rounded " +
   "focus:border-averix-red-dark focus:ring-1 focus:ring-averix-red-dark/20 " +
   "outline-none transition-colors";
 
-// Helper to display empty string until the user types
 const asDisplay = (n?: number | null) => (n === 0 || n ? String(n) : "");
 
-// Helper for displaying numbers with 2 decimal places (rounds floating-point errors)
 const asDisplay2 = (n?: number | null) =>
   n === 0 || n ? String(round2(n)) : "";
 
-// Parse number or undefined (keeps input visually empty)
 const parseNum = (e: React.ChangeEvent<HTMLInputElement>) => {
   const v = e.currentTarget.value;
   if (v === "") return undefined;
@@ -26,7 +22,16 @@ const parseNum = (e: React.ChangeEvent<HTMLInputElement>) => {
   return Number.isFinite(n) ? n : undefined;
 };
 
-// Parse number and round it
+const asDisplayInt = (n?: number | null) =>
+  n === 0 || n ? String(Math.round(n)) : "";
+
+const parseIntNum = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const v = e.currentTarget.value;
+  if (v === "") return undefined;
+  const n = e.currentTarget.valueAsNumber;
+  return Number.isFinite(n) ? Math.max(0, Math.round(n)) : undefined;
+};
+
 const parseRoundedNum = (e: React.ChangeEvent<HTMLInputElement>) => {
   const v = e.currentTarget.value;
   if (v === "") return undefined;
@@ -42,6 +47,11 @@ interface ItemTableRowProps {
   onUpdateRow: (index: number, patch: Partial<ItemRow>) => void;
   onRemoveRow: (index: number) => void;
   canRemove: boolean;
+  onGridKey: (
+    e: React.KeyboardEvent<HTMLElement>,
+    rowIndex: number,
+    col: any
+  ) => void;
 }
 
 export default function ItemTableRow({
@@ -52,6 +62,7 @@ export default function ItemTableRow({
   onUpdateRow,
   onRemoveRow,
   canRemove,
+  onGridKey,
 }: ItemTableRowProps) {
   const taxOptions = [
     { value: "NT", label: "No Tax" },
@@ -69,6 +80,11 @@ export default function ItemTableRow({
     { value: "MTR", label: "MTR" },
   ];
 
+  const lineTypeOptions = [
+    { value: "VALUED", label: "Valued" },
+    { value: "FREE", label: "Free" },
+  ];
+
   return (
     <tr
       className={`transition-all duration-200 hover:bg-blue-50/30 border-b border-gray-100 divide-x divide-gray-100 ${
@@ -83,7 +99,7 @@ export default function ItemTableRow({
           </span>
         </div>
       </td>
-      {/* Product: sticky just after Sl.NO */}
+      {/* Product: sticky Sl.NO */}
       <td className="px-2.5 py-2 min-w-[180px] sticky [left:var(--slw)] bg-inherit z-40 border-r border-gray-200">
         <div className="w-full">
           <SearchableDropdown
@@ -97,17 +113,14 @@ export default function ItemTableRow({
             className="w-full [&_*]:text-xs"
             controlClassName="h-8 text-xs px-2"
             menuClassName="text-xs"
+            buttonProps={{
+              "data-cell": `${idx}:product`,
+              onKeyDown: (e) => onGridKey(e, idx, "product"),
+            }}
           />
         </div>
       </td>
-      {/* Product Code (center text) */}
-      <td className="px-2.5 py-2 min-w-[90px] text-center">
-        <div className="w-full items-center">
-          <span className="inline-flex items-center text-center px-1.5 py-0.5 rounded text-[11px] font-mono bg-blue-50 text-blue-700 border">
-            {r.code || "—"}
-          </span>
-        </div>
-      </td>
+
       {/* Barcode (slightly taller) */}
       <td className="px-2.5 py-2 min-w-[110px]">
         <div className="w-full">
@@ -116,10 +129,12 @@ export default function ItemTableRow({
             value={r.barcode || ""}
             onChange={(e) => onUpdateRow(idx, { barcode: e.target.value })}
             placeholder="Barcode"
+            data-cell={`${idx}:barcode`}
+            onKeyDown={(e) => onGridKey(e, idx, "barcode")}
           />
         </div>
       </td>
-      {/* Quantity (slightly taller + no default 0 shown) */}
+      {/* Quantity */}
       <td className="px-2.5 py-2 min-w-[70px]">
         <div className="w-full">
           <input
@@ -128,7 +143,6 @@ export default function ItemTableRow({
             value={asDisplay(r.quantity)}
             onChange={(e) => onUpdateRow(idx, { quantity: parseNum(e) })}
             onBlur={(e) => {
-              // Optional: if empty on blur, snap to 0 internally
               if (e.currentTarget.value === "")
                 onUpdateRow(idx, { quantity: 0 });
             }}
@@ -137,6 +151,8 @@ export default function ItemTableRow({
             inputMode="numeric"
             onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
             placeholder="0"
+            data-cell={`${idx}:quantity`}
+            onKeyDown={(e) => onGridKey(e, idx, "quantity")}
           />
         </div>
       </td>
@@ -149,6 +165,10 @@ export default function ItemTableRow({
             options={unitOptions}
             placeholder="Unit"
             className="w-full [&_*]:text-xs [&_button]:h-8 [&_select]:h-8 [&_button]:px-2 [&_select]:px-2"
+            buttonProps={{
+              "data-cell": `${idx}:unit`,
+              onKeyDown: (e: any) => onGridKey(e, idx, "unit"),
+            }}
           />
         </div>
       </td>
@@ -169,21 +189,7 @@ export default function ItemTableRow({
           />
         </div>
       </td>
-      {/* MRP */}
-      <td className="px-2.5 py-2 min-w-[84px]">
-        <div className="w-full">
-          <input
-            className={cellInput}
-            type="number"
-            step="0.01"
-            value={asDisplay2(r.mrp)}
-            onChange={(e) => onUpdateRow(idx, { mrp: parseRoundedNum(e) ?? 0 })}
-            min="0"
-            inputMode="decimal"
-            placeholder="0.00"
-          />
-        </div>
-      </td>
+
       {/* Tax */}
       <td className="px-2.5 py-2 min-w-[84px]">
         <div className="w-full">
@@ -193,6 +199,10 @@ export default function ItemTableRow({
             options={taxOptions}
             placeholder="Tax"
             className="w-full [&_*]:text-xs [&_button]:h-8 [&_select]:h-8 [&_button]:px-2 [&_select]:px-2"
+            buttonProps={{
+              "data-cell": `${idx}:tax`,
+              onKeyDown: (e: any) => onGridKey(e, idx, "tax"),
+            }}
           />
         </div>
       </td>
@@ -264,52 +274,7 @@ export default function ItemTableRow({
           </div>
         </div>
       </td>
-      {/* Sale Price + Profit % side-by-side */}
-      <td className="px-2.5 py-2 min-w-[200px]">
-        <div className="grid grid-cols-[1fr_96px] gap-2 items-center">
-          <input
-            className={cellInput + " text-right"}
-            type="number"
-            step="0.01"
-            value={asDisplay2(r.salePrice)}
-            onChange={(e) =>
-              onUpdateRow(idx, { salePrice: parseRoundedNum(e) ?? 0 })
-            }
-            min={0}
-            inputMode="decimal"
-            onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
-            placeholder="Sale"
-          />
 
-          <div className="flex items-center gap-1">
-            <span className="text-[11px] text-gray-500">P%</span>
-            <input
-              className={cellInput + " text-right"}
-              type="number"
-              step="0.01"
-              value={asDisplay2(r.profitPercent)}
-              onChange={(e) =>
-                onUpdateRow(idx, { profitPercent: parseRoundedNum(e) ?? 0 })
-              }
-              min={0}
-              inputMode="decimal"
-              onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
-              placeholder="0"
-            />
-          </div>
-        </div>
-      </td>
-      {/* Batch */}
-      <td className="px-2.5 py-2 min-w-[90px]">
-        <div className="w-full">
-          <input
-            className={cellInput}
-            value={r.batchNo || ""}
-            onChange={(e) => onUpdateRow(idx, { batchNo: e.target.value })}
-            placeholder="Batch"
-          />
-        </div>
-      </td>
       {/* MFG Date */}
       <td className="px-2.5 py-2 min-w-[120px]">
         <div className="w-full">
@@ -334,6 +299,101 @@ export default function ItemTableRow({
               onUpdateRow(idx, { expiryDate: fromDateInput(e.target.value) })
             }
           />
+        </div>
+      </td>
+
+      {/* Sale Price + Profit % */}
+      <td className="px-2.5 py-2 min-w-[200px]">
+        <div className="grid grid-cols-[1fr_96px] gap-2 items-center">
+          <div className="flex items-center gap-1">
+            <span className="text-[11px] text-gray-500">P%</span>
+            <input
+              className={cellInput + " text-right"}
+              type="number"
+              step={1}
+              value={asDisplay2(r.profitPercent)}
+              onChange={(e) =>
+                onUpdateRow(idx, { profitPercent: parseRoundedNum(e) ?? 0 })
+              }
+              min={0}
+              inputMode="numeric"
+              onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
+              placeholder="0"
+              onKeyDown={(e) => {
+                const el = e.currentTarget;
+                if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  const cur = Number(el.value || 0);
+                  onUpdateRow(idx, { profitPercent: round2(cur + 1) });
+                } else if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  const cur = Number(el.value || 0);
+                  onUpdateRow(idx, {
+                    profitPercent: Math.max(0, round2(cur - 1)),
+                  });
+                } else if (e.key === "e" || e.key === "+" || e.key === "-") {
+                  e.preventDefault();
+                }
+              }}
+            />
+          </div>
+          <input
+            className={cellInput + " text-right"}
+            type="number"
+            step="0.01"
+            value={asDisplay2(r.salePrice)}
+            onChange={(e) =>
+              onUpdateRow(idx, { salePrice: parseRoundedNum(e) ?? 0 })
+            }
+            min={0}
+            inputMode="decimal"
+            onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
+            placeholder="Sale"
+          />
+        </div>
+      </td>
+      {/* MRP */}
+      <td className="px-2.5 py-2 min-w-[84px]">
+        <div className="w-full">
+          <input
+            className={cellInput}
+            type="number"
+            step={1}
+            value={asDisplayInt(r.mrp)}
+            onChange={(e) => onUpdateRow(idx, { mrp: parseIntNum(e) ?? 0 })}
+            min={0}
+            inputMode="numeric"
+            pattern="\d*"
+            onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
+            onKeyDown={(e) => {
+              if (e.key === "e" || e.key === "+" || e.key === "-")
+                e.preventDefault();
+            }}
+            placeholder="0"
+            data-cell={`${idx}:mrp`}
+          />
+        </div>
+      </td>
+      {/* Line Type */}
+      <td className="px-2.5 py-2 min-w-[80px] text-center">
+        <div className="w-full">
+          <CompactDropdown
+            value={r.lineType || "VALUED"}
+            onChange={(val) =>
+              onUpdateRow(idx, { lineType: (val as any) || "VALUED" })
+            }
+            options={lineTypeOptions}
+            placeholder="Type"
+            className="w-full [&_*]:text-xs [&_button]:h-8 [&_select]:h-8 [&_button]:px-2 [&_select]:px-2"
+          />
+        </div>
+      </td>
+      {/* Unit Value (incl. tax & discount) */}
+      <td className="px-2.5 py-2 min-w-[110px] text-center">
+        <div className="w-full text-center">
+          <span className="inline-flex items-center px-2 py-1 rounded-md bg-blue-50 text-blue-700 text-xs font-semibold">
+            ₹{round2(r.unitBilled || 0).toFixed(2)}
+          </span>
         </div>
       </td>
       {/* Total (center text) */}

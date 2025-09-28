@@ -190,6 +190,8 @@ db.prepare(
 `
 ).run();
 
+addColumnIfMissing("purchase_return_items", "effectiveUnitValue", "REAL");
+
 db.prepare(
   `
   CREATE INDEX IF NOT EXISTS idx_purchase_return_items_return
@@ -242,6 +244,8 @@ addColumnIfMissing("purchase_items", "mfgDate", "TEXT");
 addColumnIfMissing("purchase_items", "expiryDate", "TEXT");
 addColumnIfMissing("purchase_items", "discountType", "TEXT");
 addColumnIfMissing("purchase_items", "lineNo", "INTEGER");
+addColumnIfMissing("purchase_items", "isFree", "INTEGER DEFAULT 0");
+addColumnIfMissing("purchase_items", "effectiveUnitValue", "REAL");
 
 // Purchase Items Index
 db.prepare(
@@ -356,6 +360,50 @@ db.prepare(
 db.prepare(
   `CREATE INDEX IF NOT EXISTS idx_suppliers_dirty 
    ON suppliers(licenseId, updatedAt, syncedAt, deletedAt)`
+).run();
+
+// --- Purchase Holds (drafts) ---
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS purchase_holds (
+    id TEXT PRIMARY KEY,
+    licenseId TEXT NOT NULL,
+    userId TEXT,
+    holdNo INTEGER NOT NULL,
+    title TEXT,
+    headerJson TEXT NOT NULL,  -- JSON.stringify(header)
+    rowsJson   TEXT NOT NULL,  -- JSON.stringify(rows)
+    createdAt TEXT,
+    updatedAt TEXT,
+    isSynced INTEGER DEFAULT 0,
+    syncedAt TEXT,
+    deletedAt TEXT
+  )
+`
+).run();
+
+db.prepare(
+  `
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_purchase_holds_no
+  ON purchase_holds(licenseId, holdNo)
+`
+).run();
+
+db.prepare(
+  `
+  CREATE INDEX IF NOT EXISTS idx_purchase_holds_license
+  ON purchase_holds(licenseId, createdAt)
+`
+).run();
+
+// Per-license sequence for holds
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS purchase_hold_sequence (
+    licenseId TEXT PRIMARY KEY,
+    lastHoldNo INTEGER DEFAULT 0
+  )
+`
 ).run();
 
 // --- Supplier Ledger ---

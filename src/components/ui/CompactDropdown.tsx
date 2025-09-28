@@ -2,6 +2,7 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
 import { ChevronDown } from "lucide-react";
+import type React from "react";
 
 interface CompactDropdownProps {
   value: string;
@@ -9,6 +10,8 @@ interface CompactDropdownProps {
   options: { value: string; label: string }[];
   placeholder?: string;
   className?: string;
+  buttonProps?: React.ButtonHTMLAttributes<HTMLButtonElement> &
+    Record<string, any>;
 }
 
 export default function CompactDropdown({
@@ -17,6 +20,7 @@ export default function CompactDropdown({
   options,
   placeholder = "Select...",
   className = "",
+  buttonProps = {},
 }: CompactDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -41,6 +45,7 @@ export default function CompactDropdown({
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
+        {...buttonProps}
         className="w-full flex items-center justify-between border border-gray-300 rounded-md px-2 py-1.5 text-sm bg-white hover:border-averix-red-dark focus:border-averix-red-dark focus:ring-1 focus:ring-averix-red-dark/20 outline-none transition-colors"
       >
         <span className={selectedOption ? "text-gray-900" : "text-gray-500"}>

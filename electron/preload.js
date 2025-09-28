@@ -35,6 +35,18 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("get-purchases", licenseId, pagination),
   markPurchasesSynced: (ids, serverSyncedAt) =>
     ipcRenderer.invoke("mark-purchases-synced", ids, serverSyncedAt),
+  getNextPurchaseSlNo: (licenseId) =>
+    ipcRenderer.invoke("purchase:peek-next-slno", licenseId),
+
+  // ---- Purchase Holds ----
+  savePurchaseHold: (payload) =>
+    ipcRenderer.invoke("purchase-hold:save", payload),
+  listPurchaseHolds: (licenseId, pagination) =>
+    ipcRenderer.invoke("purchase-hold:list", licenseId, pagination),
+  getPurchaseHold: (id) => ipcRenderer.invoke("purchase-hold:get", id),
+  deletePurchaseHold: (id) => ipcRenderer.invoke("purchase-hold:delete", id),
+  getNextHoldNo: (licenseId) =>
+    ipcRenderer.invoke("purchase-hold:peek-next-no", licenseId),
 
   // Suppliers
   createSupplier: (payload) => ipcRenderer.invoke("supplier:create", payload),

@@ -14,6 +14,8 @@ export type DiscountType = "ABS" | "PCT";
 
 export type PurchaseType = "CASH" | "CREDIT";
 
+export type LineType = "VALUED" | "FREE";
+
 export interface ItemRow {
   lineNo: number;
   productId: string;
@@ -35,6 +37,8 @@ export interface ItemRow {
   batchNo?: string;
   mfgDate?: string | null;
   expiryDate?: string | null;
+  lineType?: LineType;
+  unitBilled?: number;
 }
 
 export interface HeaderForm {

@@ -6,6 +6,8 @@ import PurchaseNavigation from "@/components/purchase/PurchaseNavigation";
 import BillDetailsSection from "@/components/purchase/BillDetailsSection";
 import ItemsTableSection from "@/components/purchase/ItemsTableSection";
 import SupplierFormModal from "@/components/suppliers/SupplierFormModal";
+import HoldsModal from "@/components/purchase/HoldsModal";
+import PromptModal from "@/components/ui/PromptModal";
 import { HeaderForm, ItemRow, Product } from "@/components/purchase/types";
 import {
   createEmptyRow,
@@ -14,6 +16,53 @@ import {
   mapItems,
   round2,
 } from "@/components/purchase/utils";
+
+function normalizeHeaderFromHold(
+  saved: Partial<HeaderForm>,
+  suppliers: Array<{ id: string; name: string }>
+): HeaderForm {
+  const defaults: HeaderForm = {
+    billNo: "",
+    supplier: null,
+    department: "",
+    debitAccount: "",
+    natureOfEntry: "",
+    purchaseDate: new Date().toISOString(),
+    entryTime: new Date().toISOString(),
+    discount: 0,
+    purchaseType: "CREDIT",
+  };
+
+  let supplier: HeaderForm["supplier"] = null;
+  const raw = (saved as any)?.supplier;
+  if (raw) {
+    if (typeof raw === "string") {
+      supplier = suppliers.find((s) => s.id === raw) || null;
+    } else if (raw.id) {
+      const match = suppliers.find((s) => s.id === raw.id);
+      supplier = match ? match : { id: raw.id, name: raw.name ?? "" };
+    }
+  }
+
+  return {
+    ...defaults,
+    ...saved,
+    supplier,
+    purchaseDate: saved?.purchaseDate
+      ? new Date(saved.purchaseDate).toISOString()
+      : defaults.purchaseDate,
+    entryTime: saved?.entryTime
+      ? new Date(saved.entryTime).toISOString()
+      : defaults.entryTime,
+    discount: Number.isFinite(saved?.discount as number)
+      ? Math.max(0, Number(saved!.discount))
+      : 0,
+    purchaseType:
+      saved?.purchaseType === "CASH" || saved?.purchaseType === "CREDIT"
+        ? saved.purchaseType
+        : "CREDIT",
+  };
+}
 
 export default function PurchasePage() {
   const router = useRouter();
@@ -30,6 +79,7 @@ export default function PurchasePage() {
     Array<{ id: string; name: string }>
   >([]);
   const [showSupplierModal, setShowSupplierModal] = useState(false);
+  const [nextEntryNo, setNextEntryNo] = useState<number | null>(null);
 
   const [header, setHeader] = useState<HeaderForm>({
     billNo: "",
@@ -46,6 +96,10 @@ export default function PurchasePage() {
   const [rows, setRows] = useState<ItemRow[]>([createEmptyRow(1)]);
   const [isDirty, setIsDirty] = useState(false);
 
+  const [showHolds, setShowHolds] = useState(false);
+  const [showTitlePrompt, setShowTitlePrompt] = useState(false);
+  const [defaultHoldTitle, setDefaultHoldTitle] = useState<string>("");
+
   useEffect(() => {
     (async () => {
       const res = await (window as any).electronAPI.getProducts(licenseId, {
@@ -53,6 +107,13 @@ export default function PurchasePage() {
         pageSize: 200,
       });
       setProducts(res.products);
+    })();
+
+    (async () => {
+      const res = await (window as any).electronAPI.getNextPurchaseSlNo(
+        licenseId
+      );
+      setNextEntryNo(res?.nextSlNo ?? 1);
     })();
   }, [licenseId]);
 
@@ -107,6 +168,7 @@ export default function PurchasePage() {
         dType: r.discountType,
         d: r.discount,
         profitPercent: r.profitPercent,
+        lineType: r.lineType,
       }))
     ),
   ]);
@@ -134,6 +196,48 @@ export default function PurchasePage() {
     updateCostFromPurchase: true,
     updateUnitFromPurchase: true,
   };
+
+  async function saveHold(title?: string) {
+    const payload = {
+      id: undefined as string | undefined,
+      licenseId,
+      userId,
+      title: title || undefined,
+      header,
+      rows,
+    };
+
+    const res = await (window as any).electronAPI.savePurchaseHold(payload);
+    if (res?.success) {
+      alert(`✅ Held as #${res.holdNo}${title ? ` • ${title}` : ""}`);
+      resetAll();
+      setShowHolds(true);
+    }
+  }
+
+  function handleHold() {
+    setDefaultHoldTitle(header.billNo || "");
+    setShowTitlePrompt(true);
+  }
+
+  function handleShowHolds() {
+    setShowHolds(true);
+  }
+
+  async function handleResumeHold(holdId: string) {
+    if (suppliers.length === 0) {
+      await loadSuppliers();
+    }
+
+    const res = await (window as any).electronAPI.getPurchaseHold(holdId);
+    if (res?.success && res.hold) {
+      const normalized = normalizeHeaderFromHold(res.hold.header, suppliers);
+      setHeader(normalized);
+      setRows(res.hold.rows);
+      setShowHolds(false);
+      setIsDirty(true);
+    }
+  }
 
   const handleSave = async () => {
     const items = mapItems(rows);
@@ -165,6 +269,13 @@ export default function PurchasePage() {
 
     if (res?.success) {
       alert(`✅ Saved! SlNo: ${res.slNo}, Total: ${res.totalAmount}`);
+
+      try {
+        const peek = await (window as any).electronAPI.getNextPurchaseSlNo(
+          licenseId
+        );
+        setNextEntryNo(peek?.nextSlNo ?? null);
+      } catch {}
 
       if (priceUpdateSettings.updatePricesAfterSave) {
         const priceUpdates = rows
@@ -274,6 +385,18 @@ export default function PurchasePage() {
     return () => window.removeEventListener("beforeunload", handler);
   }, [isDirty]);
 
+  // Ctrl/⌘+S to Save
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        handleSave();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [header, rows]);
+
   function updateRow(index: number, patch: Partial<ItemRow>) {
     setRows((prev) =>
       prev.map((r, i) => (i === index ? { ...r, ...patch } : r))
@@ -302,11 +425,11 @@ export default function PurchasePage() {
   }
 
   return (
-    <div className="h-[calc(100vh-72px)] flex flex-col bg-gray-50">
+    <div className="flex h-screen flex-col bg-gray-50">
       <PurchaseNavigation onNavigate={tryNavigate} />
 
-      <div className="flex-1 overflow-hidden p-6">
-        <div className="grid h-full grid-cols-12 gap-6">
+      <div className="flex-1 min-h-0 overflow-hidden p-0">
+        <div className="grid h-full grid-cols-[300px_1fr]">
           <BillDetailsSection
             header={header}
             setHeader={setHeader}
@@ -316,6 +439,7 @@ export default function PurchasePage() {
             grandTotal={grandTotal}
             onSave={handleSave}
             onCancel={handleCancel}
+            entryNo={nextEntryNo ?? undefined}
           />
 
           <ItemsTableSection
@@ -328,10 +452,13 @@ export default function PurchasePage() {
             subTotal={subTotal}
             grandTotal={grandTotal}
             headerDiscount={header.discount}
+            onHold={handleHold}
+            onShowHolds={handleShowHolds}
           />
         </div>
       </div>
 
+      {/* Supplier modal */}
       {showSupplierModal && (
         <SupplierFormModal
           isOpen={showSupplierModal}
@@ -342,6 +469,29 @@ export default function PurchasePage() {
           }}
         />
       )}
+
+      {/* Holds list */}
+      <HoldsModal
+        isOpen={showHolds}
+        onClose={() => setShowHolds(false)}
+        licenseId={licenseId}
+        onResume={handleResumeHold}
+      />
+
+      {/* Title prompt */}
+      <PromptModal
+        isOpen={showTitlePrompt}
+        title="Save as Hold"
+        label="Optional title"
+        placeholder="e.g., Afternoon stock"
+        defaultValue={defaultHoldTitle}
+        confirmText="Save Hold"
+        onCancel={() => setShowTitlePrompt(false)}
+        onConfirm={(val) => {
+          setShowTitlePrompt(false);
+          saveHold(val.trim());
+        }}
+      />
     </div>
   );
 }

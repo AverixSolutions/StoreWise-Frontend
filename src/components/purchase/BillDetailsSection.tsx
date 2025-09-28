@@ -11,11 +11,10 @@ import {
   Clock3,
   IndianRupee,
   Wallet,
-  CreditCard,
 } from "lucide-react";
 import { HeaderForm } from "./types";
-import { toLocalInput, fromLocalInput } from "./utils";
 import SearchableDropdown from "@/components/ui/SearchableDropdown";
+import { toLocalDate, toLocalTime, fromDateTime } from "./utils";
 
 interface BillDetailsSectionProps {
   header: HeaderForm;
@@ -26,6 +25,7 @@ interface BillDetailsSectionProps {
   grandTotal: number;
   onSave: () => void;
   onCancel: () => void;
+  entryNo?: number;
 }
 
 const labelCls =
@@ -49,9 +49,10 @@ export default function BillDetailsSection({
   grandTotal,
   onSave,
   onCancel,
+  entryNo,
 }: BillDetailsSectionProps) {
   return (
-    <section className="col-span-3 bg-white rounded-xl shadow-lg border border-gray-100 p-4 space-y-4 overflow-y-auto no-scrollbar">
+    <section className="col-span-1 bg-white max-w-[300px] border border-gray-200 -mt-px p-4 space-y-4 overflow-y-auto no-scrollbar">
       {/* Title */}
       <div className="flex items-center gap-2">
         <Receipt className="w-5 h-5 text-averix-red-dark" />
@@ -59,6 +60,59 @@ export default function BillDetailsSection({
       </div>
 
       <div className="space-y-3">
+        <div className="flex items-center gap-3 justify-center">
+          {/* Entry No */}
+          <div>
+            <label className={labelCls}>
+              <Receipt className="w-3.5 h-3.5" />
+              Entry No
+            </label>
+            <input
+              className={inputBase + " bg-gray-50 text-gray-700"}
+              value={entryNo ?? "—"}
+              readOnly
+              disabled
+            />
+          </div>
+          {/* Purchase Type */}
+          <div>
+            <label className={labelCls}>
+              <Wallet className="w-3.5 h-3.5" />
+              Purchase Type
+            </label>
+            <div className="inline-flex rounded-md overflow-hidden border border-gray-300">
+              <button
+                type="button"
+                onClick={() =>
+                  setHeader((s) => ({ ...s, purchaseType: "CASH" }))
+                }
+                className={
+                  "px-3 h-9 text-sm " +
+                  (header.purchaseType === "CASH"
+                    ? "bg-averix-red-dark text-white cursor-pointer"
+                    : "bg-white text-gray-700 hover:bg-gray-50 cursor-pointer")
+                }
+              >
+                Cash
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setHeader((s) => ({ ...s, purchaseType: "CREDIT" }))
+                }
+                className={
+                  "px-3 h-9 text-sm border-l border-gray-300 " +
+                  (header.purchaseType === "CREDIT"
+                    ? "bg-averix-red-dark text-white cursor-pointer"
+                    : "bg-white text-gray-700 hover:bg-gray-50 cursor-pointer")
+                }
+              >
+                Credit
+              </button>
+            </div>
+          </div>
+        </div>
+
         {/* Bill No */}
         <div>
           <label className={labelCls}>
@@ -79,7 +133,65 @@ export default function BillDetailsSection({
             />
           </div>
         </div>
+        {/* Dates */}
 
+        <div className="grid grid-cols-2 gap-3 min-w-0">
+          {/* Purchase Date  */}
+          <div className="min-w-0">
+            <label className={labelCls}>
+              <CalendarClock className="w-3.5 h-3.5" />
+              Purchase Date
+            </label>
+            <div className="grid grid-cols-[1fr_auto] gap-2">
+              <input
+                className={inputBase + " text-xs px-2"}
+                type="date"
+                value={toLocalDate(header.purchaseDate)}
+                onChange={(e) => {
+                  const d = e.target.value;
+                  const t = toLocalTime(header.purchaseDate);
+                  setHeader((s) => ({
+                    ...s,
+                    purchaseDate: fromDateTime(d, t),
+                  }));
+                }}
+              />
+              <input
+                className={inputBase + " text-xs px-2 w-[90px]"}
+                type="time"
+                value={toLocalTime(header.purchaseDate)}
+                onChange={(e) => {
+                  const t = e.target.value;
+                  const d = toLocalDate(header.purchaseDate);
+                  setHeader((s) => ({
+                    ...s,
+                    purchaseDate: fromDateTime(d, t),
+                  }));
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Entry date */}
+          <div className="min-w-0">
+            <label className={labelCls}>
+              <CalendarClock className="w-3.5 h-3.5" />
+              Entry Date
+            </label>
+            <div className="grid grid-cols-[1fr_auto] gap-2">
+              <input
+                className={inputBase + " text-xs px-2"}
+                type="date"
+                value={toLocalDate(header.entryTime)}
+                onChange={(e) => {
+                  const d = e.target.value;
+                  const t = toLocalTime(header.entryTime);
+                  setHeader((s) => ({ ...s, entryTime: fromDateTime(d, t) }));
+                }}
+              />
+            </div>
+          </div>
+        </div>
         {/* Supplier + add */}
         <div>
           <label className={labelCls}>
@@ -99,7 +211,6 @@ export default function BillDetailsSection({
                   label: s.name,
                 }))}
                 placeholder="Select supplier..."
-                // compact control
                 controlClassName="h-9 text-sm px-2"
                 inputClassName="h-9 text-sm"
                 optionClassName="text-sm"
@@ -109,50 +220,13 @@ export default function BillDetailsSection({
             <button
               type="button"
               onClick={() => setShowSupplierModal(true)}
-              className="px-3 h-9 rounded-md bg-averix-red-dark text-white hover:bg-averix-red-accent transition-colors inline-flex items-center justify-center"
+              className="px-3 h-9 rounded-md bg-averix-red-dark text-white hover:bg-averix-red-accent transition-colors inline-flex items-center justify-center cursor-pointer"
               title="Add New Supplier"
             >
               <Plus className="w-4 h-4" />
             </button>
           </div>
         </div>
-
-        {/* Purchase Type */}
-        <div>
-          <label className={labelCls}>
-            <Wallet className="w-3.5 h-3.5" />
-            Purchase Type
-          </label>
-          <div className="inline-flex rounded-md overflow-hidden border border-gray-300">
-            <button
-              type="button"
-              onClick={() => setHeader((s) => ({ ...s, purchaseType: "CASH" }))}
-              className={
-                "px-3 h-9 text-sm " +
-                (header.purchaseType === "CASH"
-                  ? "bg-averix-red-dark text-white"
-                  : "bg-white text-gray-700 hover:bg-gray-50")
-              }
-            >
-              Cash
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                setHeader((s) => ({ ...s, purchaseType: "CREDIT" }))
-              }
-              className={
-                "px-3 h-9 text-sm border-l border-gray-300 " +
-                (header.purchaseType === "CREDIT"
-                  ? "bg-averix-red-dark text-white"
-                  : "bg-white text-gray-700 hover:bg-gray-50")
-              }
-            >
-              Credit
-            </button>
-          </div>
-        </div>
-
         {/* Dept + Debit A/c */}
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -184,7 +258,6 @@ export default function BillDetailsSection({
             />
           </div>
         </div>
-
         {/* Nature of Entry */}
         <div>
           <label className={labelCls}>
@@ -200,7 +273,6 @@ export default function BillDetailsSection({
             placeholder="Nature of entry"
           />
         </div>
-
         {/* Header Discount */}
         <div>
           <label className={labelCls}>
@@ -220,7 +292,6 @@ export default function BillDetailsSection({
               inputMode="numeric"
               onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
               onKeyDown={(e) => {
-                // block minus, plus, exponent chars
                 if (
                   e.key === "-" ||
                   e.key === "+" ||
@@ -237,44 +308,6 @@ export default function BillDetailsSection({
                 setHeader((s) => ({ ...s, discount: clamped }));
               }}
               placeholder="0.00"
-            />
-          </div>
-        </div>
-
-        {/* Dates */}
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelCls}>
-              <CalendarClock className="w-3.5 h-3.5" />
-              Purchase Date
-            </label>
-            <input
-              className={inputBase}
-              type="datetime-local"
-              value={toLocalInput(header.purchaseDate)}
-              onChange={(e) =>
-                setHeader((s) => ({
-                  ...s,
-                  purchaseDate: fromLocalInput(e.target.value),
-                }))
-              }
-            />
-          </div>
-          <div>
-            <label className={labelCls}>
-              <Clock3 className="w-3.5 h-3.5" />
-              Entry Time
-            </label>
-            <input
-              className={inputBase}
-              type="datetime-local"
-              value={toLocalInput(header.entryTime)}
-              onChange={(e) =>
-                setHeader((s) => ({
-                  ...s,
-                  entryTime: fromLocalInput(e.target.value),
-                }))
-              }
             />
           </div>
         </div>
@@ -306,14 +339,14 @@ export default function BillDetailsSection({
       <div className="flex gap-2 pt-1">
         <button
           onClick={onSave}
-          className="flex-1 h-9 bg-averix-red-dark text-white px-3 rounded-md hover:bg-averix-red-accent transition-colors font-medium inline-flex items-center justify-center gap-2"
+          className="flex-1 h-9 bg-averix-red-dark text-white px-3 rounded-md hover:bg-averix-red-accent transition-colors font-medium inline-flex items-center justify-center gap-2 cursor-pointer"
         >
           <Receipt className="w-4 h-4" />
           Save Bill
         </button>
         <button
           onClick={onCancel}
-          className="flex-1 h-9 bg-white border border-gray-200 px-3 rounded-md hover:bg-gray-50 transition-colors font-medium"
+          className="flex-1 h-9 bg-white border border-gray-200 px-3 rounded-md hover:bg-gray-50 transition-colors font-medium cursor-pointer"
         >
           Cancel
         </button>

@@ -9,6 +9,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown } from "lucide-react";
+import type React from "react";
 
 interface Option {
   value: string;
@@ -28,6 +29,8 @@ interface SearchableDropdownProps {
   allowCustom?: boolean;
   onCreate?: (value: string) => void;
   onEnter?: () => void;
+  buttonProps?: React.ButtonHTMLAttributes<HTMLButtonElement> &
+    Record<string, any>;
 }
 
 const SearchableDropdown = forwardRef<
@@ -48,6 +51,7 @@ const SearchableDropdown = forwardRef<
       allowCustom,
       onCreate,
       onEnter,
+      buttonProps,
     },
     ref
   ) => {
@@ -57,8 +61,8 @@ const SearchableDropdown = forwardRef<
     const buttonRef = useRef<HTMLButtonElement>(null);
     const searchInputRef = useRef<HTMLInputElement>(null);
     const menuRef = useRef<HTMLDivElement>(null);
+    const [active, setActive] = useState(0);
 
-    // Merge forwarded ref with our local buttonRef
     useEffect(() => {
       if (!ref) return;
       if (typeof ref === "function") {
@@ -84,11 +88,9 @@ const SearchableDropdown = forwardRef<
       onEnter?.();
     };
 
-    // Close when clicking outside
     useEffect(() => {
       function handleClickOutside(e: PointerEvent) {
         const t = e.target as Node | null;
-        // If click is inside button/root OR inside the portaled menu, ignore
         if (
           (rootRef.current && rootRef.current.contains(t)) ||
           (menuRef.current && menuRef.current.contains(t))
@@ -102,7 +104,6 @@ const SearchableDropdown = forwardRef<
         document.removeEventListener("pointerdown", handleClickOutside);
     }, []);
 
-    // Focus search on open
     useEffect(() => {
       if (isOpen) {
         setSearchTerm("");
@@ -111,10 +112,10 @@ const SearchableDropdown = forwardRef<
           const el = searchInputRef.current;
           if (el) el.setSelectionRange(el.value.length, el.value.length);
         });
+        setActive(0);
       }
     }, [isOpen]);
 
-    // Open with keyboard
     const handleButtonKeyDown: React.KeyboardEventHandler<HTMLButtonElement> = (
       e
     ) => {
@@ -161,7 +162,6 @@ const SearchableDropdown = forwardRef<
       recalcPosition();
       const onAnyScroll = () => recalcPosition();
       const onResize = () => recalcPosition();
-      // capture true to catch scrolls on nested containers
       window.addEventListener("scroll", onAnyScroll, true);
       window.addEventListener("resize", onResize);
       return () => {
@@ -177,7 +177,11 @@ const SearchableDropdown = forwardRef<
           type="button"
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => setIsOpen((p) => !p)}
-          onKeyDown={handleButtonKeyDown}
+          onKeyDown={(e) => {
+            buttonProps?.onKeyDown?.(e);
+            handleButtonKeyDown(e);
+          }}
+          {...buttonProps}
           className={
             "w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 " +
             "focus:ring-averix-red-light focus:border-transparent flex items-center " +
@@ -227,13 +231,25 @@ const SearchableDropdown = forwardRef<
                     inputClassName
                   }
                   onKeyDown={(e) => {
-                    if (
-                      allowCustom &&
-                      e.key === "Enter" &&
-                      !filteredOptions.length
-                    ) {
+                    if (e.key === "ArrowDown") {
                       e.preventDefault();
-                      createFromSearch();
+                      setActive((a) =>
+                        Math.min(a + 1, Math.max(0, filteredOptions.length - 1))
+                      );
+                    } else if (e.key === "ArrowUp") {
+                      e.preventDefault();
+                      setActive((a) => Math.max(a - 1, 0));
+                    } else if (e.key === "Enter") {
+                      e.preventDefault();
+                      if (filteredOptions.length) {
+                        const opt =
+                          filteredOptions[active] ?? filteredOptions[0];
+                        onChange(opt.value);
+                        setIsOpen(false);
+                        onEnter?.();
+                      } else if (allowCustom) {
+                        createFromSearch();
+                      }
                     }
                   }}
                 />
@@ -259,7 +275,7 @@ const SearchableDropdown = forwardRef<
                 )}
 
                 {filteredOptions.length > 0 ? (
-                  filteredOptions.map((opt) => (
+                  filteredOptions.map((opt, i) => (
                     <button
                       key={opt.value}
                       type="button"
@@ -270,8 +286,10 @@ const SearchableDropdown = forwardRef<
                       }}
                       className={
                         "w-full text-left px-3 py-2 text-sm transition-colors duration-150 cursor-pointer " +
-                        (value === opt.value
+                        (i === active
                           ? "bg-averix-red-light text-white font-medium "
+                          : value === opt.value
+                          ? "bg-averix-red-light/20 text-gray-900"
                           : "text-gray-900 hover:bg-gray-100 ") +
                         optionClassName
                       }

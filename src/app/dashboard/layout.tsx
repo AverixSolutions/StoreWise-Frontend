@@ -15,6 +15,7 @@ export default function DashboardLayout({
   const pathname = usePathname();
 
   const showSidebar = !pathname?.includes("/dashboard/purchase");
+  const isPurchase = pathname?.startsWith("/dashboard/purchase");
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
@@ -22,7 +23,14 @@ export default function DashboardLayout({
       <Header />
       <div className="flex flex-1 overflow-hidden">
         {showSidebar && <Sidebar topOffset={headerHeight} />}
-        <main className="flex-1 p-6 overflow-y-auto">{children}</main>
+        <main
+          className={
+            "flex-1 overflow-y-auto " +
+            (isPurchase ? "p-0" : "p-6 max-w-[1400px] w-full mx-auto")
+          }
+        >
+          {children}
+        </main>
       </div>
     </div>
   );

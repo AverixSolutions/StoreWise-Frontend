@@ -49,22 +49,26 @@ export function createEmptyRow(lineNo: number): ItemRow {
   return {
     lineNo,
     productId: "",
-    unit: "",
+    code: "",
+    name: "",
+    barcode: "",
+    unit: "NOS",
+    quantity: 0,
     rate: 0,
-    quantity: 1,
-    mrp: null,
+    mrp: 0,
     taxPercent: "NT",
     discountType: "ABS",
     discount: 0,
-    profitPercent: 0,
     salePrice: 0,
-    profit: 0,
-    totalCost: 0,
-    billedValue: 0,
-    barcode: "",
+    profitPercent: 0,
     batchNo: "",
     mfgDate: null,
     expiryDate: null,
+    lineType: "VALUED",
+    billedValue: 0,
+    profit: 0,
+    totalCost: 0,
+    unitBilled: 0,
   };
 }
 
@@ -74,6 +78,16 @@ export function taxPercentToNumber(t: ItemRow["taxPercent"]) {
 }
 
 export function calcRow(row: ItemRow): ItemRow {
+  if (row.lineType === "FREE") {
+    return {
+      ...row,
+      billedValue: 0,
+      totalCost: 0,
+      profit: 0,
+      unitBilled: 0,
+    };
+  }
+
   const qty = Math.max(0, Number(row.quantity) || 0);
   const rate = Math.max(0, Number(row.rate) || 0);
   const taxPct = taxPercentToNumber(row.taxPercent);
@@ -96,6 +110,7 @@ export function calcRow(row: ItemRow): ItemRow {
       : Math.max(0, Number(row.discount) || 0);
 
   const billedValue = round2(Math.max(0, totalCost - discountValue));
+  const unitBilled = qty > 0 ? round2(billedValue / qty) : 0;
 
   return {
     ...row,
@@ -103,6 +118,7 @@ export function calcRow(row: ItemRow): ItemRow {
     profit: profit,
     totalCost: totalCost,
     billedValue: billedValue,
+    unitBilled,
   };
 }
 
@@ -130,7 +146,7 @@ export function validateBill(
 export function mapItems(rows: ItemRow[]) {
   return rows
     .filter((r) => r.productId)
-    .map((r) => ({
+    .map((r, i) => ({
       productId: r.productId,
       barcode: r.barcode || r.code,
       quantity: r.quantity,
@@ -155,6 +171,25 @@ export function mapItems(rows: ItemRow[]) {
       batchNo: r.batchNo || null,
       mfgDate: r.mfgDate || null,
       expiryDate: r.expiryDate || null,
-      lineNo: r.lineNo,
+      isFree: r.lineType === "FREE" ? 1 : 0,
+      lineNo: r.lineNo ?? i + 1,
     }));
+}
+
+export function toLocalDate(iso?: string) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+export function toLocalTime(iso?: string) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+export function fromDateTime(date: string, time: string) {
+  if (!date) return new Date().toISOString();
+  const t = time && /^\d{2}:\d{2}$/.test(time) ? time : "00:00";
+  return new Date(`${date}T${t}`).toISOString();
 }
