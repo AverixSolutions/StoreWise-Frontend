@@ -21,13 +21,27 @@ export default function ItemsTable({
   onRemoveRow,
   onAddRow,
 }: ItemsTableProps) {
+  const REQUIRED: Partial<Record<ColKey, (r: ItemRow) => boolean>> = {
+    product: (r) => !!r.productId,
+    unit: (r) => !!r.unit,
+    quantity: (r) => Number(r.quantity) > 0,
+    rate: (r) => Number(r.rate) >= 0,
+  };
+
+  function canLeave(col: ColKey, rowIndex: number) {
+    const rule = REQUIRED[col];
+    return rule ? rule(rows[rowIndex]) : true;
+  }
   function handleGridKey(
     e: React.KeyboardEvent<HTMLElement>,
     rowIndex: number,
     col: ColKey
   ) {
-    if (e.key !== "Enter") return;
+    if (e.key !== "Enter" && (e as any).key !== "NumpadEnter") return;
     e.preventDefault();
+
+    if (!canLeave(col, rowIndex)) return;
+
     const dir: 1 | -1 = e.shiftKey ? -1 : 1;
     const { rowIndex: nr, col: nc } = nextCell(rowIndex, col, dir);
 
@@ -116,7 +130,7 @@ export default function ItemsTable({
               Total
             </th>
 
-            {/* Action (sticky, right: 0) */}
+            {/* Action  */}
             <th className="px-2.5 py-2 text-center text-xs font-semibold text-white uppercase tracking-wide sticky right-0 bg-averix-red-dark z-60 w-[56px] min-w-[56px] pointer-events-none">
               Action
             </th>
@@ -134,6 +148,8 @@ export default function ItemsTable({
               onRemoveRow={onRemoveRow}
               onGridKey={handleGridKey}
               canRemove={rows.length > 1}
+              rowsLength={rows.length}
+              onAddRow={onAddRow}
             />
           ))}
         </tbody>

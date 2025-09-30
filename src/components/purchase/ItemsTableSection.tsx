@@ -1,5 +1,5 @@
 // src/components/purchase/ItemsTableSection.tsx
-import { Plus, PauseCircle, List } from "lucide-react";
+import { Plus, PauseCircle, List, FileText } from "lucide-react";
 import { ItemRow, Product } from "./types";
 import ItemsTable from "./ItemsTable";
 
@@ -15,6 +15,8 @@ interface ItemsTableSectionProps {
   headerDiscount: number;
   onHold: () => void;
   onShowHolds: () => void;
+  onShowReports: () => void;
+  showHoldControls?: boolean;
 }
 
 export default function ItemsTableSection({
@@ -29,6 +31,8 @@ export default function ItemsTableSection({
   headerDiscount,
   onHold,
   onShowHolds,
+  onShowReports,
+  showHoldControls = true,
 }: ItemsTableSectionProps) {
   const itemCount = rows.filter((r) => r.productId).length;
 
@@ -45,22 +49,34 @@ export default function ItemsTableSection({
 
         <div className="flex items-center gap-2">
           <button
-            onClick={onHold}
-            className="px-3 py-2 rounded-lg bg-amber-600 text-white hover:bg-amber-700 transition-colors flex items-center gap-2 font-medium shadow-sm cursor-pointer"
-            title="Hold (save draft)"
+            onClick={onShowReports}
+            className="px-3 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors flex items-center gap-2 font-medium shadow-sm cursor-pointer"
+            title="View Reports"
           >
-            <PauseCircle className="w-4 h-4" />
-            Hold
+            <FileText className="w-4 h-4" />
+            Reports
           </button>
+          {showHoldControls && (
+            <>
+              <button
+                onClick={onHold}
+                className="px-3 py-2 rounded-lg bg-amber-600 text-white hover:bg-amber-700 transition-colors flex items-center gap-2 font-medium shadow-sm cursor-pointer"
+                title="Hold (save draft)"
+              >
+                <PauseCircle className="w-4 h-4" />
+                Hold
+              </button>
 
-          <button
-            onClick={onShowHolds}
-            className="px-3 py-2 rounded-lg bg-slate-700 text-white hover:bg-slate-800 transition-colors flex items-center gap-2 font-medium shadow-sm cursor-pointer"
-            title="View Holds"
-          >
-            <List className="w-4 h-4" />
-            UnHold
-          </button>
+              <button
+                onClick={onShowHolds}
+                className="px-3 py-2 rounded-lg bg-slate-700 text-white hover:bg-slate-800 transition-colors flex items-center gap-2 font-medium shadow-sm cursor-pointer"
+                title="View Holds"
+              >
+                <List className="w-4 h-4" />
+                Holds
+              </button>
+            </>
+          )}
 
           <button
             onClick={onAddRow}

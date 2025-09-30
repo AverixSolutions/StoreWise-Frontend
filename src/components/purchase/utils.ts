@@ -193,3 +193,103 @@ export function fromDateTime(date: string, time: string) {
   const t = time && /^\d{2}:\d{2}$/.test(time) ? time : "00:00";
   return new Date(`${date}T${t}`).toISOString();
 }
+
+export function validatePurchaseBill(header: HeaderForm, items: ItemRow[]) {
+  const errs: string[] = [];
+  const hasLine = items.some(
+    (r) => r.productId && (r.quantity ?? 0) > 0 && (r.rate ?? 0) >= 0
+  );
+  if (!hasLine) errs.push("Add at least one item with quantity > 0.");
+
+  if (!header.supplier) errs.push("Select a supplier.");
+
+  return errs;
+}
+
+export function validateReturnBill(_header: HeaderForm, items: ItemRow[]) {
+  const errs: string[] = [];
+  const hasLine = items.some(
+    (r) => r.productId && (r.quantity ?? 0) > 0 && (r.rate ?? 0) >= 0
+  );
+  if (!hasLine) errs.push("Add at least one item with quantity > 0.");
+
+  return errs;
+}
+
+// Map purchase_items / purchase_return_items to ItemRow[]
+export function rowsFromDbItems(dbItems: any[]): ItemRow[] {
+  return dbItems.map((it: any, i: number) => ({
+    lineNo: it.lineNo ?? i + 1,
+    productId: it.productId,
+    code: "", // optional
+    barcode: it.barcode ?? "",
+    name: "", // you show just code/name after onSelectProduct; optional here
+    unit: it.unit,
+    rate: Number(it.rate) || 0,
+    quantity: Number(it.quantity) || 0,
+    mrp: it.mrp ?? null,
+    taxPercent: it.taxPercent,
+    discountType: it.discountType,
+    discount: Number(it.discount) || 0,
+    profitPercent: it.profit ?? null, // or keep it as separate field if you used profitPercent
+    salePrice: it.salePrice ?? null,
+    profit: it.profit ?? null,
+    totalCost: Number(it.totalCost) || 0,
+    billedValue: Number(it.billedValue) || 0,
+    batchNo: it.batchNo ?? null,
+    mfgDate: it.mfgDate ?? null,
+    expiryDate: it.expiryDate ?? null,
+    lineType: (it.isFree ? "FREE" : "VALUED") as any,
+    unitBilled: it.quantity
+      ? Number(it.billedValue || 0) / Number(it.quantity || 1)
+      : 0,
+  }));
+}
+
+// Normalize purchase header from DB to HeaderForm (purchase)
+export function headerFromPurchaseDb(
+  p: any,
+  supplierOpt: Array<{ id: string; name: string }>
+): HeaderForm {
+  const sup = p.supplierId
+    ? supplierOpt.find((s) => s.id === p.supplierId) || {
+        id: p.supplierId,
+        name: p.supplierName || "",
+      }
+    : null;
+  return {
+    billNo: p.billNo || "",
+    supplier: sup,
+    department: p.department || "",
+    debitAccount: p.debitAccount || "",
+    natureOfEntry: p.natureOfEntry || "",
+    purchaseDate: p.purchaseDate,
+    entryTime: p.entryTime || p.purchaseDate,
+    discount: Number(p.discount || 0),
+    purchaseType: p.purchaseType === "CASH" ? "CASH" : "CREDIT",
+  };
+}
+
+// For returns, reuse HeaderForm but map date field from returnDate
+export function headerFromReturnDb(
+  r: any,
+  supplierOpt: Array<{ id: string; name: string }>
+): HeaderForm {
+  const sup = r.supplierId
+    ? supplierOpt.find((s) => s.id === r.supplierId) || {
+        id: r.supplierId,
+        name: r.supplierName || "",
+      }
+    : null;
+  return {
+    billNo: r.billNo || "",
+    supplier: sup,
+    department: r.department || "",
+    debitAccount: r.debitAccount || "",
+    natureOfEntry: r.natureOfEntry || "",
+    purchaseDate: r.returnDate, // reuse purchaseDate field to drive inputs
+    entryTime: r.entryTime || r.returnDate,
+    discount: Number(r.discount || 0),
+    purchaseType: r.purchaseType === "CASH" ? "CASH" : "CREDIT",
+  };
+}

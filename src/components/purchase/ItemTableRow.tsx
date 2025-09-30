@@ -1,9 +1,10 @@
 // src/components/purchase/ItemTableRow.tsx
 import { X } from "lucide-react";
-import { ItemRow, Product, DiscountType } from "./types";
+import { ItemRow, Product } from "./types";
 import { toDateInput, fromDateInput, round2 } from "./utils";
 import SearchableDropdown from "@/components/ui/SearchableDropdown";
 import CompactDropdown from "@/components/ui/CompactDropdown";
+import { focusCell, nextCell } from "./keyboardGrid";
 
 const cellInput =
   "w-full h-8 px-2 text-xs border border-gray-300 rounded " +
@@ -11,7 +12,6 @@ const cellInput =
   "outline-none transition-colors";
 
 const asDisplay = (n?: number | null) => (n === 0 || n ? String(n) : "");
-
 const asDisplay2 = (n?: number | null) =>
   n === 0 || n ? String(round2(n)) : "";
 
@@ -52,6 +52,8 @@ interface ItemTableRowProps {
     rowIndex: number,
     col: any
   ) => void;
+  rowsLength: number; // NEW
+  onAddRow?: () => void; // NEW
 }
 
 export default function ItemTableRow({
@@ -63,6 +65,8 @@ export default function ItemTableRow({
   onRemoveRow,
   canRemove,
   onGridKey,
+  rowsLength, // NEW
+  onAddRow, // NEW
 }: ItemTableRowProps) {
   const taxOptions = [
     { value: "NT", label: "No Tax" },
@@ -85,6 +89,20 @@ export default function ItemTableRow({
     { value: "FREE", label: "Free" },
   ];
 
+  const goFrom = (col: import("./keyboardGrid").ColKey, dir: 1 | -1 = 1) => {
+    const { rowIndex: nr, col: nc } = nextCell(idx, col, dir);
+
+    if (nr >= rowsLength && dir === 1 && onAddRow) {
+      onAddRow();
+      // focus after row appears
+      setTimeout(() => focusCell(nr, nc), 0);
+      return;
+    }
+
+    if (nr < 0) return;
+    setTimeout(() => focusCell(nr, nc), 0);
+  };
+
   return (
     <tr
       className={`transition-all duration-200 hover:bg-blue-50/30 border-b border-gray-100 divide-x divide-gray-100 ${
@@ -99,29 +117,31 @@ export default function ItemTableRow({
           </span>
         </div>
       </td>
+
       {/* Product: sticky Sl.NO */}
       <td className="px-2.5 py-2 min-w-[180px] sticky [left:var(--slw)] bg-inherit z-40 border-r border-gray-200">
         <div className="w-full">
           <SearchableDropdown
             value={r.productId}
-            onChange={(v) => onSelectProduct(idx, v)}
-            options={products.map((p) => ({
-              value: p.id,
-              label: p.name,
-            }))}
+            onChange={(v) => {
+              onSelectProduct(idx, v);
+            }}
+            onEnter={(dir) => goFrom("product", dir)} // pass dir
+            autoOpenOnFocus
+            options={products.map((p) => ({ value: p.id, label: p.name }))}
             placeholder="Select product..."
             className="w-full [&_*]:text-xs"
             controlClassName="h-8 text-xs px-2"
             menuClassName="text-xs"
             buttonProps={{
               "data-cell": `${idx}:product`,
-              onKeyDown: (e) => onGridKey(e, idx, "product"),
+              onKeyDown: (e) => onGridKey(e as any, idx, "product"),
             }}
           />
         </div>
       </td>
 
-      {/* Barcode (slightly taller) */}
+      {/* Barcode */}
       <td className="px-2.5 py-2 min-w-[110px]">
         <div className="w-full">
           <input
@@ -134,6 +154,7 @@ export default function ItemTableRow({
           />
         </div>
       </td>
+
       {/* Quantity */}
       <td className="px-2.5 py-2 min-w-[70px]">
         <div className="w-full">
@@ -156,12 +177,15 @@ export default function ItemTableRow({
           />
         </div>
       </td>
+
       {/* Unit */}
       <td className="px-2.5 py-2 min-w-[74px]">
         <div className="w-full">
           <CompactDropdown
             value={r.unit || ""}
             onChange={(val) => onUpdateRow(idx, { unit: val as any })}
+            onEnter={(dir) => goFrom("unit", dir)}
+            autoOpenOnFocus
             options={unitOptions}
             placeholder="Unit"
             className="w-full [&_*]:text-xs [&_button]:h-8 [&_select]:h-8 [&_button]:px-2 [&_select]:px-2"
@@ -172,6 +196,7 @@ export default function ItemTableRow({
           />
         </div>
       </td>
+
       {/* Rate */}
       <td className="px-2.5 py-2 min-w-[84px]">
         <div className="w-full">
@@ -183,9 +208,29 @@ export default function ItemTableRow({
             onChange={(e) =>
               onUpdateRow(idx, { rate: parseRoundedNum(e) ?? 0 })
             }
-            min="0"
+            min={0}
             inputMode="decimal"
             placeholder="0.00"
+            data-cell={`${idx}:rate`}
+            onKeyDown={(e) => {
+              const el = e.currentTarget;
+              if (e.key === "ArrowUp") {
+                e.preventDefault();
+                const cur = Number(el.value || 0);
+                onUpdateRow(idx, { rate: round2(cur + 1) });
+              } else if (e.key === "ArrowDown") {
+                e.preventDefault();
+                const cur = Number(el.value || 0);
+                onUpdateRow(idx, { rate: Math.max(0, round2(cur - 1)) });
+              } else if (e.key === "e" || e.key === "+" || e.key === "-") {
+                e.preventDefault();
+              } else if (
+                e.key === "Enter" ||
+                (e as any).key === "NumpadEnter"
+              ) {
+                onGridKey(e as any, idx, "rate");
+              }
+            }}
           />
         </div>
       </td>
@@ -196,6 +241,8 @@ export default function ItemTableRow({
           <CompactDropdown
             value={r.taxPercent}
             onChange={(val) => onUpdateRow(idx, { taxPercent: val as any })}
+            onEnter={(dir) => goFrom("tax", dir)}
+            autoOpenOnFocus
             options={taxOptions}
             placeholder="Tax"
             className="w-full [&_*]:text-xs [&_button]:h-8 [&_select]:h-8 [&_button]:px-2 [&_select]:px-2"
@@ -206,12 +253,15 @@ export default function ItemTableRow({
           />
         </div>
       </td>
+
+      {/* Discount */}
       <td className="px-2.5 py-2 min-w-[130px]">
         <div className="flex items-center gap-2">
-          {/* Type toggle */}
+          {/* Type toggle (avoid focus trap) */}
           <div className="inline-flex overflow-hidden rounded border border-gray-300">
             <button
               type="button"
+              tabIndex={-1}
               onClick={() => onUpdateRow(idx, { discountType: "ABS" })}
               className={
                 "px-2 h-8 text-xs " +
@@ -225,6 +275,7 @@ export default function ItemTableRow({
             </button>
             <button
               type="button"
+              tabIndex={-1}
               onClick={() => onUpdateRow(idx, { discountType: "PCT" })}
               className={
                 "px-2 h-8 text-xs border-l border-gray-300 " +
@@ -262,14 +313,70 @@ export default function ItemTableRow({
               step={r.discountType === "PCT" ? "0.01" : "1"}
               value={asDisplay2(r.discount)}
               onChange={(e) =>
-                onUpdateRow(idx, {
-                  discount: parseRoundedNum(e) ?? 0,
-                })
+                onUpdateRow(idx, { discount: parseRoundedNum(e) ?? 0 })
               }
               min={0}
               inputMode={r.discountType === "PCT" ? "decimal" : "numeric"}
               onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
               placeholder="0"
+              data-cell={`${idx}:discount`}
+              onKeyDown={(e) => {
+                // --- Keyboard shortcuts for type ---
+                const lower = e.key.toLowerCase();
+
+                // Alt+D / Alt+T toggles type
+                if (e.altKey && (lower === "d" || lower === "t")) {
+                  e.preventDefault();
+                  const next = r.discountType === "ABS" ? "PCT" : "ABS";
+                  onUpdateRow(idx, { discountType: next });
+                  return;
+                }
+                // Alt+P or '%' -> Percent
+                if (e.altKey && lower === "p") {
+                  e.preventDefault();
+                  onUpdateRow(idx, { discountType: "PCT" });
+                  return;
+                }
+                if (e.key === "%") {
+                  e.preventDefault();
+                  onUpdateRow(idx, { discountType: "PCT" });
+                  return;
+                }
+                // Alt+A or '₹' or '$' -> Amount
+                if (e.altKey && lower === "a") {
+                  e.preventDefault();
+                  onUpdateRow(idx, { discountType: "ABS" });
+                  return;
+                }
+                if (e.key === "₹" || e.key === "$") {
+                  e.preventDefault();
+                  onUpdateRow(idx, { discountType: "ABS" });
+                  return;
+                }
+
+                if (e.key === "e" || e.key === "+" || e.key === "-") {
+                  e.preventDefault();
+                  return;
+                }
+
+                if (e.key === "Enter" || (e as any).key === "NumpadEnter") {
+                  onGridKey(e as any, idx, "discount");
+                  return;
+                }
+
+                if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+                  e.preventDefault();
+                  const cur = Number(
+                    (e.currentTarget as HTMLInputElement).value || 0
+                  );
+                  const step = r.discountType === "ABS" ? 1 : 0.01;
+                  const next =
+                    e.key === "ArrowUp"
+                      ? round2(cur + step)
+                      : Math.max(0, round2(cur - step));
+                  onUpdateRow(idx, { discount: next });
+                }
+              }}
             />
           </div>
         </div>
@@ -285,9 +392,12 @@ export default function ItemTableRow({
             onChange={(e) =>
               onUpdateRow(idx, { mfgDate: fromDateInput(e.target.value) })
             }
+            data-cell={`${idx}:mfgDate`}
+            onKeyDown={(e) => onGridKey(e, idx, "mfgDate")}
           />
         </div>
       </td>
+
       {/* Expiry Date */}
       <td className="px-2.5 py-2 min-w-[120px]">
         <div className="w-full">
@@ -298,6 +408,8 @@ export default function ItemTableRow({
             onChange={(e) =>
               onUpdateRow(idx, { expiryDate: fromDateInput(e.target.value) })
             }
+            data-cell={`${idx}:expiryDate`}
+            onKeyDown={(e) => onGridKey(e, idx, "expiryDate")}
           />
         </div>
       </td>
@@ -333,8 +445,14 @@ export default function ItemTableRow({
                   });
                 } else if (e.key === "e" || e.key === "+" || e.key === "-") {
                   e.preventDefault();
+                } else if (
+                  e.key === "Enter" ||
+                  (e as any).key === "NumpadEnter"
+                ) {
+                  onGridKey(e as any, idx, "profitPercent");
                 }
               }}
+              data-cell={`${idx}:profitPercent`}
             />
           </div>
           <input
@@ -349,9 +467,30 @@ export default function ItemTableRow({
             inputMode="decimal"
             onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
             placeholder="Sale"
+            data-cell={`${idx}:salePrice`}
+            onKeyDown={(e) => {
+              const el = e.currentTarget;
+              if (e.key === "ArrowUp") {
+                e.preventDefault();
+                const cur = Number(el.value || 0);
+                onUpdateRow(idx, { salePrice: round2(cur + 1) });
+              } else if (e.key === "ArrowDown") {
+                e.preventDefault();
+                const cur = Number(el.value || 0);
+                onUpdateRow(idx, { salePrice: Math.max(0, round2(cur - 1)) });
+              } else if (e.key === "e" || e.key === "+" || e.key === "-") {
+                e.preventDefault();
+              } else if (
+                e.key === "Enter" ||
+                (e as any).key === "NumpadEnter"
+              ) {
+                onGridKey(e as any, idx, "salePrice");
+              }
+            }}
           />
         </div>
       </td>
+
       {/* MRP */}
       <td className="px-2.5 py-2 min-w-[84px]">
         <div className="w-full">
@@ -366,14 +505,19 @@ export default function ItemTableRow({
             pattern="\d*"
             onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
             onKeyDown={(e) => {
-              if (e.key === "e" || e.key === "+" || e.key === "-")
+              if (e.key === "e" || e.key === "+" || e.key === "-") {
                 e.preventDefault();
+              }
+              if (e.key === "Enter" || (e as any).key === "NumpadEnter") {
+                onGridKey(e as any, idx, "mrp");
+              }
             }}
             placeholder="0"
             data-cell={`${idx}:mrp`}
           />
         </div>
       </td>
+
       {/* Line Type */}
       <td className="px-2.5 py-2 min-w-[80px] text-center">
         <div className="w-full">
@@ -382,13 +526,20 @@ export default function ItemTableRow({
             onChange={(val) =>
               onUpdateRow(idx, { lineType: (val as any) || "VALUED" })
             }
+            onEnter={(dir) => goFrom("lineType", dir)}
+            autoOpenOnFocus
             options={lineTypeOptions}
             placeholder="Type"
             className="w-full [&_*]:text-xs [&_button]:h-8 [&_select]:h-8 [&_button]:px-2 [&_select]:px-2"
+            buttonProps={{
+              "data-cell": `${idx}:lineType`,
+              onKeyDown: (e: any) => onGridKey(e, idx, "lineType"),
+            }}
           />
         </div>
       </td>
-      {/* Unit Value (incl. tax & discount) */}
+
+      {/* Unit Value (read-only) */}
       <td className="px-2.5 py-2 min-w-[110px] text-center">
         <div className="w-full text-center">
           <span className="inline-flex items-center px-2 py-1 rounded-md bg-blue-50 text-blue-700 text-xs font-semibold">
@@ -396,7 +547,8 @@ export default function ItemTableRow({
           </span>
         </div>
       </td>
-      {/* Total (center text) */}
+
+      {/* Total (read-only, sticky) */}
       <td className="px-2.5 py-2 min-w-[90px] sticky [right:var(--actw)] bg-white z-40 border-l border-gray-200 text-center">
         <div className="w-full text-center">
           <span className="inline-flex items-center px-2 py-1 rounded-md bg-green-100 text-green-800 text-xs font-semibold">
@@ -404,7 +556,8 @@ export default function ItemTableRow({
           </span>
         </div>
       </td>
-      {/* Action (right: 0) */}
+
+      {/* Action */}
       <td className="px-2.5 py-2 sticky right-0 bg-white z-40 w-[56px] min-w-[56px] border-l border-gray-200">
         <div className="flex justify-center">
           <button

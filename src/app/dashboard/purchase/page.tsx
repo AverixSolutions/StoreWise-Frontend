@@ -7,14 +7,19 @@ import BillDetailsSection from "@/components/purchase/BillDetailsSection";
 import ItemsTableSection from "@/components/purchase/ItemsTableSection";
 import SupplierFormModal from "@/components/suppliers/SupplierFormModal";
 import HoldsModal from "@/components/purchase/HoldsModal";
+import PurchaseReportsModal from "@/components/purchase/PurchaseReportsModal";
 import PromptModal from "@/components/ui/PromptModal";
+import ConfirmModal from "@/components/ui/ConfirmModal";
+import ValidationModal from "@/components/ui/ValidationModal";
 import { HeaderForm, ItemRow, Product } from "@/components/purchase/types";
 import {
   createEmptyRow,
   calcRow,
-  validateBill,
+  validatePurchaseBill,
   mapItems,
   round2,
+  headerFromPurchaseDb,
+  rowsFromDbItems,
 } from "@/components/purchase/utils";
 
 function normalizeHeaderFromHold(
@@ -81,6 +86,11 @@ export default function PurchasePage() {
   const [showSupplierModal, setShowSupplierModal] = useState(false);
   const [nextEntryNo, setNextEntryNo] = useState<number | null>(null);
 
+  // A) Track which purchase is being edited
+  const [editingPurchaseId, setEditingPurchaseId] = useState<string | null>(
+    null
+  );
+
   const [header, setHeader] = useState<HeaderForm>({
     billNo: "",
     supplier: null,
@@ -97,8 +107,15 @@ export default function PurchasePage() {
   const [isDirty, setIsDirty] = useState(false);
 
   const [showHolds, setShowHolds] = useState(false);
+  const [showReports, setShowReports] = useState(false);
   const [showTitlePrompt, setShowTitlePrompt] = useState(false);
   const [defaultHoldTitle, setDefaultHoldTitle] = useState<string>("");
+
+  const [leaveOpen, setLeaveOpen] = useState(false);
+  const [pendingPath, setPendingPath] = useState<string | null>(null);
+  const [validationOpen, setValidationOpen] = useState(false);
+  const [validationMsgs, setValidationMsgs] = useState<string[]>([]);
+  const [editingSlNo, setEditingSlNo] = useState<number | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -239,14 +256,72 @@ export default function PurchasePage() {
     }
   }
 
+  async function handleOpenPurchaseFromReport(purchaseId: string) {
+    if (suppliers.length === 0) await loadSuppliers();
+
+    const res = await (window as any).electronAPI.getPurchaseFull(purchaseId);
+    if (!res?.success) return alert("Failed to load purchase");
+
+    const { purchase, items } = res;
+
+    const hdr = headerFromPurchaseDb(purchase, suppliers);
+    const mappedRows = rowsFromDbItems(items);
+
+    setHeader(hdr);
+    setRows(mappedRows);
+    setEditingPurchaseId(purchaseId);
+    setEditingSlNo(purchase.slNo ?? null);
+    setShowReports(false);
+    setIsDirty(true);
+  }
+
+  async function handleOpenReturnFromReport(returnId: string) {
+    sessionStorage.setItem("openPurchaseReturnId", returnId);
+    router.push("/dashboard/purchase-return");
+  }
+
   const handleSave = async () => {
     const items = mapItems(rows);
-    const errs = validateBill(header, items);
+    const errs = validatePurchaseBill(header, items);
     if (errs.length) {
-      alert("Please fix the following:\n\n• " + errs.join("\n• "));
+      setValidationMsgs(errs);
+      setValidationOpen(true);
       return false;
     }
 
+    if (editingPurchaseId) {
+      // UPDATE flow
+      const payload = {
+        id: editingPurchaseId,
+        header: {
+          billNo: header.billNo || null,
+          supplierId: header.supplier?.id || null,
+          supplierName: header.supplier?.name || null,
+          department: header.department || null,
+          debitAccount: header.debitAccount || null,
+          natureOfEntry: header.natureOfEntry || null,
+          purchaseDate: header.purchaseDate,
+          entryTime: header.entryTime,
+          discount: header.discount || 0,
+          licenseId,
+          purchaseType: header.purchaseType,
+        },
+        items,
+      };
+
+      const res = await (window as any).electronAPI.updatePurchase(payload);
+      if (res?.success) {
+        alert("✅ Updated!");
+        setEditingPurchaseId(null);
+        resetAll();
+        return true;
+      } else {
+        alert("Update failed: " + (res?.error || "Unknown error"));
+        return false;
+      }
+    }
+
+    // CREATE flow
     const purchase = {
       billNo: header.billNo || null,
       supplierId: header.supplier!.id,
@@ -372,6 +447,8 @@ export default function PurchasePage() {
       purchaseType: "CREDIT",
     });
     setRows([createEmptyRow(1)]);
+    setEditingPurchaseId(null);
+    setEditingSlNo(null);
     setIsDirty(false);
   }
 
@@ -408,25 +485,13 @@ export default function PurchasePage() {
       router.push(path);
       return;
     }
-
-    const save = window.confirm(
-      "You have unsaved changes.\n\nOK = Save & Exit\nCancel = Choose without saving"
-    );
-    if (save) {
-      const ok = await handleSave();
-      if (ok) router.push(path);
-    } else {
-      const exit = window.confirm("Exit without saving?");
-      if (exit) {
-        resetAll();
-        router.push(path);
-      }
-    }
+    setPendingPath(path);
+    setLeaveOpen(true);
   }
 
   return (
     <div className="flex h-screen flex-col bg-gray-50">
-      <PurchaseNavigation onNavigate={tryNavigate} />
+      <PurchaseNavigation onNavigate={tryNavigate} title="Purchase" />
 
       <div className="flex-1 min-h-0 overflow-hidden p-0">
         <div className="grid h-full grid-cols-[300px_1fr]">
@@ -439,7 +504,13 @@ export default function PurchasePage() {
             grandTotal={grandTotal}
             onSave={handleSave}
             onCancel={handleCancel}
-            entryNo={nextEntryNo ?? undefined}
+            entryNo={
+              editingPurchaseId
+                ? editingSlNo ?? undefined
+                : nextEntryNo ?? undefined
+            }
+            requireSupplier
+            isEditing={Boolean(editingPurchaseId)}
           />
 
           <ItemsTableSection
@@ -454,6 +525,8 @@ export default function PurchasePage() {
             headerDiscount={header.discount}
             onHold={handleHold}
             onShowHolds={handleShowHolds}
+            onShowReports={() => setShowReports(true)}
+            showHoldControls={!editingPurchaseId}
           />
         </div>
       </div>
@@ -478,6 +551,15 @@ export default function PurchasePage() {
         onResume={handleResumeHold}
       />
 
+      {/* Reports modal */}
+      <PurchaseReportsModal
+        isOpen={showReports}
+        onClose={() => setShowReports(false)}
+        licenseId={licenseId}
+        suppliers={suppliers}
+        onOpenPurchase={handleOpenPurchaseFromReport}
+      />
+
       {/* Title prompt */}
       <PromptModal
         isOpen={showTitlePrompt}
@@ -491,6 +573,47 @@ export default function PurchasePage() {
           setShowTitlePrompt(false);
           saveHold(val.trim());
         }}
+      />
+
+      {/* Leave confirm modal */}
+      <ConfirmModal
+        isOpen={leaveOpen}
+        title="Leave this page?"
+        message={
+          "You have unsaved changes.\n\n• Save & Exit: save the bill and go.\n• Discard: leave without saving.\n• Cancel: stay on this page."
+        }
+        confirmText="Save & Exit"
+        secondaryText="Discard"
+        cancelText="Cancel"
+        onConfirm={async () => {
+          setLeaveOpen(false);
+          const ok = await handleSave();
+          if (ok && pendingPath) {
+            const path = pendingPath;
+            setPendingPath(null);
+            router.push(path);
+          }
+        }}
+        onSecondary={() => {
+          setLeaveOpen(false);
+          setIsDirty(false);
+          if (pendingPath) {
+            const path = pendingPath;
+            setPendingPath(null);
+            router.push(path);
+          }
+        }}
+        onCancel={() => {
+          setLeaveOpen(false);
+          setPendingPath(null);
+        }}
+      />
+
+      {/* Validation modal */}
+      <ValidationModal
+        isOpen={validationOpen}
+        messages={validationMsgs}
+        onClose={() => setValidationOpen(false)}
       />
     </div>
   );

@@ -5,6 +5,7 @@ const { registerMaintenanceHandlers } = require("./ipc/maintenance");
 const { registerPurchaseHandlers } = require("./ipc/purchases");
 const { registerSupplierHandlers } = require("./ipc/suppliers");
 const { registerSupplierSyncHandlers } = require("./ipc/SupplierSync");
+const { registerPurchaseReturnHandlers } = require("./ipc/purchaseReturns");
 
 function registerAllHandlers() {
   registerProductHandlers();
@@ -13,6 +14,7 @@ function registerAllHandlers() {
   registerPurchaseHandlers();
   registerSupplierHandlers();
   registerSupplierSyncHandlers();
+  registerPurchaseReturnHandlers();
 }
 
 module.exports = { registerAllHandlers };

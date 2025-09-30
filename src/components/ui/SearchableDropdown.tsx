@@ -28,7 +28,8 @@ interface SearchableDropdownProps {
   optionClassName?: string;
   allowCustom?: boolean;
   onCreate?: (value: string) => void;
-  onEnter?: () => void;
+  onEnter?: (dir: 1 | -1) => void;
+  autoOpenOnFocus?: boolean;
   buttonProps?: React.ButtonHTMLAttributes<HTMLButtonElement> &
     Record<string, any>;
 }
@@ -51,6 +52,7 @@ const SearchableDropdown = forwardRef<
       allowCustom,
       onCreate,
       onEnter,
+      autoOpenOnFocus = true,
       buttonProps,
     },
     ref
@@ -62,14 +64,12 @@ const SearchableDropdown = forwardRef<
     const searchInputRef = useRef<HTMLInputElement>(null);
     const menuRef = useRef<HTMLDivElement>(null);
     const [active, setActive] = useState(0);
+    const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
     useEffect(() => {
       if (!ref) return;
-      if (typeof ref === "function") {
-        ref(buttonRef.current);
-      } else {
-        (ref as any).current = buttonRef.current;
-      }
+      if (typeof ref === "function") ref(buttonRef.current);
+      else (ref as any).current = buttonRef.current;
     }, [ref]);
 
     const selectedLabel =
@@ -79,17 +79,22 @@ const SearchableDropdown = forwardRef<
       opt.label.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
+    useEffect(() => {
+      const el = optionRefs.current[active];
+      if (el) el.scrollIntoView({ block: "nearest" });
+    }, [active, isOpen, filteredOptions.length]);
+
     const createFromSearch = () => {
       const v = searchTerm.trim();
       if (!v) return;
       onChange(v);
       onCreate?.(v);
       setIsOpen(false);
-      onEnter?.();
+      onEnter?.(1);
     };
 
     useEffect(() => {
-      function handleClickOutside(e: PointerEvent) {
+      function onFocusIn(e: FocusEvent) {
         const t = e.target as Node | null;
         if (
           (rootRef.current && rootRef.current.contains(t)) ||
@@ -97,6 +102,20 @@ const SearchableDropdown = forwardRef<
         ) {
           return;
         }
+        setIsOpen(false);
+      }
+      document.addEventListener("focusin", onFocusIn);
+      return () => document.removeEventListener("focusin", onFocusIn);
+    }, []);
+
+    useEffect(() => {
+      function handleClickOutside(e: PointerEvent) {
+        const t = e.target as Node | null;
+        if (
+          (rootRef.current && rootRef.current.contains(t)) ||
+          (menuRef.current && menuRef.current.contains(t))
+        )
+          return;
         setIsOpen(false);
       }
       document.addEventListener("pointerdown", handleClickOutside);
@@ -107,23 +126,21 @@ const SearchableDropdown = forwardRef<
     useEffect(() => {
       if (isOpen) {
         setSearchTerm("");
+        setActive(0);
         requestAnimationFrame(() => {
           searchInputRef.current?.focus();
           const el = searchInputRef.current;
           if (el) el.setSelectionRange(el.value.length, el.value.length);
         });
-        setActive(0);
       }
     }, [isOpen]);
 
-    const handleButtonKeyDown: React.KeyboardEventHandler<HTMLButtonElement> = (
-      e
-    ) => {
-      if (isOpen) return;
+    const handleButtonKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+      if (isOpen) return false;
       if (e.key === "Enter") {
         e.preventDefault();
-        if (e.shiftKey) return;
         setIsOpen(true);
+        return true;
       } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault();
         setIsOpen(true);
@@ -131,19 +148,21 @@ const SearchableDropdown = forwardRef<
           setSearchTerm(e.key);
           searchInputRef.current?.focus();
         });
+        return true;
       } else if (e.key === "ArrowDown" || e.key === " ") {
         e.preventDefault();
         setIsOpen(true);
+        return true;
       }
+      return false;
     };
 
-    // ====== PORTAL POSITIONING ======
     const [menuStyle, setMenuStyle] = useState<React.CSSProperties>({});
     const recalcPosition = () => {
       const btn = buttonRef.current;
       if (!btn) return;
       const rect = btn.getBoundingClientRect();
-      const maxHeight = Math.min(240, window.innerHeight - rect.bottom - 8); // keep on screen
+      const maxHeight = Math.min(240, window.innerHeight - rect.bottom - 8);
       setMenuStyle({
         position: "fixed",
         top: rect.bottom + 4,
@@ -176,18 +195,25 @@ const SearchableDropdown = forwardRef<
           ref={buttonRef}
           type="button"
           onMouseDown={(e) => e.preventDefault()}
+          onFocus={() => {
+            if (autoOpenOnFocus) setIsOpen(true);
+          }}
           onClick={() => setIsOpen((p) => !p)}
           onKeyDown={(e) => {
-            buttonProps?.onKeyDown?.(e);
-            handleButtonKeyDown(e);
+            const handled = handleButtonKeyDown(e);
+            if (!handled) buttonProps?.onKeyDown?.(e);
           }}
           {...buttonProps}
           className={
             "w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 " +
             "focus:ring-averix-red-light focus:border-transparent flex items-center " +
             "justify-between bg-white hover:border-gray-400 transition-colors " +
-            controlClassName
+            (buttonProps?.className || "")
           }
+          role="combobox"
+          aria-expanded={isOpen}
+          aria-controls={isOpen ? "sd-menu" : undefined}
+          aria-haspopup="listbox"
         >
           <span
             className={`truncate text-left ${
@@ -197,13 +223,12 @@ const SearchableDropdown = forwardRef<
             {selectedLabel}
           </span>
           <ChevronDown
-            className={`w-4 h-4 text-gray-500 transform transition-transform duration-200 ml-2 flex-shrink-0 ${
+            className={`w-4 h-4 text-gray-500 transition-transform ml-2 ${
               isOpen ? "rotate-180" : ""
             }`}
           />
         </button>
 
-        {/* ====== PORTAL MENU ====== */}
         {isOpen &&
           createPortal(
             <div
@@ -212,8 +237,7 @@ const SearchableDropdown = forwardRef<
               style={menuStyle}
               className={
                 "bg-white border border-gray-200 rounded-md shadow-lg overflow-hidden " +
-                "max-h-60 flex flex-col " +
-                "z-[9999] " +
+                "max-h-60 flex flex-col z-[9999] " +
                 menuClassName
               }
             >
@@ -223,11 +247,13 @@ const SearchableDropdown = forwardRef<
                   type="text"
                   placeholder="Search..."
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value);
+                    setActive(0);
+                  }}
                   className={
                     "w-full border border-gray-300 rounded-md px-3 py-2 text-sm " +
-                    "focus:outline-none focus:ring-2 focus:ring-averix-red-light " +
-                    "focus:border-transparent " +
+                    "focus:outline-none focus:ring-2 focus:ring-averix-red-light focus:border-transparent " +
                     inputClassName
                   }
                   onKeyDown={(e) => {
@@ -239,6 +265,23 @@ const SearchableDropdown = forwardRef<
                     } else if (e.key === "ArrowUp") {
                       e.preventDefault();
                       setActive((a) => Math.max(a - 1, 0));
+                    } else if (e.key === "Home") {
+                      e.preventDefault();
+                      setActive(0);
+                    } else if (e.key === "End") {
+                      e.preventDefault();
+                      setActive(Math.max(0, filteredOptions.length - 1));
+                    } else if (e.key === "PageDown") {
+                      e.preventDefault();
+                      setActive((a) =>
+                        Math.min(
+                          a + 10,
+                          Math.max(0, filteredOptions.length - 1)
+                        )
+                      );
+                    } else if (e.key === "PageUp") {
+                      e.preventDefault();
+                      setActive((a) => Math.max(a - 10, 0));
                     } else if (e.key === "Enter") {
                       e.preventDefault();
                       if (filteredOptions.length) {
@@ -246,27 +289,34 @@ const SearchableDropdown = forwardRef<
                           filteredOptions[active] ?? filteredOptions[0];
                         onChange(opt.value);
                         setIsOpen(false);
-                        onEnter?.();
+                        onEnter?.(e.shiftKey ? -1 : 1);
                       } else if (allowCustom) {
                         createFromSearch();
                       }
+                    } else if (e.key === "Escape") {
+                      e.preventDefault();
+                      setIsOpen(false);
+                    } else if (e.key === "Tab") {
+                      setIsOpen(false);
                     }
                   }}
+                  role="combobox"
+                  aria-controls="sd-menu"
+                  aria-autocomplete="list"
+                  aria-expanded={true}
                 />
               </div>
 
-              <div className="overflow-y-auto">
+              <div id="sd-menu" role="listbox" className="overflow-y-auto">
                 {value && (
                   <button
                     type="button"
                     onClick={() => {
                       onChange("");
                       setIsOpen(false);
-                      onEnter?.();
                     }}
                     className={
-                      "w-full text-left px-3 py-2 text-sm text-gray-500 " +
-                      "hover:bg-gray-100 border-b border-gray-100 cursor-pointer " +
+                      "w-full text-left px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 border-b border-gray-100 cursor-pointer " +
                       optionClassName
                     }
                   >
@@ -278,11 +328,13 @@ const SearchableDropdown = forwardRef<
                   filteredOptions.map((opt, i) => (
                     <button
                       key={opt.value}
+                      ref={(el) => {
+                        optionRefs.current[i] = el;
+                      }}
                       type="button"
                       onClick={() => {
                         onChange(opt.value);
                         setIsOpen(false);
-                        onEnter?.();
                       }}
                       className={
                         "w-full text-left px-3 py-2 text-sm transition-colors duration-150 cursor-pointer " +
@@ -293,6 +345,16 @@ const SearchableDropdown = forwardRef<
                           : "text-gray-900 hover:bg-gray-100 ") +
                         optionClassName
                       }
+                      role="option"
+                      aria-selected={i === active}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          onChange(opt.value);
+                          setIsOpen(false);
+                          onEnter?.(e.shiftKey ? -1 : 1);
+                        }
+                      }}
                     >
                       {opt.label}
                     </button>
@@ -313,8 +375,7 @@ const SearchableDropdown = forwardRef<
                     type="button"
                     onClick={createFromSearch}
                     className={
-                      "w-full text-left px-3 py-2 text-sm text-averix-red-dark " +
-                      "hover:bg-averix-red-light/10 border-t border-gray-100 cursor-pointer " +
+                      "w-full text-left px-3 py-2 text-sm text-averix-red-dark hover:bg-averix-red-light/10 border-t border-gray-100 cursor-pointer " +
                       optionClassName
                     }
                   >

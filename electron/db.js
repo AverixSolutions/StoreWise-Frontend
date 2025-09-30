@@ -87,6 +87,7 @@ addColumnIfMissing("purchases", "billNo", "TEXT");
 addColumnIfMissing("purchases", "debitAccount", "TEXT");
 addColumnIfMissing("purchases", "natureOfEntry", "TEXT");
 addColumnIfMissing("purchases", "purchaseType", "TEXT");
+addColumnIfMissing("purchases", "updatedAt", "TEXT");
 
 // Purchase Index
 db.prepare(
@@ -191,6 +192,9 @@ db.prepare(
 ).run();
 
 addColumnIfMissing("purchase_return_items", "effectiveUnitValue", "REAL");
+addColumnIfMissing("purchase_return_items", "appliedQuantity", "INTEGER");
+addColumnIfMissing("purchase_return_items", "overReturnQuantity", "INTEGER");
+addColumnIfMissing("purchase_return_items", "overReturnReason", "TEXT");
 
 db.prepare(
   `
@@ -400,6 +404,50 @@ db.prepare(
 db.prepare(
   `
   CREATE TABLE IF NOT EXISTS purchase_hold_sequence (
+    licenseId TEXT PRIMARY KEY,
+    lastHoldNo INTEGER DEFAULT 0
+  )
+`
+).run();
+
+// --- Purchase Return Holds (drafts) ---
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS purchase_return_holds (
+    id TEXT PRIMARY KEY,
+    licenseId TEXT NOT NULL,
+    userId TEXT,
+    holdNo INTEGER NOT NULL,
+    title TEXT,
+    headerJson TEXT NOT NULL,  -- JSON.stringify(header)
+    rowsJson   TEXT NOT NULL,  -- JSON.stringify(rows)
+    createdAt TEXT,
+    updatedAt TEXT,
+    isSynced INTEGER DEFAULT 0,
+    syncedAt TEXT,
+    deletedAt TEXT
+  )
+`
+).run();
+
+db.prepare(
+  `
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_purchase_return_holds_no
+  ON purchase_return_holds(licenseId, holdNo)
+`
+).run();
+
+db.prepare(
+  `
+  CREATE INDEX IF NOT EXISTS idx_purchase_return_holds_license
+  ON purchase_return_holds(licenseId, createdAt)
+`
+).run();
+
+// Per-license sequence for return holds
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS purchase_return_hold_sequence (
     licenseId TEXT PRIMARY KEY,
     lastHoldNo INTEGER DEFAULT 0
   )

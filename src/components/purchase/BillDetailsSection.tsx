@@ -26,6 +26,8 @@ interface BillDetailsSectionProps {
   onSave: () => void;
   onCancel: () => void;
   entryNo?: number;
+  requireSupplier?: boolean;
+  isEditing?: boolean;
 }
 
 const labelCls =
@@ -50,6 +52,8 @@ export default function BillDetailsSection({
   onSave,
   onCancel,
   entryNo,
+  requireSupplier,
+  isEditing,
 }: BillDetailsSectionProps) {
   return (
     <section className="col-span-1 bg-white max-w-[300px] border border-gray-200 -mt-px p-4 space-y-4 overflow-y-auto no-scrollbar">
@@ -97,6 +101,10 @@ export default function BillDetailsSection({
               </button>
               <button
                 type="button"
+                disabled={!header.supplier}
+                title={
+                  !header.supplier ? "Select a supplier to enable CREDIT" : ""
+                }
                 onClick={() =>
                   setHeader((s) => ({ ...s, purchaseType: "CREDIT" }))
                 }
@@ -196,7 +204,8 @@ export default function BillDetailsSection({
         <div>
           <label className={labelCls}>
             <UserRound className="w-3.5 h-3.5" />
-            Supplier <span className="text-red-500">*</span>
+            Supplier{" "}
+            {requireSupplier ? <span className="text-red-500">*</span> : null}
           </label>
           <div className="flex gap-2">
             <div className="flex-1">
@@ -342,7 +351,7 @@ export default function BillDetailsSection({
           className="flex-1 h-9 bg-averix-red-dark text-white px-3 rounded-md hover:bg-averix-red-accent transition-colors font-medium inline-flex items-center justify-center gap-2 cursor-pointer"
         >
           <Receipt className="w-4 h-4" />
-          Save Bill
+          Save
         </button>
         <button
           onClick={onCancel}

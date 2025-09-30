@@ -38,6 +38,16 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getNextPurchaseSlNo: (licenseId) =>
     ipcRenderer.invoke("purchase:peek-next-slno", licenseId),
 
+  // ---- Purchase Return APIs ----
+  createPurchaseReturn: (payload) =>
+    ipcRenderer.invoke("purchase-return:create", payload),
+  listPurchaseReturns: (licenseId, pagination) =>
+    ipcRenderer.invoke("purchase-return:list", licenseId, pagination),
+  markPurchaseReturnsSynced: (ids, serverSyncedAt) =>
+    ipcRenderer.invoke("purchase-return:mark-synced", ids, serverSyncedAt),
+  getNextPurchaseReturnSlNo: (licenseId) =>
+    ipcRenderer.invoke("purchase-return:peek-next-slno", licenseId),
+
   // ---- Purchase Holds ----
   savePurchaseHold: (payload) =>
     ipcRenderer.invoke("purchase-hold:save", payload),
@@ -47,6 +57,25 @@ contextBridge.exposeInMainWorld("electronAPI", {
   deletePurchaseHold: (id) => ipcRenderer.invoke("purchase-hold:delete", id),
   getNextHoldNo: (licenseId) =>
     ipcRenderer.invoke("purchase-hold:peek-next-no", licenseId),
+
+  // Purchase report
+  listPurchases: (licenseId, filters) =>
+    ipcRenderer.invoke("purchase:list", licenseId, filters),
+  getPurchaseFull: (id) => ipcRenderer.invoke("purchase:getFull", id),
+  updatePurchase: (payload) => ipcRenderer.invoke("purchase:update", payload),
+  deletePurchase: (id) => ipcRenderer.invoke("purchase:delete", id),
+
+  // ---- Purchase Return Holds ----
+  savePurchaseReturnHold: (payload) =>
+    ipcRenderer.invoke("purchase-return-hold:save", payload),
+  listPurchaseReturnHolds: (licenseId, pagination) =>
+    ipcRenderer.invoke("purchase-return-hold:list", licenseId, pagination),
+  getPurchaseReturnHold: (id) =>
+    ipcRenderer.invoke("purchase-return-hold:get", id),
+  deletePurchaseReturnHold: (id) =>
+    ipcRenderer.invoke("purchase-return-hold:delete", id),
+  getNextPurchaseReturnHoldNo: (licenseId) =>
+    ipcRenderer.invoke("purchase-return-hold:peek-next-no", licenseId),
 
   // Suppliers
   createSupplier: (payload) => ipcRenderer.invoke("supplier:create", payload),

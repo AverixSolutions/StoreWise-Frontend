@@ -34,7 +34,7 @@ export interface ItemRow {
   profit?: number | null;
   totalCost?: number | null;
   billedValue?: number | null;
-  batchNo?: string;
+  batchNo?: string | null;
   mfgDate?: string | null;
   expiryDate?: string | null;
   lineType?: LineType;
