@@ -11,6 +11,7 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import SuppliersTable from "@/components/suppliers/SuppliersTable";
+import CustomersTable from "@/components/customers/CustomersTable";
 
 type MasterSection =
   | "dashboard"
@@ -82,19 +83,24 @@ export default function MasterPage() {
   const [currentSection, setCurrentSection] =
     useState<MasterSection>("dashboard");
   const [supplierCount, setSupplierCount] = useState<number>(0);
+  const [customerCount, setCustomerCount] = useState<number>(0);
 
   useEffect(() => {
     if (currentSection !== "dashboard") return;
     const licenseId = localStorage.getItem("licenseId") || "demo-license";
     (async () => {
       try {
-        const { count } = await (window as any).electronAPI.getSupplierCount(
-          licenseId,
-          { q: "" }
-        );
-        setSupplierCount(Number(count || 0));
+        const { count: supCnt } = await (
+          window as any
+        ).electronAPI.getSupplierCount(licenseId, { q: "" });
+        setSupplierCount(Number(supCnt || 0));
+
+        const { count: custCnt } = await (
+          window as any
+        ).electronAPI.getCustomerCount(licenseId, { q: "" });
+        setCustomerCount(Number(custCnt || 0));
       } catch (e) {
-        console.error("supplier count failed", e);
+        console.error("master counts failed", e);
       }
     })();
   }, [currentSection]);
@@ -114,7 +120,11 @@ export default function MasterPage() {
         {masterSections.map((section) => {
           const IconComponent = section.icon;
           const count =
-            section.id === "suppliers" ? supplierCount : section.count;
+            section.id === "suppliers"
+              ? supplierCount
+              : section.id === "customers"
+              ? customerCount
+              : section.count;
           return (
             <div
               key={section.id}
@@ -151,11 +161,15 @@ export default function MasterPage() {
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="text-center p-4 bg-gray-50 rounded-lg">
-            <div className="text-2xl font-bold text-blue-600">0</div>
+            <div className="text-2xl font-bold text-blue-600">
+              {supplierCount}
+            </div>
             <div className="text-sm text-gray-600">Total Suppliers</div>
           </div>
           <div className="text-center p-4 bg-gray-50 rounded-lg">
-            <div className="text-2xl font-bold text-green-600">0</div>
+            <div className="text-2xl font-bold text-green-600">
+              {customerCount}
+            </div>
             <div className="text-sm text-gray-600">Total Customers</div>
           </div>
           <div className="text-center p-4 bg-gray-50 rounded-lg">
@@ -172,17 +186,7 @@ export default function MasterPage() {
       case "suppliers":
         return <SuppliersTable />;
       case "customers":
-        return (
-          <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
-            <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              Customers Management
-            </h3>
-            <p className="text-gray-600">
-              Customer management feature coming soon...
-            </p>
-          </div>
-        );
+        return <CustomersTable />;
       case "categories":
         return (
           <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">

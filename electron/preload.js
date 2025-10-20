@@ -102,6 +102,51 @@ contextBridge.exposeInMainWorld("electronAPI", {
   bulkUpsertSuppliers: (items) =>
     ipcRenderer.invoke("bulk-upsert-suppliers", items),
 
+  // SALES
+  listSales: (licenseId, filters) =>
+    ipcRenderer.invoke("sale:list", licenseId, filters),
+  getSale: (id) => ipcRenderer.invoke("sale:get", id),
+  getSaleFull: (id) => ipcRenderer.invoke("sale:getFull", id),
+  createSale: (header, items) =>
+    ipcRenderer.invoke("create-sale", header, items),
+  updateSale: (payload) => ipcRenderer.invoke("sale:update", payload),
+  deleteSale: (id) => ipcRenderer.invoke("sale:delete", id),
+  getNextSaleSlNo: (licenseId) =>
+    ipcRenderer.invoke("sale:peek-next-slno", licenseId),
+  markSalesSynced: (ids, ts) => ipcRenderer.invoke("sale:mark-synced", ids, ts),
+
+  // SALE HOLDS
+  saveSaleHold: (payload) => ipcRenderer.invoke("sale-hold:save", payload),
+  listSaleHolds: (licenseId, paging) =>
+    ipcRenderer.invoke("sale-hold:list", licenseId, paging),
+  getSaleHold: (id) => ipcRenderer.invoke("sale-hold:get", id),
+  deleteSaleHold: (id) => ipcRenderer.invoke("sale-hold:delete", id),
+  peekNextSaleHoldNo: (licenseId) =>
+    ipcRenderer.invoke("sale-hold:peek-next-no", licenseId),
+
+  // SALE RETURNS
+  createSaleReturn: (payload) =>
+    ipcRenderer.invoke("sale-return:create", payload),
+  listSaleReturns: (licenseId, paging) =>
+    ipcRenderer.invoke("sale-return:list", licenseId, paging),
+  markSaleReturnsSynced: (ids, ts) =>
+    ipcRenderer.invoke("sale-return:mark-synced", ids, ts),
+  getNextSaleReturnSlNo: (licenseId) =>
+    ipcRenderer.invoke("sale-return:peek-next-slno", licenseId),
+
+  // CUSTOMERS
+  listCustomers: (licenseId, filters) =>
+    ipcRenderer.invoke("customer:list", licenseId, filters),
+  getCustomer: (id) => ipcRenderer.invoke("customer:get", id),
+  saveCustomer: (payload) => ipcRenderer.invoke("customer:save", payload),
+  deleteCustomer: (id) => ipcRenderer.invoke("customer:delete", id),
+  peekNextCustomerCode: (licenseId) =>
+    ipcRenderer.invoke("customer:peek-next-code", licenseId),
+  getCustomerCount: (licenseId, params) =>
+    ipcRenderer.invoke("customer:count", licenseId, params),
+  getCustomerDistincts: (licenseId) =>
+    ipcRenderer.invoke("customer:distinct", licenseId),
+
   // Shared sync state
   getSyncState: (scope) => ipcRenderer.invoke("sync-state:get", scope),
   setSyncState: (scope, changes) =>

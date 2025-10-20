@@ -14,19 +14,27 @@ export default function DashboardLayout({
   const headerHeight = 72;
   const pathname = usePathname();
 
-  const showSidebar = !pathname?.includes("/dashboard/purchase");
-  const isPurchase = pathname?.startsWith("/dashboard/purchase");
+  const HIDE_SIDEBAR_PREFIXES = [
+    "/dashboard/purchase",
+    "/dashboard/sales",
+    "/dashboard/sales-return",
+  ];
+
+  const hideSidebar = HIDE_SIDEBAR_PREFIXES.some((p) =>
+    pathname?.startsWith(p)
+  );
+  const isFullWidth = hideSidebar;
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
       <SyncProvider />
       <Header />
       <div className="flex flex-1 overflow-hidden">
-        {showSidebar && <Sidebar topOffset={headerHeight} />}
+        {!hideSidebar && <Sidebar topOffset={headerHeight} />}
         <main
           className={
             "flex-1 overflow-y-auto " +
-            (isPurchase ? "p-0" : "p-6 max-w-[1400px] w-full mx-auto")
+            (isFullWidth ? "p-0" : "p-6 max-w-[1400px] w-full mx-auto")
           }
         >
           {children}

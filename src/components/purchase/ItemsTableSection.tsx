@@ -13,8 +13,8 @@ interface ItemsTableSectionProps {
   subTotal: number;
   grandTotal: number;
   headerDiscount: number;
-  onHold: () => void;
-  onShowHolds: () => void;
+  onHold?: () => void;
+  onShowHolds?: () => void;
   onShowReports: () => void;
   showHoldControls?: boolean;
 }

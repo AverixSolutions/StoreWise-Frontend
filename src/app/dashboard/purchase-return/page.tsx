@@ -14,10 +14,9 @@ import {
   calcRow,
   validateReturnBill,
   mapItems,
-  round2,
 } from "@/components/purchase/utils";
 import ValidationModal from "@/components/ui/ValidationModal";
-import PurchaseReportsModal from "@/components/purchase/PurchaseReportsModal";
+import PurchaseReturnReportsModal from "@/components/purchase-return/PurchaseReturnReportsModal";
 export default function PurchaseReturnPage() {
   const router = useRouter();
 
@@ -56,6 +55,8 @@ export default function PurchaseReturnPage() {
 
   const [validationOpen, setValidationOpen] = useState(false);
   const [validationMsgs, setValidationMsgs] = useState<string[]>([]);
+
+  const [showReports, setShowReports] = useState(false);
 
   async function tryNavigate(path: string) {
     if (!isDirty) {
@@ -357,9 +358,24 @@ export default function PurchaseReturnPage() {
             headerDiscount={header.discount}
             onHold={handleHold}
             onShowHolds={handleShowHolds}
+            onShowReports={() => setShowReports(true)}
           />
         </div>
       </div>
+
+      {showReports && (
+        <PurchaseReturnReportsModal
+          isOpen={showReports}
+          onClose={() => setShowReports(false)}
+          licenseId={licenseId}
+          suppliers={suppliers}
+          onOpenPurchaseReturn={(id) => {
+            // TODO: load this return into the editor if you support that
+            // e.g. router.push(`/dashboard/purchase-return?returnId=${id}`)
+            console.log("Open purchase return:", id);
+          }}
+        />
+      )}
 
       <ReturnHoldsModal
         isOpen={showHolds}
