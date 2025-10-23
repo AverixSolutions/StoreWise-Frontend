@@ -40,10 +40,10 @@ export default function SalesReturnPage() {
     department: "",
     debitAccount: "",
     natureOfEntry: "",
-    saleDate: new Date().toISOString(), // we'll map to returnDate on save
+    saleDate: new Date().toISOString(),
     entryTime: new Date().toISOString(),
     discount: 0,
-    saleType: "CASH", // CASH return (refund) vs CREDIT return (adjust receivable)
+    saleType: "CASH",
   });
   const [rows, setRows] = useState<ItemRow[]>([createEmptyRow(1)]);
   const [isDirty, setIsDirty] = useState(false);

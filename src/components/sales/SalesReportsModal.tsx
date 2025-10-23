@@ -16,7 +16,7 @@ type Row = {
   billNo?: string | null;
   customerId?: string | null;
   customerName?: string | null;
-  dateIso: string; // saleDate
+  dateIso: string;
   entryTime?: string | null;
   totalAmount: number;
   discount: number;
@@ -30,6 +30,7 @@ export interface SalesReportsModalProps {
   licenseId: string;
   customers: Array<{ id: string; name: string }>;
   onOpenSale: (id: string) => void;
+  openingId?: string;
 }
 
 export default function SalesReportsModal({
@@ -38,6 +39,7 @@ export default function SalesReportsModal({
   licenseId,
   customers,
   onOpenSale,
+  openingId,
 }: SalesReportsModalProps) {
   const [q, setQ] = useState("");
   const [customerId, setCustomerId] = useState<string | "">("");
@@ -105,7 +107,6 @@ export default function SalesReportsModal({
 
   function openRow(row: Row) {
     onOpenSale(row.id);
-    onClose();
   }
 
   if (!isOpen) return null;
@@ -125,6 +126,13 @@ export default function SalesReportsModal({
             <X className="w-5 h-5 text-gray-600" />
           </button>
         </div>
+
+        {/* Opening Banner */}
+        {openingId && (
+          <div className="px-6 py-2 text-sm bg-amber-50 text-amber-800 border-b border-amber-200">
+            Opening sale <span className="font-medium">{openingId}</span>…
+          </div>
+        )}
 
         {/* Filters */}
         <div className="px-6 py-3 border-b border-gray-100 bg-white">
@@ -264,17 +272,51 @@ export default function SalesReportsModal({
                     </td>
                     <td className="px-3 py-2 text-right">
                       <div className="inline-flex gap-2">
+                        {/* Open Button */}
                         <button
-                          className="px-2.5 py-1.5 rounded-md bg-averix-red-dark text-white text-xs hover:bg-averix-red-accent inline-flex items-center gap-1"
-                          onClick={() => openRow(r)}
+                          className={`px-2.5 py-1.5 rounded-md text-xs inline-flex items-center gap-1 ${
+                            openingId === r.id
+                              ? "bg-gray-200 text-gray-600 cursor-wait"
+                              : "bg-averix-red-dark text-white hover:bg-averix-red-accent"
+                          }`}
+                          onClick={() => (openingId ? null : openRow(r))}
                           title="Open in editor"
+                          disabled={Boolean(openingId)}
                         >
-                          <ExternalLink className="w-3.5 h-3.5" /> Open
+                          {openingId === r.id ? (
+                            <>
+                              <svg
+                                className="animate-spin h-3.5 w-3.5"
+                                viewBox="0 0 24 24"
+                              >
+                                <circle
+                                  className="opacity-25"
+                                  cx="12"
+                                  cy="12"
+                                  r="10"
+                                  stroke="currentColor"
+                                  strokeWidth="4"
+                                  fill="none"
+                                ></circle>
+                                <path
+                                  className="opacity-75"
+                                  fill="currentColor"
+                                  d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+                                ></path>
+                              </svg>
+                              Opening…
+                            </>
+                          ) : (
+                            <>
+                              <ExternalLink className="w-3.5 h-3.5" /> Open
+                            </>
+                          )}
                         </button>
                         <button
                           className="px-2.5 py-1.5 rounded-md bg-red-50 text-red-700 border border-red-200 text-xs hover:bg-red-100 inline-flex items-center gap-1"
                           onClick={() => handleDelete(r.id)}
                           title="Soft delete"
+                          disabled={Boolean(openingId)}
                         >
                           <Trash2 className="w-3.5 h-3.5" /> Delete
                         </button>

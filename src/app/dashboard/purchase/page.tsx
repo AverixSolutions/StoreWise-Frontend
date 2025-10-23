@@ -118,6 +118,18 @@ export default function PurchasePage() {
   const [editingSlNo, setEditingSlNo] = useState<number | null>(null);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    const key = "openPurchaseId";
+    const id = sessionStorage.getItem(key);
+    if (!id) return;
+
+    handleOpenPurchaseFromReport(id);
+
+    sessionStorage.removeItem(key);
+    setIsDirty(true);
+  }, []);
+
+  useEffect(() => {
     (async () => {
       const res = await (window as any).electronAPI.getProducts(licenseId, {
         page: 1,

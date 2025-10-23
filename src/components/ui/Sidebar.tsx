@@ -18,7 +18,7 @@ const tabs: Tab[] = [
   { name: "Dashboard", icon: LayoutDashboard, path: "/dashboard" },
   { name: "Entries", icon: FilePlus, path: "/dashboard/entries" },
   { name: "Master", icon: Database, path: "/dashboard/master" },
-  { name: "Report", icon: BarChart2, path: "/dashboard/report" },
+  { name: "Reports", icon: BarChart2, path: "/dashboard/report" },
   { name: "Settings", icon: Settings, path: "/dashboard/settings" },
 ];
 

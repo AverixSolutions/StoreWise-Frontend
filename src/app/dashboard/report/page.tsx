@@ -36,34 +36,62 @@ export default function ReportPage() {
   const [openSales, setOpenSales] = useState(false);
   const [openSalesReturn, setOpenSalesReturn] = useState(false);
 
+  // Opening state for showing "Opening..." indicator
+  const [opening, setOpening] = useState<{
+    kind: "purchase" | "purchase-return" | "sales" | "sales-return";
+    id: string;
+  } | null>(null);
+
+  // Prefetch routes on mount
+  useEffect(() => {
+    router.prefetch("/dashboard/purchase");
+    router.prefetch("/dashboard/purchase-return");
+    router.prefetch("/dashboard/sales");
+    router.prefetch("/dashboard/sales-return");
+  }, [router]);
+
   const handleOpenPurchase = useCallback(
     (id: string) => {
-      setOpenPurchase(false);
-      router.push(`/dashboard/purchase?open=${id}`);
+      // sessionStorage handoff (no URL flicker)
+      if (typeof window !== "undefined") {
+        sessionStorage.setItem("openPurchaseId", id);
+      }
+      setOpening({ kind: "purchase", id }); // show "Opening…" in the modal
+      router.push("/dashboard/purchase"); // do NOT close the modal here
+      // the page unmounts automatically on route change
     },
     [router]
   );
 
   const handleOpenPurchaseReturn = useCallback(
     (id: string) => {
-      setOpenPurchaseReturn(false);
-      router.push(`/dashboard/purchase-return?open=${id}`);
+      if (typeof window !== "undefined") {
+        sessionStorage.setItem("openPurchaseReturnId", id);
+      }
+      setOpening({ kind: "purchase-return", id });
+      router.push("/dashboard/purchase-return");
     },
     [router]
   );
 
   const handleOpenSale = useCallback(
     (id: string) => {
-      setOpenSales(false);
-      router.push(`/dashboard/sales?open=${id}`);
+      if (typeof window !== "undefined") {
+        sessionStorage.setItem("openSaleId", id);
+      }
+      setOpening({ kind: "sales", id });
+      router.push("/dashboard/sales");
     },
     [router]
   );
 
   const handleOpenSaleReturn = useCallback(
     (id: string) => {
-      setOpenSalesReturn(false);
-      router.push(`/dashboard/sales-return?open=${id}`);
+      if (typeof window !== "undefined") {
+        sessionStorage.setItem("openSaleReturnId", id);
+      }
+      setOpening({ kind: "sales-return", id });
+      router.push("/dashboard/sales-return");
     },
     [router]
   );
@@ -163,6 +191,7 @@ export default function ReportPage() {
           licenseId={licenseId}
           suppliers={suppliers}
           onOpenPurchase={handleOpenPurchase}
+          openingId={opening?.kind === "purchase" ? opening.id : undefined}
         />
       )}
 
@@ -173,6 +202,9 @@ export default function ReportPage() {
           licenseId={licenseId}
           suppliers={suppliers}
           onOpenPurchaseReturn={handleOpenPurchaseReturn}
+          openingId={
+            opening?.kind === "purchase-return" ? opening.id : undefined
+          }
         />
       )}
 
@@ -183,6 +215,7 @@ export default function ReportPage() {
           licenseId={licenseId}
           customers={customers}
           onOpenSale={handleOpenSale}
+          openingId={opening?.kind === "sales" ? opening.id : undefined}
         />
       )}
 
@@ -193,6 +226,7 @@ export default function ReportPage() {
           licenseId={licenseId}
           customers={customers}
           onOpenSaleReturn={handleOpenSaleReturn}
+          openingId={opening?.kind === "sales-return" ? opening.id : undefined}
         />
       )}
     </main>
