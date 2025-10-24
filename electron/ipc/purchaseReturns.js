@@ -176,6 +176,9 @@ function registerPurchaseReturnHandlers() {
         `UPDATE purchase_returns SET totalAmount = ?, discount = ? WHERE id = ?`
       ).run(totalAmount, header.discount || 0, newId);
 
+      const grandAmount = Math.max(0, totalAmount - (header.discount || 0));
+
+      // CREDIT: supplier balance reduces
       if (header.purchaseType === "CREDIT" && header.supplierId) {
         db.prepare(
           `
@@ -189,9 +192,29 @@ function registerPurchaseReturnHandlers() {
           header.supplierId,
           newId,
           header.billNo || null,
-          now,
-          Math.max(0, totalAmount - (header.discount || 0)),
+          header.returnDate || now,
+          grandAmount,
           "Purchase Return",
+          now,
+          now
+        );
+      }
+
+      // CASH: record a cash-in (refund) in cash ledger
+      if (header.purchaseType === "CASH") {
+        db.prepare(
+          `
+          INSERT INTO cash_transactions
+          (id, licenseId, kind, refId, refNo, date, amount, sign, notes, createdAt, updatedAt, isSynced)
+          VALUES (?, ?, 'RECEIPT', ?, ?, ?, ?, +1, 'Purchase Return (Cash)', ?, ?, 0)
+        `
+        ).run(
+          uuidv4(),
+          header.licenseId,
+          newId,
+          header.billNo || null,
+          header.returnDate || now,
+          grandAmount,
           now,
           now
         );

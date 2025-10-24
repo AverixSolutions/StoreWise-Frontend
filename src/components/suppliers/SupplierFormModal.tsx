@@ -2,6 +2,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import SearchableDropdown from "../ui/SearchableDropdown";
+import SupplierLedgerModal from "../ledger/SupplierLedgerModal";
 
 type Supplier = {
   id?: string;
@@ -42,6 +43,7 @@ export default function SupplierFormModal({
   editSupplier?: Supplier | null;
 }) {
   const [form, setForm] = useState<Supplier>({ name: "" });
+  const [ledgerOpen, setLedgerOpen] = useState(false);
 
   // Derived UI state for opening balance
   const [openingSide, setOpeningSide] = useState<"we_owe" | "they_owe">(
@@ -344,10 +346,19 @@ export default function SupplierFormModal({
   return (
     <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4">
       <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] shadow-xl flex flex-col">
-        <div className="px-6 py-4 border-b border-gray-200 flex-shrink-0">
+        <div className="px-6 py-4 border-b border-gray-200 flex-shrink-0 flex items-center justify-between">
           <h3 className="text-xl font-semibold text-gray-900">
             {editSupplier ? "Edit Supplier" : "Add Supplier"}
           </h3>
+          {editSupplier?.id && (
+            <button
+              type="button"
+              onClick={() => setLedgerOpen(true)}
+              className="px-3 py-1.5 text-sm font-medium rounded-md bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
+            >
+              Open Ledger
+            </button>
+          )}
         </div>
 
         {status.type && (
@@ -920,6 +931,16 @@ export default function SupplierFormModal({
           )}
         </div>
       </div>
+
+      {editSupplier?.id && (
+        <SupplierLedgerModal
+          isOpen={ledgerOpen}
+          onClose={() => setLedgerOpen(false)}
+          licenseId={localStorage.getItem("licenseId")!}
+          supplierId={editSupplier.id}
+          supplierName={editSupplier.name}
+        />
+      )}
     </div>
   );
 }

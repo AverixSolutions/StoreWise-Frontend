@@ -279,6 +279,8 @@ function registerPurchaseHandlers() {
          WHERE id = ?`
       ).run(totalAmount, purchase.discount || 0, newId);
 
+      const grandAmount = Math.max(0, totalAmount - (purchase.discount || 0));
+
       if (purchase.purchaseType === "CREDIT" && purchase.supplierId) {
         db.prepare(
           `
@@ -293,10 +295,32 @@ function registerPurchaseHandlers() {
           "PURCHASE",
           newId,
           purchase.billNo || null,
-          now,
-          Math.max(0, totalAmount - (purchase.discount || 0)),
+          purchase.purchaseDate || now,
+          grandAmount,
           1,
           "Purchase",
+          now,
+          now
+        );
+      }
+
+      if (purchase.purchaseType === "CASH") {
+        db.prepare(
+          `
+          INSERT INTO cash_transactions
+          (id, licenseId, kind, refId, refNo, date, amount, sign, notes, createdAt, updatedAt, isSynced)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?, 0)
+          `
+        ).run(
+          uuidv4(),
+          purchase.licenseId,
+          "PURCHASE",
+          newId,
+          purchase.billNo || null,
+          purchase.purchaseDate || now,
+          grandAmount,
+          -1,
+          "Purchase (Cash)",
           now,
           now
         );
@@ -427,6 +451,7 @@ function registerPurchaseHandlers() {
         }
       });
 
+      // Delete old ledger entries for both supplier and cash
       db.prepare(
         `
         DELETE FROM supplier_transactions
@@ -434,6 +459,14 @@ function registerPurchaseHandlers() {
       `
       ).run({ licenseId: header.licenseId, refId: id });
 
+      db.prepare(
+        `
+        DELETE FROM cash_transactions
+        WHERE licenseId = @licenseId AND kind='PURCHASE' AND refId = @refId
+        `
+      ).run({ licenseId: header.licenseId, refId: id });
+
+      // Insert new ledger entry based on purchase type
       if (header.purchaseType === "CREDIT" && header.supplierId) {
         db.prepare(
           `
@@ -444,6 +477,24 @@ function registerPurchaseHandlers() {
         ).run(
           header.licenseId,
           header.supplierId,
+          id,
+          header.billNo || null,
+          header.purchaseDate || now,
+          grandAmount,
+          now,
+          now
+        );
+      }
+
+      if (header.purchaseType === "CASH") {
+        db.prepare(
+          `
+          INSERT INTO cash_transactions
+          (id, licenseId, kind, refId, refNo, date, amount, sign, notes, createdAt, updatedAt, isSynced)
+          VALUES (lower(hex(randomblob(16))), ?, 'PURCHASE', ?, ?, ?, ?, -1, 'Purchase (Cash)', ?, ?, 0)
+          `
+        ).run(
+          header.licenseId,
           id,
           header.billNo || null,
           header.purchaseDate || now,
@@ -486,6 +537,11 @@ function registerPurchaseHandlers() {
         }
       }
 
+      // Fetch licenseId before soft-deleting
+      const p = db
+        .prepare(`SELECT licenseId FROM purchases WHERE id=?`)
+        .get(id);
+
       db.prepare(`UPDATE purchases SET deletedAt=?, isSynced=0 WHERE id=?`).run(
         now,
         id
@@ -494,12 +550,24 @@ function registerPurchaseHandlers() {
         `UPDATE purchase_items SET deletedAt=?, isSynced=0 WHERE purchaseId=?`
       ).run(now, id);
 
-      db.prepare(
-        `
-        DELETE FROM supplier_transactions
-        WHERE kind='PURCHASE' AND refId=?
-      `
-      ).run(id);
+      // Delete ledger rows with license guard
+      if (p?.licenseId) {
+        db.prepare(
+          `DELETE FROM supplier_transactions WHERE licenseId=? AND kind='PURCHASE' AND refId=?`
+        ).run(p.licenseId, id);
+
+        db.prepare(
+          `DELETE FROM cash_transactions WHERE licenseId=? AND kind='PURCHASE' AND refId=?`
+        ).run(p.licenseId, id);
+      } else {
+        db.prepare(
+          `DELETE FROM supplier_transactions WHERE kind='PURCHASE' AND refId=?`
+        ).run(id);
+
+        db.prepare(
+          `DELETE FROM cash_transactions WHERE kind='PURCHASE' AND refId=?`
+        ).run(id);
+      }
     });
 
     try {
@@ -702,6 +770,155 @@ function registerPurchaseHandlers() {
     const nextSlNo = seq ? seq.lastSlNo + 1 : 1;
     return { nextSlNo };
   });
+
+  // ===== SUPPLIER LEDGER HANDLERS =====
+  ipcMain.handle(
+    "supplier-ledger:list",
+    (
+      e,
+      {
+        licenseId,
+        supplierId,
+        dateFrom = null,
+        dateTo = null,
+        page = 1,
+        pageSize = 50,
+      }
+    ) => {
+      if (!licenseId || !supplierId)
+        return { success: false, error: "licenseId & supplierId required" };
+      const where = [
+        "licenseId=@licenseId",
+        "supplierId=@supplierId",
+        "COALESCE(deletedAt,'')=''",
+      ];
+      const params = { licenseId, supplierId };
+
+      if (dateFrom) {
+        where.push("date >= @dateFrom");
+        params.dateFrom = dateFrom;
+      }
+      if (dateTo) {
+        where.push("date < @dateTo");
+        params.dateTo = dateTo;
+      }
+
+      const base = `
+    FROM supplier_transactions
+    WHERE ${where.join(" AND ")}
+  `;
+
+      const total = db
+        .prepare(`SELECT COUNT(*) AS cnt ${base}`)
+        .get(params).cnt;
+
+      const rows = db
+        .prepare(
+          `
+    SELECT id, kind, refId, refNo, date, amount, sign, notes, createdAt
+    ${base}
+    ORDER BY datetime(date) DESC, datetime(createdAt) DESC
+    LIMIT @limit OFFSET @offset
+  `
+        )
+        .all({ ...params, limit: pageSize, offset: (page - 1) * pageSize });
+
+      const sum = db
+        .prepare(
+          `
+    SELECT COALESCE(SUM(sign*amount),0) AS txSum
+    ${base}
+  `
+        )
+        .get(params).txSum;
+
+      // openingBalance (from suppliers table)
+      const obRow = db
+        .prepare(
+          `SELECT COALESCE(openingBalance,0) AS ob FROM suppliers WHERE id=?`
+        )
+        .get(supplierId);
+      const openingBalance = Number(obRow?.ob || 0);
+      const balance = openingBalance + Number(sum || 0); // >0 we owe them
+
+      return {
+        success: true,
+        total,
+        page,
+        pageSize,
+        rows,
+        openingBalance,
+        balance,
+      };
+    }
+  );
+
+  ipcMain.handle(
+    "supplier-ledger:payment:create",
+    (
+      e,
+      { licenseId, supplierId, amount, date, mode = "CASH", notes = null }
+    ) => {
+      if (!licenseId || !supplierId || !amount || Number(amount) <= 0) {
+        return {
+          success: false,
+          error: "licenseId, supplierId and positive amount required",
+        };
+      }
+      const now = new Date().toISOString();
+      const txId = uuidv4();
+
+      const trx = db.transaction(() => {
+        // Supplier ledger entry: PAYMENT reduces balance => sign = -1
+        db.prepare(
+          `
+      INSERT INTO supplier_transactions
+      (id, licenseId, supplierId, kind, refId, refNo, date, amount, sign, notes, createdAt, updatedAt, isSynced)
+      VALUES(?, ?, ?, 'PAYMENT', NULL, NULL, ?, ?, -1, ?, ?, ?, 0)
+    `
+        ).run(
+          txId,
+          licenseId,
+          supplierId,
+          date || now,
+          Number(amount),
+          notes || "Payment"
+        );
+
+        // Optional: record cash/bank outflow
+        if (mode === "CASH" || mode === "BANK") {
+          db.prepare(
+            `
+        INSERT INTO cash_transactions
+        (id, licenseId, kind, refId, refNo, date, amount, sign, notes, createdAt, updatedAt, isSynced)
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+      `
+          ).run(
+            uuidv4(),
+            licenseId,
+            mode === "CASH" ? "SUPPLIER_PAYMENT_CASH" : "SUPPLIER_PAYMENT_BANK",
+            txId,
+            null,
+            date || now,
+            Number(amount),
+            -1,
+            mode === "CASH"
+              ? "Supplier Payment (Cash)"
+              : "Supplier Payment (Bank)",
+            now,
+            now
+          );
+        }
+      });
+
+      try {
+        trx();
+        return { success: true, id: txId };
+      } catch (err) {
+        return { success: false, error: String(err?.message || err) };
+      }
+    }
+  );
 }
 
 module.exports = { registerPurchaseHandlers };

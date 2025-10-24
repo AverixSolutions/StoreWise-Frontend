@@ -9,6 +9,8 @@ const { registerPurchaseReturnHandlers } = require("./ipc/purchaseReturns");
 const { registerSaleHandlers } = require("./ipc/sales");
 const { registerSaleReturnHandlers } = require("./ipc/saleReturns");
 const { registerCustomerHandlers } = require("./ipc/customers");
+const { registerAccountHandlers } = require("./ipc/accounts");
+const { registerTaxHandlers } = require("./ipc/tax");
 
 function registerAllHandlers() {
   registerProductHandlers();
@@ -21,6 +23,8 @@ function registerAllHandlers() {
   registerSaleHandlers();
   registerSaleReturnHandlers();
   registerCustomerHandlers();
+  registerAccountHandlers();
+  registerTaxHandlers();
 }
 
 module.exports = { registerAllHandlers };

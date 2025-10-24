@@ -8,10 +8,13 @@ import {
   Truck,
   CreditCard,
   Settings,
+  Percent,
   ArrowLeft,
 } from "lucide-react";
 import SuppliersTable from "@/components/suppliers/SuppliersTable";
 import CustomersTable from "@/components/customers/CustomersTable";
+import AccountMaster from "@/components/accounts/AccountMaster";
+import TaxSettings from "@/components/tax/TaxSettings";
 
 type MasterSection =
   | "dashboard"
@@ -19,8 +22,8 @@ type MasterSection =
   | "customers"
   | "categories"
   | "brands"
-  | "units"
-  | "warehouses";
+  | "accounts"
+  | "tax";
 
 const masterSections = [
   {
@@ -42,6 +45,24 @@ const masterSections = [
     count: 0,
   },
   {
+    id: "accounts" as MasterSection,
+    title: "Account Master",
+    description: "Create groups and ledger accounts",
+    icon: Settings,
+    color: "bg-indigo-500",
+    hoverColor: "hover:bg-indigo-600",
+    count: 0,
+  },
+  {
+    id: "tax" as MasterSection,
+    title: "Tax Settings",
+    description: "GST slabs, splits & posting heads",
+    icon: Percent,
+    color: "bg-rose-500",
+    hoverColor: "hover:bg-rose-600",
+    count: 0,
+  },
+  {
     id: "categories" as MasterSection,
     title: "Categories",
     description: "Product categories and classifications",
@@ -57,24 +78,6 @@ const masterSections = [
     icon: CreditCard,
     color: "bg-orange-500",
     hoverColor: "hover:bg-orange-600",
-    count: 0,
-  },
-  {
-    id: "units" as MasterSection,
-    title: "Units",
-    description: "Measurement units configuration",
-    icon: Settings,
-    color: "bg-gray-500",
-    hoverColor: "hover:bg-gray-600",
-    count: 0,
-  },
-  {
-    id: "warehouses" as MasterSection,
-    title: "Warehouses",
-    description: "Storage location management",
-    icon: Building2,
-    color: "bg-red-500",
-    hoverColor: "hover:bg-red-600",
     count: 0,
   },
 ];
@@ -94,6 +97,10 @@ export default function MasterPage() {
           window as any
         ).electronAPI.getSupplierCount(licenseId, { q: "" });
         setSupplierCount(Number(supCnt || 0));
+
+        const { count: accCnt } = await (
+          window as any
+        ).electronAPI.getAccountCount(licenseId);
 
         const { count: custCnt } = await (
           window as any
@@ -187,6 +194,10 @@ export default function MasterPage() {
         return <SuppliersTable />;
       case "customers":
         return <CustomersTable />;
+      case "accounts":
+        return <AccountMaster />;
+      case "tax":
+        return <TaxSettings />;
       case "categories":
         return (
           <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
@@ -211,30 +222,7 @@ export default function MasterPage() {
             </p>
           </div>
         );
-      case "units":
-        return (
-          <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
-            <Settings className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              Units Management
-            </h3>
-            <p className="text-gray-600">
-              Unit management feature coming soon...
-            </p>
-          </div>
-        );
-      case "warehouses":
-        return (
-          <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
-            <Building2 className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              Warehouses Management
-            </h3>
-            <p className="text-gray-600">
-              Warehouse management feature coming soon...
-            </p>
-          </div>
-        );
+
       default:
         return renderDashboard();
     }

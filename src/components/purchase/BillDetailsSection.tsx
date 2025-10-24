@@ -8,7 +8,6 @@ import {
   FileText,
   Percent,
   CalendarClock,
-  Clock3,
   IndianRupee,
   Wallet,
 } from "lucide-react";
@@ -348,7 +347,13 @@ export default function BillDetailsSection({
       <div className="flex gap-2 pt-1">
         <button
           onClick={onSave}
-          className="flex-1 h-9 bg-averix-red-dark text-white px-3 rounded-md hover:bg-averix-red-accent transition-colors font-medium inline-flex items-center justify-center gap-2 cursor-pointer"
+          disabled={header.purchaseType === "CREDIT" && !header.supplier}
+          className={
+            "flex-1 h-9 px-3 rounded-md transition-colors font-medium inline-flex items-center justify-center gap-2 " +
+            (header.purchaseType === "CREDIT" && !header.supplier
+              ? "bg-gray-300 text-gray-600 cursor-not-allowed"
+              : "bg-averix-red-dark text-white hover:bg-averix-red-accent")
+          }
         >
           <Receipt className="w-4 h-4" />
           Save

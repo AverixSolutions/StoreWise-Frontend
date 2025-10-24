@@ -94,6 +94,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getSupplierDistincts: (licenseId) =>
     ipcRenderer.invoke("supplier:distinct", licenseId),
 
+  // Supplier Ledger
+  getSupplierLedger: (params) =>
+    ipcRenderer.invoke("supplier-ledger:list", params),
+  createSupplierPayment: (payload) =>
+    ipcRenderer.invoke("supplier-ledger:payment:create", payload),
+
   // Supplier sync
   getDirtySuppliers: (licenseId, limit) =>
     ipcRenderer.invoke("get-dirty-suppliers", licenseId, limit),
@@ -146,6 +152,31 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("customer:count", licenseId, params),
   getCustomerDistincts: (licenseId) =>
     ipcRenderer.invoke("customer:distinct", licenseId),
+
+  // ---- Account Master ----
+  listAccountGroups: () => ipcRenderer.invoke("accountGroup:list"),
+  saveAccountGroup: (payload) =>
+    ipcRenderer.invoke("accountGroup:save", payload),
+  deleteAccountGroup: (id) => ipcRenderer.invoke("accountGroup:delete", id),
+
+  listAccounts: (params) => ipcRenderer.invoke("account:list", params),
+  getAccount: (id) => ipcRenderer.invoke("account:get", id),
+  saveAccount: (payload) => ipcRenderer.invoke("account:save", payload),
+  deleteAccount: (id) => ipcRenderer.invoke("account:delete", id),
+  getAccountCount: (licenseId) =>
+    ipcRenderer.invoke("account:count", licenseId),
+
+  // ----- Tax ------
+  listTaxCategories: (licenseId) =>
+    ipcRenderer.invoke("tax:listCategories", licenseId),
+  saveTaxCategory: (payload) => ipcRenderer.invoke("tax:saveCategory", payload),
+  deleteTaxCategory: (id) => ipcRenderer.invoke("tax:deleteCategory", id),
+  saveTaxCodeMap: (payload) => ipcRenderer.invoke("tax:saveCodeMap", payload),
+  getTaxCodeMap: (licenseId) => ipcRenderer.invoke("tax:getCodeMap", licenseId),
+  seedIndiaGST: (licenseId) =>
+    ipcRenderer.invoke("tax:seedIndiaGST", licenseId),
+  listDefaultableAccounts: (licenseId) =>
+    ipcRenderer.invoke("tax:listDefaultableAccounts", licenseId),
 
   // Shared sync state
   getSyncState: (scope) => ipcRenderer.invoke("sync-state:get", scope),

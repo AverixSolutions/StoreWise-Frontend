@@ -129,7 +129,7 @@ db.prepare(
     purchaseType TEXT,       -- CASH or CREDIT (usually CREDIT for returns too)
     createdAt TEXT,
     updatedAt TEXT,
-    isSynced INTEGER DEFAULT 0,
+    isSynced INTEGER DEFAULT 0, 
     syncedAt TEXT,
     deletedAt TEXT
   )
@@ -484,11 +484,48 @@ db.prepare(
 db.prepare(
   `CREATE INDEX IF NOT EXISTS idx_supl_tx_synced ON supplier_transactions(isSynced)`
 ).run();
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_supl_tx_ref ON supplier_transactions(licenseId, kind, refId)`
+).run();
 
 // --- Purchases: link supplier ---
 addColumnIfMissing("purchases", "supplierId", "TEXT");
 db.prepare(
   `CREATE INDEX IF NOT EXISTS idx_purchases_supplier ON purchases(licenseId, supplierId)`
+).run();
+
+// --- Cash Ledger ---
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS cash_transactions (
+    id TEXT PRIMARY KEY,
+    licenseId TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK(kind IN ('OPENING','PURCHASE','SALE','PAYMENT','RECEIPT','ADJUSTMENT')),
+    refId TEXT,            -- e.g., purchaseId or receiptId
+    refNo TEXT,            -- human-readable bill/receipt no
+    date TEXT NOT NULL,
+    amount REAL NOT NULL,  -- positive number
+    sign INTEGER NOT NULL CHECK(sign IN (1,-1)), -- -1 = cash out, +1 = cash in
+    notes TEXT,
+    createdAt TEXT,
+    updatedAt TEXT,
+    isSynced INTEGER DEFAULT 0,
+    syncedAt TEXT,
+    deletedAt TEXT
+  )
+`
+).run();
+
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_cash_tx_license_date ON cash_transactions(licenseId, date)`
+).run();
+
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_cash_tx_synced ON cash_transactions(isSynced)`
+).run();
+
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_cash_tx_ref ON cash_transactions(licenseId, kind, refId)`
 ).run();
 
 // --- SALES TABLES ----------------------------------------------------------
@@ -809,6 +846,240 @@ db.prepare(
 ).run();
 db.prepare(
   `CREATE INDEX IF NOT EXISTS idx_cust_tx_synced ON customer_transactions(isSynced)`
+).run();
+
+// ====== ACCOUNTING MASTER TABLES ======
+
+// Account Groups (schedules/sub-schedules)
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS account_groups (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    parentId TEXT,
+    nature TEXT NOT NULL CHECK (nature IN ('ASSET','LIABILITY','INCOME','EXPENSE')),
+    isSystem INTEGER DEFAULT 1,
+    FOREIGN KEY (parentId) REFERENCES account_groups(id)
+  )
+`
+).run();
+
+addColumnIfMissing("account_groups", "code", "TEXT");
+addColumnIfMissing("account_groups", "section", "TEXT"); // 'ASSET'|'LIABILITY'|'PL'|'TRADING'
+addColumnIfMissing("account_groups", "sortOrder", "INTEGER");
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_ag_section_sort ON account_groups(section, sortOrder)`
+).run();
+
+// Accounts
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS accounts (
+    id TEXT PRIMARY KEY,
+    licenseId TEXT NOT NULL,
+    name TEXT NOT NULL,
+    code TEXT,                    -- optional short code (unique per license)
+    groupId TEXT NOT NULL,        -- points to a sub-schedule group
+    isSystem INTEGER DEFAULT 0,
+    taxType TEXT,                 -- 'INPUT'|'OUTPUT'|NULL (for GST ledgers; optional)
+    gstComponent TEXT,            -- 'CGST'|'SGST'|'IGST'|NULL (optional)
+    rate REAL,                    -- 2.5|5|12|18|28|NULL (optional)
+    createdAt TEXT,
+    updatedAt TEXT,
+    deletedAt TEXT,
+    UNIQUE (licenseId, name),
+    FOREIGN KEY (groupId) REFERENCES account_groups(id)
+  )
+`
+).run();
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_accounts_license ON accounts(licenseId, name)`
+).run();
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_accounts_group ON accounts(groupId)`
+).run();
+db.prepare(
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_license_code ON accounts(licenseId, code)`
+).run();
+
+// General Journal
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS journal_entries (
+    id TEXT PRIMARY KEY,
+    licenseId TEXT NOT NULL,
+    date TEXT NOT NULL,
+    refType TEXT,   -- 'PURCHASE','SALE','PR','SR','PAYMENT','RECEIPT','ADJUSTMENT'
+    refId TEXT,
+    narration TEXT,
+    createdAt TEXT,
+    postedBy TEXT
+  )
+`
+).run();
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_journal_entries_license_date ON journal_entries(licenseId, date)`
+).run();
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_journal_entries_ref ON journal_entries(licenseId, refType, refId)`
+).run();
+
+// General Journal
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS journal_lines (
+    id TEXT PRIMARY KEY,
+    entryId TEXT NOT NULL,
+    accountId TEXT NOT NULL,
+    debit REAL NOT NULL DEFAULT 0,
+    credit REAL NOT NULL DEFAULT 0,
+    lineNo INTEGER,
+    createdAt TEXT,
+    updatedAt TEXT,
+    FOREIGN KEY (entryId) REFERENCES journal_entries(id) ON DELETE CASCADE,
+    FOREIGN KEY (accountId) REFERENCES accounts(id),
+    CHECK ( (debit = 0 AND credit > 0) OR (credit = 0 AND debit > 0) )
+  )
+`
+).run();
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_journal_lines_entry ON journal_lines(entryId, lineNo)`
+).run();
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_journal_lines_account ON journal_lines(accountId)`
+).run();
+
+// posting rules
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS posting_rules (
+    id TEXT PRIMARY KEY,
+    event TEXT NOT NULL,          -- 'PURCHASE','SALE','PURCHASE_RETURN','SALE_RETURN'
+    taxMode TEXT,                 -- 'INTRA'|'INTER'|NULL
+    lineRole TEXT NOT NULL,       -- 'STOCK/COS','REVENUE','CASH/BANK','DEBTOR','CREDITOR','INPUT_TAX','OUTPUT_TAX','ROUNDING'
+    accountSelector TEXT NOT NULL -- free-form selector (future use)
+  )
+`
+).run();
+
+// Opening balances & meta
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS account_opening_balances (
+    id TEXT PRIMARY KEY,
+    accountId TEXT NOT NULL,
+    fyStart TEXT NOT NULL,                 -- e.g., '2025-04-01'
+    amount REAL NOT NULL DEFAULT 0,
+    side TEXT NOT NULL CHECK (side IN ('DR','CR')),
+    asOfDate TEXT NOT NULL,
+    createdAt TEXT,
+    updatedAt TEXT,
+    UNIQUE(accountId, fyStart),
+    FOREIGN KEY (accountId) REFERENCES accounts(id)
+  )
+`
+).run();
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_aob_account ON account_opening_balances(accountId, fyStart)`
+).run();
+
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS account_meta (
+    id TEXT PRIMARY KEY,
+    accountId TEXT NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT,
+    createdAt TEXT,
+    updatedAt TEXT,
+    FOREIGN KEY (accountId) REFERENCES accounts(id)
+  )
+`
+).run();
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_am_account ON account_meta(accountId, key)`
+).run();
+// --- TAX MASTER ------------------------------------------------------------
+
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS tax_categories (
+    id TEXT PRIMARY KEY,
+    licenseId TEXT NOT NULL,
+    code TEXT NOT NULL,           -- short code: NT, P5, P12, P18, P28, V1 etc
+    name TEXT NOT NULL,           -- display name
+    rate REAL NOT NULL,           -- total rate (e.g. 0, 5, 12, 18, 28)
+    isInterstate INTEGER DEFAULT 0, -- 0 intra, 1 inter (like *12-I rows in your screenshot)
+    cessRate REAL,                -- optional
+    calcMethod TEXT DEFAULT 'FIXED', -- 'FIXED' | future variants
+    createdAt TEXT, updatedAt TEXT,
+    UNIQUE(licenseId, code)
+  )
+`
+).run();
+
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS tax_category_components (
+    id TEXT PRIMARY KEY,
+    categoryId TEXT NOT NULL,
+    component TEXT NOT NULL CHECK(component IN('CGST','SGST','IGST','CESS')),
+    rate REAL NOT NULL,           -- component rate, e.g. 9 for CGST 9%
+    createdAt TEXT, updatedAt TEXT,
+    FOREIGN KEY (categoryId) REFERENCES tax_categories(id) ON DELETE CASCADE
+  )
+`
+).run();
+
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS tax_category_defaults (
+    id TEXT PRIMARY KEY,
+    categoryId TEXT NOT NULL,
+    -- default heads (optional): can be NULL if you want engine to auto-pick
+    salesAccountId TEXT,
+    purchaseAccountId TEXT,
+    salesReturnAccountId TEXT,
+    purchaseReturnAccountId TEXT,
+    -- explicit OUTPUT/INPUT tax heads for each component:
+    outputCgstAccountId TEXT,
+    outputSgstAccountId TEXT,
+    outputIgstAccountId TEXT,
+    inputCgstAccountId  TEXT,
+    inputSgstAccountId  TEXT,
+    inputIgstAccountId  TEXT,
+    cessAccountId       TEXT,
+    singleTaxAccountId  TEXT, -- if you keep a single combined tax ledger model
+    createdAt TEXT, updatedAt TEXT,
+    UNIQUE(categoryId),
+    FOREIGN KEY (categoryId) REFERENCES tax_categories(id) ON DELETE CASCADE,
+    FOREIGN KEY (salesAccountId) REFERENCES accounts(id),
+    FOREIGN KEY (purchaseAccountId) REFERENCES accounts(id),
+    FOREIGN KEY (salesReturnAccountId) REFERENCES accounts(id),
+    FOREIGN KEY (purchaseReturnAccountId) REFERENCES accounts(id),
+    FOREIGN KEY (outputCgstAccountId) REFERENCES accounts(id),
+    FOREIGN KEY (outputSgstAccountId) REFERENCES accounts(id),
+    FOREIGN KEY (outputIgstAccountId) REFERENCES accounts(id),
+    FOREIGN KEY (inputCgstAccountId)  REFERENCES accounts(id),
+    FOREIGN KEY (inputSgstAccountId)  REFERENCES accounts(id),
+    FOREIGN KEY (inputIgstAccountId)  REFERENCES accounts(id),
+    FOREIGN KEY (cessAccountId)       REFERENCES accounts(id),
+    FOREIGN KEY (singleTaxAccountId)  REFERENCES accounts(id)
+  )
+`
+).run();
+
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS tax_code_map (
+    id TEXT PRIMARY KEY,
+    licenseId TEXT NOT NULL,
+    productTaxCode TEXT NOT NULL, -- 'NT','P5','P12','P18','P28'
+    categoryId TEXT NOT NULL,
+    UNIQUE(licenseId, productTaxCode),
+    FOREIGN KEY (categoryId) REFERENCES tax_categories(id)
+  )
+`
 ).run();
 
 module.exports = db;

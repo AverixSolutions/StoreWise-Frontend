@@ -49,6 +49,13 @@ function normalizeHeaderFromHold(
     }
   }
 
+  const coercedType =
+    saved?.purchaseType === "CREDIT" && !supplier
+      ? "CASH"
+      : saved?.purchaseType === "CASH" || saved?.purchaseType === "CREDIT"
+      ? saved.purchaseType
+      : "CREDIT";
+
   return {
     ...defaults,
     ...saved,
@@ -62,10 +69,7 @@ function normalizeHeaderFromHold(
     discount: Number.isFinite(saved?.discount as number)
       ? Math.max(0, Number(saved!.discount))
       : 0,
-    purchaseType:
-      saved?.purchaseType === "CASH" || saved?.purchaseType === "CREDIT"
-        ? saved.purchaseType
-        : "CREDIT",
+    purchaseType: coercedType,
   };
 }
 
@@ -149,6 +153,12 @@ export default function PurchasePage() {
   useEffect(() => {
     loadSuppliers();
   }, [showSupplierModal]);
+
+  useEffect(() => {
+    if (header.purchaseType === "CREDIT" && !header.supplier) {
+      setHeader((s) => ({ ...s, purchaseType: "CASH" }));
+    }
+  }, [header.supplier]);
 
   const loadSuppliers = async () => {
     const { suppliers: sups } = await (window as any).electronAPI.listSuppliers(
@@ -301,8 +311,13 @@ export default function PurchasePage() {
       return false;
     }
 
+    if (header.purchaseType === "CREDIT" && !header.supplier) {
+      setValidationMsgs(["Supplier is required for CREDIT purchases."]);
+      setValidationOpen(true);
+      return false;
+    }
+
     if (editingPurchaseId) {
-      // UPDATE flow
       const payload = {
         id: editingPurchaseId,
         header: {
@@ -333,7 +348,6 @@ export default function PurchasePage() {
       }
     }
 
-    // CREATE flow
     const purchase = {
       billNo: header.billNo || null,
       supplierId: header.supplier!.id,
@@ -521,7 +535,7 @@ export default function PurchasePage() {
                 ? editingSlNo ?? undefined
                 : nextEntryNo ?? undefined
             }
-            requireSupplier
+            requireSupplier={header.purchaseType === "CREDIT"}
             isEditing={Boolean(editingPurchaseId)}
           />
 

@@ -8,6 +8,8 @@ import TableSkeleton from "../ui/TableSkeleton";
 import EmptyState from "../ui/EmptyState";
 import SupplierFormModal from "./SupplierFormModal";
 import SearchableDropdown from "../ui/SearchableDropdown";
+import LedgerModal from "../ledger/SupplierLedgerModal";
+import { ReceiptIndianRupee } from "lucide-react";
 
 interface Supplier {
   id: string;
@@ -48,6 +50,12 @@ export default function SuppliersTable() {
 
   const [debouncedName, setDebouncedName] = useState(nameFilter);
   const [debouncedCategory, setDebouncedCategory] = useState(categoryFilter);
+
+  const [ledgerOpen, setLedgerOpen] = useState(false);
+  const [ledgerSupplier, setLedgerSupplier] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedName(nameFilter), 250);
@@ -355,6 +363,32 @@ export default function SuppliersTable() {
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            setLedgerSupplier({
+                              id: supplier.id,
+                              name: supplier.name,
+                            });
+                            setLedgerOpen(true);
+                          }}
+                          className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:scale-105 transition-all"
+                          title="Ledger"
+                        >
+                          <ReceiptIndianRupee className="w-4 h-4" />
+                        </button>
+
+                        {ledgerOpen && ledgerSupplier && (
+                          <LedgerModal
+                            isOpen={ledgerOpen}
+                            onClose={() => setLedgerOpen(false)}
+                            licenseId={
+                              localStorage.getItem("licenseId") ||
+                              "demo-license"
+                            }
+                            supplierId={ledgerSupplier.id}
+                            supplierName={ledgerSupplier.name}
+                          />
+                        )}
                         <button
                           onClick={() => handleEditSupplier(supplier)}
                           className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 hover:scale-105 transition-all duration-200"
