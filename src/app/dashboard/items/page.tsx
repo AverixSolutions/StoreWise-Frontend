@@ -4,6 +4,7 @@
 import { useState, useEffect } from "react";
 import ProductsTable from "@/components/products/ProductsTable";
 import ProductFormModal from "@/components/products/ProductFormModal";
+import ProductBatchesDrawer from "@/components/products/ProductBatchesDrawer";
 import SearchableDropdown from "@/components/ui/SearchableDropdown";
 
 interface Product {
@@ -30,6 +31,13 @@ export default function ItemsPage() {
 
   const [categories, setCategories] = useState<string[]>([]);
   const [products, setProducts] = useState<string[]>([]);
+
+  // Batch drawer state
+  const [batchOpen, setBatchOpen] = useState(false);
+  const [batchProductId, setBatchProductId] = useState<string | null>(null);
+  const [batchProductName, setBatchProductName] = useState<string | undefined>(
+    undefined
+  );
 
   useEffect(() => {
     const licenseId = localStorage.getItem("licenseId") || "demo-license";
@@ -71,6 +79,12 @@ export default function ItemsPage() {
 
   const handleFormSuccess = () => {
     setRefreshTrigger((prev) => prev + 1);
+  };
+
+  const openBatches = (id: string, name?: string) => {
+    setBatchProductId(id);
+    setBatchProductName(name);
+    setBatchOpen(true);
   };
 
   useEffect(() => {
@@ -156,17 +170,33 @@ export default function ItemsPage() {
         <ProductsTable
           onEdit={handleEditProduct}
           onDelete={handleDeleteProduct}
+          onManageBatches={(p) => openBatches(p.id, p.name)}
           refreshTrigger={refreshTrigger}
           nameFilter={nameFilter}
           categoryFilter={categoryFilter}
         />
 
-        {/* Modal */}
+        {/* Product Form Modal */}
         <ProductFormModal
           isOpen={isModalOpen}
           onClose={handleModalClose}
           onSuccess={handleFormSuccess}
           editProduct={editProduct}
+        />
+
+        {/* Batch Management Drawer */}
+        <ProductBatchesDrawer
+          open={batchOpen}
+          onClose={() => {
+            setBatchOpen(false);
+            setBatchProductId(null);
+            setBatchProductName(undefined);
+            // Refresh products to reflect new totals
+            setRefreshTrigger((x) => x + 1);
+          }}
+          productId={batchProductId}
+          productName={batchProductName}
+          licenseId={localStorage.getItem("licenseId") || "demo-license"}
         />
       </div>
     </main>

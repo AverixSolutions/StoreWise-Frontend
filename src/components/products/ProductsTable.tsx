@@ -5,7 +5,7 @@ import { useState, useEffect } from "react";
 import Pagination from "../ui/Pagination";
 import TableSkeleton from "../ui/TableSkeleton";
 import EmptyState from "../ui/EmptyState";
-import { PackagePlus, Edit2, Trash2 } from "lucide-react";
+import { PackagePlus, Edit2, Trash2, Layers } from "lucide-react";
 
 interface Product {
   id: string;
@@ -24,6 +24,7 @@ interface Product {
 interface ProductsTableProps {
   onEdit: (product: Product) => void;
   onDelete: (id: string) => void;
+  onManageBatches: (product: Product) => void;
   refreshTrigger: number;
   nameFilter?: string;
   categoryFilter?: string;
@@ -32,6 +33,7 @@ interface ProductsTableProps {
 export default function ProductsTable({
   onEdit,
   onDelete,
+  onManageBatches,
   refreshTrigger,
   nameFilter = "",
   categoryFilter = "",
@@ -92,7 +94,7 @@ export default function ProductsTable({
   };
 
   if (loading) {
-    return <TableSkeleton columns={10} rows={6} />;
+    return <TableSkeleton columns={11} rows={6} />;
   }
 
   if (products.length === 0) {
@@ -129,7 +131,7 @@ export default function ProductsTable({
                 { key: "cost", label: "Cost Price", width: "w-28" },
                 { key: "sale", label: "Sale Price", width: "w-28" },
                 { key: "stock", label: "Stock", width: "w-20" },
-                { key: "actions", label: "Actions", width: "w-24" },
+                { key: "actions", label: "Actions", width: "w-32" },
               ].map((col) => (
                 <th
                   key={col.key}
@@ -205,6 +207,13 @@ export default function ProductsTable({
                 </td>
                 <td className="px-6 py-4">
                   <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => onManageBatches(product)}
+                      className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-purple-50 text-purple-600 hover:bg-purple-100 hover:scale-105 transition-all duration-200"
+                      title="Manage Batches"
+                    >
+                      <Layers className="w-4 h-4" />
+                    </button>
                     <button
                       onClick={() => onEdit(product)}
                       className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 hover:scale-105 transition-all duration-200"

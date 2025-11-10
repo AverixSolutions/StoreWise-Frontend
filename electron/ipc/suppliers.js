@@ -1,3 +1,4 @@
+// electron/ipc/suppliers.js
 const { v4: uuidv4 } = require("uuid");
 const { ipcMain } = require("electron");
 const db = require("../db");
@@ -172,10 +173,11 @@ function registerSupplierHandlers() {
     const sum = db
       .prepare(
         `
-      SELECT COALESCE(SUM(sign*amount),0) AS txSum
-      FROM supplier_transactions
-      WHERE licenseId=? AND supplierId=? AND deletedAt IS NULL
-    `
+    SELECT COALESCE(SUM(sign*amount),0) AS txSum
+    FROM supplier_transactions
+    WHERE licenseId=? AND supplierId=? AND deletedAt IS NULL
+      AND kind IN ('OPENING','PURCHASE','PAYMENT','ADJUSTMENT')
+  `
       )
       .get(licenseId, supplierId).txSum;
 

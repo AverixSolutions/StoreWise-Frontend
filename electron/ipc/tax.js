@@ -7,6 +7,21 @@ const db = require("../db");
 // HELPER FUNCTIONS
 // ============================================================================
 
+function ensureGroup(db, { code, name, nature, section }) {
+  const row = db
+    .prepare(`SELECT id FROM account_groups WHERE code=?`)
+    .get(code);
+  if (row?.id) return row.id;
+  const id = uuidv4();
+  db.prepare(
+    `
+    INSERT INTO account_groups(id, name, code, nature, section, isSystem, sortOrder)
+    VALUES(?,?,?,?,?,1,0)
+  `
+  ).run(id, name, code, nature, section);
+  return id;
+}
+
 function ensureAccount(
   db,
   {
@@ -59,17 +74,25 @@ function getGroupIdByCode(db, code) {
 
 function seedIndiaGSTBasics(licenseId) {
   // groups we'll use (created in your account seed):
-  const grpSales = getGroupIdByCode(db, "SALE"); // SALES ACCOUNTS
-  const grpPurchase = getGroupIdByCode(db, "PUR"); // PURCHASE ACCOUNTS
-  const grpTax = getGroupIdByCode(db, "TAX"); // GST / DUTIES & TAXES
-  if (!grpSales || !grpPurchase || !grpTax) {
-    throw new Error(
-      "Required groups missing (SALE, PUR, TAX). Seed groups first."
-    );
-  }
+  const grpSales = ensureGroup(db, {
+    code: "SALE",
+    name: "Sales Accounts",
+    nature: "INCOME",
+    section: "PL",
+  });
+  const grpPurchase = ensureGroup(db, {
+    code: "PUR",
+    name: "Purchase Accounts",
+    nature: "EXPENSE",
+    section: "PL",
+  });
+  const grpTax = ensureGroup(db, {
+    code: "TAX",
+    name: "Duties & Taxes",
+    nature: "LIABILITY",
+    section: "LIABILITY",
+  });
 
-  // Create standard OUTPUT/INPUT ledgers per slab/component (system=1)
-  // helper to create OUTPUT/INPUT tax ledgers
   const mkTax = (name, code, comp, rate) => ({
     output: { name: `OUTPUT ${name}`, code: `OUT-${code}`, comp, rate },
     input: { name: `INPUT ${name}`, code: `IN-${code}`, comp, rate },
@@ -278,12 +301,30 @@ function seedIndiaGSTBasics(licenseId) {
   return true;
 }
 
+function ensureTaxSeeded(licenseId) {
+  const existing = db
+    .prepare(`SELECT COUNT(1) AS c FROM tax_categories WHERE licenseId=?`)
+    .get(licenseId);
+  if (!existing?.c) {
+    seedIndiaGSTBasics(licenseId);
+    // Backfill returns (no-op for fresh seeds)
+    db.prepare(
+      `
+      UPDATE tax_category_defaults
+      SET salesReturnAccountId    = COALESCE(salesReturnAccountId,    salesAccountId),
+          purchaseReturnAccountId = COALESCE(purchaseReturnAccountId, purchaseAccountId)
+    `
+    ).run();
+  }
+}
+
 // ============================================================================
 // IPC HANDLERS
 // ============================================================================
 
 function registerTaxHandlers() {
   ipcMain.handle("tax:listCategories", (e, licenseId) => {
+    ensureTaxSeeded(licenseId);
     const cats = db
       .prepare(
         `
@@ -308,7 +349,6 @@ function registerTaxHandlers() {
   });
 
   ipcMain.handle("tax:saveCategory", (e, payload) => {
-    // Validations
     const total = Number(payload.rate || 0);
     const sum = (payload.components || []).reduce(
       (a, c) => a + Number(c.rate || 0),
@@ -316,15 +356,17 @@ function registerTaxHandlers() {
     );
     const interstate = !!payload.isInterstate;
 
-    if (total !== sum && !(total === 0 && sum === 0)) {
+    // Epsilon for float sum equality
+    const epsilon = 1e-6;
+    if (Math.abs(total - sum) > epsilon && !(total === 0 && sum === 0)) {
       return {
         success: false,
         error: "Component rates must sum to total rate.",
       };
     }
 
-    if (interstate) {
-      // prefer IGST only for interstate
+    if (interstate && total > 0) {
+      // IGST only for interstate non-zero slabs
       const bad = (payload.components || []).some(
         (c) => c.component !== "IGST"
       );
@@ -334,14 +376,12 @@ function registerTaxHandlers() {
           error: "Interstate slab should use IGST only.",
         };
     } else {
-      // for non-zero, prefer CGST+SGST (or allow CESS when added)
       if (total > 0) {
         const comps = (payload.components || [])
           .map((c) => c.component)
           .sort()
           .join(",");
         const allowed = ["CGST,SGST", "CGST,SGST,CESS", "CGST,CESS,SGST"]; // lenient
-        // still allow if user wants custom, but warn lightly (validation passed)
       }
     }
 
@@ -404,6 +444,13 @@ function registerTaxHandlers() {
       }
 
       if (payload.defaults) {
+        // Safety: if returns are null but base exists, copy base -> returns
+        const d = { ...payload.defaults };
+        if (!d.salesReturnAccountId && d.salesAccountId)
+          d.salesReturnAccountId = d.salesAccountId;
+        if (!d.purchaseReturnAccountId && d.purchaseAccountId)
+          d.purchaseReturnAccountId = d.purchaseAccountId;
+
         db.prepare(
           `
           INSERT INTO tax_category_defaults(
@@ -417,18 +464,18 @@ function registerTaxHandlers() {
         ).run(
           uuidv4(),
           id,
-          payload.defaults.salesAccountId || null,
-          payload.defaults.purchaseAccountId || null,
-          payload.defaults.salesReturnAccountId || null,
-          payload.defaults.purchaseReturnAccountId || null,
-          payload.defaults.outputCgstAccountId || null,
-          payload.defaults.outputSgstAccountId || null,
-          payload.defaults.outputIgstAccountId || null,
-          payload.defaults.inputCgstAccountId || null,
-          payload.defaults.inputSgstAccountId || null,
-          payload.defaults.inputIgstAccountId || null,
-          payload.defaults.cessAccountId || null,
-          payload.defaults.singleTaxAccountId || null,
+          d.salesAccountId || null,
+          d.purchaseAccountId || null,
+          d.salesReturnAccountId || null,
+          d.purchaseReturnAccountId || null,
+          d.outputCgstAccountId || null,
+          d.outputSgstAccountId || null,
+          d.outputIgstAccountId || null,
+          d.inputCgstAccountId || null,
+          d.inputSgstAccountId || null,
+          d.inputIgstAccountId || null,
+          d.cessAccountId || null,
+          d.singleTaxAccountId || null,
           now,
           now
         );
@@ -497,6 +544,7 @@ function registerTaxHandlers() {
 
   // 2) List accounts useful for Defaults dropdowns
   ipcMain.handle("tax:listDefaultableAccounts", (e, licenseId) => {
+    ensureTaxSeeded(licenseId);
     const rows = db
       .prepare(
         `

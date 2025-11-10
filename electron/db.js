@@ -56,9 +56,67 @@ db.prepare(
   `CREATE INDEX IF NOT EXISTS idx_products_isSynced 
   ON products(isSynced)`
 ).run();
+
+// --- Batches (lots) ---------------------------------------------------------
 db.prepare(
-  `CREATE UNIQUE INDEX IF NOT EXISTS idx_products_barcode
-   ON products(licenseId, barcode)`
+  `
+  CREATE TABLE IF NOT EXISTS product_batches (
+    id TEXT PRIMARY KEY,
+    licenseId TEXT NOT NULL,
+    productId TEXT NOT NULL,
+    -- preferred keys for deduping decisions:
+    barcode TEXT,              -- batch barcode (nullable)
+    mrp REAL,                  -- MRP snapshot for this batch (nullable)
+    salePrice REAL,            -- sale price snapshot for this batch (nullable)
+    costPrice REAL,            -- cost snapshot (avg or last cost for this batch)
+    batchNo TEXT,              -- vendor/print batch number (nullable)
+    mfgDate TEXT,
+    expiryDate TEXT,
+    receivedAt TEXT,           -- when this batch was first received
+    stock INTEGER NOT NULL DEFAULT 0,
+    createdAt TEXT,
+    updatedAt TEXT,
+    deletedAt TEXT,
+    FOREIGN KEY (productId) REFERENCES products(id)
+  )
+`
+).run();
+
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_batches_identity 
+   ON product_batches(productId, batchNo, expiryDate, mfgDate, mrp, salePrice)`
+).run();
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_batches_prod ON product_batches(productId, deletedAt)`
+).run();
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_batches_barcode ON product_batches(licenseId, barcode)`
+).run();
+db.prepare(
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_batches_barcode_unique
+   ON product_batches(licenseId, barcode)
+   WHERE barcode IS NOT NULL`
+).run();
+try {
+  db.prepare(`DROP INDEX IF EXISTS idx_products_barcode`).run();
+} catch (_) {}
+
+addColumnIfMissing("purchase_items", "batchId", "TEXT");
+addColumnIfMissing("sale_items", "batchId", "TEXT");
+addColumnIfMissing("purchase_return_items", "batchId", "TEXT");
+addColumnIfMissing("sale_return_items", "batchId", "TEXT");
+
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_pi_batch ON purchase_items(batchId)`
+).run();
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_si_batch ON sale_items(batchId)`
+).run();
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_pri_batch ON purchase_return_items(batchId)`
+).run();
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_sri_batch ON sale_return_items(batchId)`
 ).run();
 
 // Purchase Table
@@ -526,6 +584,30 @@ db.prepare(
 
 db.prepare(
   `CREATE INDEX IF NOT EXISTS idx_cash_tx_ref ON cash_transactions(licenseId, kind, refId)`
+).run();
+
+// --- Supplier Bill Settlements (bill-wise) ---
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS supplier_bill_settlements (
+    id TEXT PRIMARY KEY,
+    licenseId TEXT NOT NULL,
+    supplierId TEXT NOT NULL,
+    paymentTxId TEXT NOT NULL,     -- points to supplier_transactions.id (kind='PAYMENT')
+    purchaseId TEXT NOT NULL,      -- points to purchases.id
+    amount REAL NOT NULL CHECK(amount >= 0),
+    createdAt TEXT,
+    FOREIGN KEY (paymentTxId) REFERENCES supplier_transactions(id) ON DELETE CASCADE,
+    FOREIGN KEY (purchaseId)  REFERENCES purchases(id) ON DELETE CASCADE
+  )
+`
+).run();
+
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_supl_settle_supplier ON supplier_bill_settlements(licenseId, supplierId)`
+).run();
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_supl_settle_purchase ON supplier_bill_settlements(licenseId, purchaseId)`
 ).run();
 
 // --- SALES TABLES ----------------------------------------------------------
@@ -1081,5 +1163,97 @@ db.prepare(
   )
 `
 ).run();
+
+try {
+  db.prepare(
+    `
+    UPDATE tax_category_defaults
+    SET salesReturnAccountId    = COALESCE(salesReturnAccountId,    salesAccountId),
+        purchaseReturnAccountId = COALESCE(purchaseReturnAccountId, purchaseAccountId)
+  `
+  ).run();
+} catch (_) {}
+
+// --- One-time migration: seed default batches from products.stock / products.barcode
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS _migrations (
+    name TEXT PRIMARY KEY,
+    ranAt TEXT
+  )
+`
+).run();
+
+const alreadyRan = db
+  .prepare(
+    `SELECT 1 FROM _migrations WHERE name='seed_default_batches_v1' LIMIT 1`
+  )
+  .get();
+
+if (!alreadyRan) {
+  const ts = new Date().toISOString();
+  const uuidv4 = require("uuid").v4;
+
+  const products = db
+    .prepare(
+      `
+    SELECT id, licenseId, barcode, salePrice, costPrice, stock
+    FROM products
+    WHERE COALESCE(deletedAt,'')=''
+  `
+    )
+    .all();
+
+  const insBatch = db.prepare(`
+    INSERT INTO product_batches(
+      id, licenseId, productId, barcode, mrp, salePrice, costPrice,
+      batchNo, mfgDate, expiryDate, receivedAt, stock, createdAt, updatedAt
+    ) VALUES (@id, @licenseId, @productId, @barcode, NULL, @salePrice, @costPrice,
+              NULL, NULL, NULL, @receivedAt, @stock, @ts, @ts)
+  `);
+
+  const updProductSet = db.prepare(`
+   UPDATE products
+   SET stock = @stock, updatedAt = @ts
+   WHERE id = @id
+ `);
+
+  const hasAnyBatch = db.prepare(`
+    SELECT 1 FROM product_batches
+    WHERE productId = ? AND COALESCE(deletedAt,'')='' LIMIT 1
+  `);
+
+  const trx = db.transaction(() => {
+    for (const p of products) {
+      const qty = Number(p.stock || 0);
+      const needsSeed = !hasAnyBatch.get(p.id) && (qty > 0 || p.barcode);
+
+      if (needsSeed) {
+        insBatch.run({
+          id: uuidv4(),
+          licenseId: p.licenseId,
+          productId: p.id,
+          // move legacy product barcode to the initial batch; keep NULL if none
+          barcode: p.barcode ?? null,
+          salePrice: p.salePrice ?? null,
+          costPrice: p.costPrice ?? null,
+          receivedAt: ts,
+          stock: qty,
+          ts,
+        });
+      }
+
+      // From this point on, product.stock should derive from batches.
+      // Set product.stock to 0 and let your UI/queries use SUM(batches.stock)
+      updProductSet.run({ id: p.id, ts, stock: qty });
+    }
+
+    db.prepare(
+      `INSERT INTO _migrations(name, ranAt) VALUES('seed_default_batches_v1', @ts)`
+    ).run({ ts });
+  });
+
+  trx();
+}
 
 module.exports = db;

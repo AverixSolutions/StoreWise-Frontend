@@ -567,7 +567,6 @@ function registerAccountHandlers() {
     if (row.isSystem)
       return { success: false, error: "Cannot delete system account" };
 
-    // soft delete so historical journals keep referential integrity
     db.prepare(`UPDATE accounts SET deletedAt=?, updatedAt=? WHERE id=?`).run(
       new Date().toISOString(),
       new Date().toISOString(),
@@ -576,7 +575,6 @@ function registerAccountHandlers() {
     return { success: true };
   });
 
-  // counts for dashboard (optional)
   ipcMain.handle("account:count", (e, licenseId) => {
     const r = db
       .prepare(

@@ -52,7 +52,6 @@ export default function BillDetailsSection({
   onCancel,
   entryNo,
   requireSupplier,
-  isEditing,
 }: BillDetailsSectionProps) {
   return (
     <section className="col-span-1 bg-white max-w-[300px] border border-gray-200 -mt-px p-4 space-y-4 overflow-y-auto no-scrollbar">

@@ -28,6 +28,19 @@ contextBridge.exposeInMainWorld("electronAPI", {
   bulkUpsertProducts: (items) =>
     ipcRenderer.invoke("bulk-upsert-products", items),
 
+  // ----- Batches (UI) -----
+  listBatchesForProduct: (productId, includeDeleted = false) =>
+    ipcRenderer.invoke("product.batch:list", { productId, includeDeleted }),
+  saveBatch: (payload) => ipcRenderer.invoke("product.batch:save", payload),
+  deleteBatch: (batchId) =>
+    ipcRenderer.invoke("product.batch:delete", { batchId }),
+  rebuildProductStock: (productId) =>
+    ipcRenderer.invoke("product:rebuild-stock", productId),
+
+  // Optional richer fetch
+  getProductWithBatches: (productId) =>
+    ipcRenderer.invoke("product:getWithBatches", productId),
+
   // ---- Purchase APIs ----
   createPurchase: (purchase, items) =>
     ipcRenderer.invoke("create-purchase", purchase, items),
@@ -99,6 +112,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("supplier-ledger:list", params),
   createSupplierPayment: (payload) =>
     ipcRenderer.invoke("supplier-ledger:payment:create", payload),
+  getSupplierOutstandingBills: (params) =>
+    ipcRenderer.invoke("supplier:outstanding-bills", params),
+  listPayments: (filters) => ipcRenderer.invoke("payments:list", filters),
 
   // Supplier sync
   getDirtySuppliers: (licenseId, limit) =>

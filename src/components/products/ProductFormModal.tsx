@@ -42,7 +42,6 @@ export default function ProductFormModal({
   const [hsn, setHsn] = useState("");
   const [costPrice, setCostPrice] = useState("");
   const [salePrice, setSalePrice] = useState("");
-  const [stock, setStock] = useState("");
 
   const nameRef = useRef<HTMLInputElement>(null);
   const brandRef = useRef<HTMLInputElement>(null);
@@ -53,7 +52,6 @@ export default function ProductFormModal({
   const hsnRef = useRef<HTMLInputElement>(null);
   const costRef = useRef<HTMLInputElement>(null);
   const saleRef = useRef<HTMLInputElement>(null);
-  const stockRef = useRef<HTMLInputElement>(null);
 
   const IDX = {
     NAME: 0,
@@ -65,7 +63,6 @@ export default function ProductFormModal({
     HSN: 6,
     COST: 7,
     SALE: 8,
-    STOCK: 9,
   } as const;
 
   const inputRefs = [
@@ -78,7 +75,6 @@ export default function ProductFormModal({
     hsnRef,
     costRef,
     saleRef,
-    stockRef,
   ];
 
   const handleKeyDown = (
@@ -125,7 +121,6 @@ export default function ProductFormModal({
         setHsn(editProduct.hsn || "");
         setCostPrice(editProduct.costPrice.toString());
         setSalePrice(editProduct.salePrice?.toString() || "");
-        setStock(editProduct.stock.toString());
       } else {
         // Create mode
         const licenseId = localStorage.getItem("licenseId") || "demo-license";
@@ -147,7 +142,6 @@ export default function ProductFormModal({
     setHsn("");
     setCostPrice("");
     setSalePrice("");
-    setStock("");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -168,7 +162,6 @@ export default function ProductFormModal({
         hsn: hsn || null,
         costPrice: costPrice ? parseFloat(costPrice) : 0,
         salePrice: salePrice ? parseFloat(salePrice) : null,
-        stock: stock ? parseInt(stock, 10) : 0,
       };
 
       if (editProduct) {
@@ -306,8 +299,12 @@ export default function ProductFormModal({
             {/* Barcode */}
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Barcode (optional)
+                Default Barcode (optional)
               </label>
+              <p className="text-xs text-gray-500 mt-1 mb-2">
+                Tip: batch barcodes override this. Use this only if you don't
+                maintain batch barcodes.
+              </p>
               <input
                 ref={barcodeRef}
                 type="text"
@@ -386,7 +383,7 @@ export default function ProductFormModal({
             </div>
 
             {/* Pricing */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Cost Price <span className="text-red-500">*</span>
@@ -430,22 +427,6 @@ export default function ProductFormModal({
                     className="w-full border-2 border-gray-200 rounded-lg p-2.5 pl-8 focus:border-averix-red-dark focus:outline-none transition-colors"
                   />
                 </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Initial Stock
-                </label>
-                <input
-                  ref={stockRef}
-                  type="number"
-                  value={stock}
-                  onChange={(e) => setStock(e.target.value)}
-                  onKeyDown={(e) => handleKeyDown(e, IDX.STOCK)}
-                  min="0"
-                  placeholder="0"
-                  className="w-full border-2 border-gray-200 rounded-lg p-2.5 focus:border-averix-red-dark focus:outline-none transition-colors"
-                />
               </div>
             </div>
 

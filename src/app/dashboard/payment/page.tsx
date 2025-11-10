@@ -1,337 +1,302 @@
 // src/app/payment/page.tsx
 "use client";
 
-import { useState } from "react";
-import {
-  CalendarClock,
-  UserRound,
-  IndianRupee,
-  FileText,
-  Landmark,
-  Building2,
-  CheckSquare,
-  Printer,
-  Save,
-  PlusSquare,
-  FileSignature,
-} from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { Plus, Search, Calendar as CalendarIcon } from "lucide-react";
+import SupplierLedgerModal from "@/components/ledger/SupplierLedgerModal";
+import SearchableDropdown from "@/components/ui/SearchableDropdown";
+
+type SupplierOpt = { id: string; name: string };
+type PaymentRow = {
+  id: string;
+  supplierId: string;
+  supplierName: string;
+  date: string;
+  amount: number;
+  mode: "CASH" | "BANK" | string;
+  notes: string | null;
+  allocated: number;
+  unallocated: number;
+  bills?: { purchaseId: string; billRef: string }[];
+};
 
 export default function PaymentPage() {
-  const [payDate, setPayDate] = useState<string>(() =>
-    new Date().toISOString()
+  const licenseId =
+    typeof window !== "undefined"
+      ? localStorage.getItem("licenseId") || "demo-license"
+      : "demo-license";
+
+  const [suppliers, setSuppliers] = useState<SupplierOpt[]>([]);
+  const [selected, setSelected] = useState<SupplierOpt | null>(null);
+
+  const [q, setQ] = useState("");
+  const [dateFrom, setDateFrom] = useState<string | null>(null);
+  const [dateTo, setDateTo] = useState<string | null>(null);
+
+  const [rows, setRows] = useState<PaymentRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const pageSize = 50;
+  const pages = useMemo(
+    () => Math.max(1, Math.ceil(total / pageSize)),
+    [total]
   );
-  const [amount, setAmount] = useState<number>(0);
+
+  const [loading, setLoading] = useState(true);
+
+  // modal
+  const [open, setOpen] = useState(false);
+
+  // load suppliers (for dropdown)
+  useEffect(() => {
+    (async () => {
+      const res = await (window as any).electronAPI.listSuppliers(licenseId, {
+        page: 1,
+        pageSize: 1000,
+      });
+      const opts = (res?.suppliers ?? []).map((s: any) => ({
+        id: s.id,
+        name: s.name,
+      })) as SupplierOpt[];
+      setSuppliers(opts);
+    })();
+  }, [licenseId]);
+
+  async function loadPayments() {
+    setLoading(true);
+    try {
+      const res = await (window as any).electronAPI.listPayments({
+        licenseId,
+        supplierId: selected?.id ?? null,
+        q,
+        dateFrom,
+        dateTo,
+        page,
+        pageSize,
+      });
+      if (res?.success) {
+        setRows(res.rows || []);
+        setTotal(res.total || 0);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadPayments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [licenseId, selected?.id, q, dateFrom, dateTo, page]);
 
   return (
-    <div className="h-screen w-full bg-gray-50 flex flex-col">
-      {/* Header bar */}
-      <div className="px-4 py-3 border-b bg-white flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <FileSignature className="w-5 h-5 text-averix-red-dark" />
-          <h1 className="text-base font-semibold text-gray-900">Payment</h1>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Payments</h2>
+          <p className="text-gray-600">
+            Record supplier payments and review history
+          </p>
         </div>
-
         <button
-          className="px-3 h-8 rounded-md bg-amber-50 text-amber-800 border border-amber-200 text-sm hover:bg-amber-100"
-          title="Discount"
+          onClick={() => setOpen(true)}
+          disabled={!selected}
+          className="inline-flex items-center gap-2 px-4 py-2 bg-averix-red-dark text-white rounded-lg hover:bg-averix-red-accent transition-colors disabled:opacity-50 font-medium"
+          title={!selected ? "Select a supplier first" : undefined}
         >
-          Discount
+          <Plus className="w-4 h-4" />
+          Record Payment
         </button>
       </div>
 
-      {/* Body */}
-      <div className="flex-1 min-h-0 grid grid-rows-[auto_1fr_auto]">
-        {/* Top form */}
-        <section className="bg-white">
-          <div className="grid grid-cols-1 md:grid-cols-[380px_1fr] gap-4 p-4">
-            {/* Left compact form card */}
-            <div className="border border-gray-200 rounded-md p-3 space-y-2">
-              {/* Pay No & Date */}
-              <Row>
-                <Label>Pay No &amp; Date</Label>
-                <div className="grid grid-cols-[1fr_auto] gap-2">
-                  <input
-                    className={inputBase + " text-xs"}
-                    placeholder="—"
-                    readOnly
-                  />
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-2 flex items-center text-gray-500 pointer-events-none">
-                      <CalendarClock className="w-4 h-4" />
-                    </div>
-                    <input
-                      type="datetime-local"
-                      value={new Date(payDate).toISOString().slice(0, 16)}
-                      onChange={(e) =>
-                        setPayDate(new Date(e.target.value).toISOString())
-                      }
-                      className={inputBase + " pl-8 text-xs w-[165px]"}
-                    />
-                  </div>
-                </div>
-              </Row>
+      {/* Filters */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-white p-4 rounded-xl border border-gray-100 shadow-lg">
+        <div className="md:col-span-1">
+          <SearchableDropdown
+            value={selected?.id || ""}
+            onChange={(id) => {
+              const s = suppliers.find((x) => x.id === id) || null;
+              setSelected(s);
+              setPage(1);
+            }}
+            options={suppliers.map((s) => ({ value: s.id, label: s.name }))}
+            placeholder="Select supplier"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <CalendarIcon className="w-4 h-4 text-gray-400" />
+          <input
+            type="date"
+            value={dateFrom ?? ""}
+            onChange={(e) => {
+              setDateFrom(e.target.value || null);
+              setPage(1);
+            }}
+            className="w-full px-3 py-2 border border-gray-200 rounded-md focus:ring-2 focus:ring-averix-red-light focus:border-transparent transition-all"
+            placeholder="From"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <CalendarIcon className="w-4 h-4 text-gray-400" />
+          <input
+            type="date"
+            value={dateTo ?? ""}
+            onChange={(e) => {
+              setDateTo(e.target.value || null);
+              setPage(1);
+            }}
+            className="w-full px-3 py-2 border border-gray-200 rounded-md focus:ring-2 focus:ring-averix-red-light focus:border-transparent transition-all"
+            placeholder="To"
+          />
+        </div>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <input
+            value={q}
+            onChange={(e) => {
+              setQ(e.target.value);
+              setPage(1);
+            }}
+            placeholder="Search notes/supplier…"
+            className="w-full pl-10 pr-3 py-2 border border-gray-200 rounded-md focus:ring-2 focus:ring-averix-red-light focus:border-transparent transition-all"
+          />
+        </div>
+      </div>
 
-              {/* Supplier */}
-              <Row>
-                <Label>
-                  <UserRound className="w-3.5 h-3.5" />
-                  Supplier
-                </Label>
-                <div className="grid grid-cols-[1fr_auto] gap-2">
-                  <input className={inputBase} placeholder="Select supplier…" />
-                  <button
-                    className="px-3 rounded-md bg-averix-red-dark text-white hover:bg-averix-red-accent"
-                    title="Browse"
-                  >
-                    …
-                  </button>
-                </div>
-              </Row>
-
-              {/* Amount */}
-              <Row>
-                <Label>
-                  <IndianRupee className="w-3.5 h-3.5" />
-                  Amount
-                </Label>
-                <input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={amount || ""}
-                  onChange={(e) => setAmount(Number(e.target.value || 0))}
-                  className={inputBase}
-                  placeholder="0.00"
-                />
-              </Row>
-
-              {/* Narration */}
-              <Row>
-                <Label>
-                  <FileText className="w-3.5 h-3.5" />
-                  Narration
-                </Label>
-                <input className={inputBase} placeholder="Optional note" />
-              </Row>
-
-              {/* Credit to */}
-              <Row>
-                <Label>Credit to</Label>
-                <select className={inputBase}>
-                  <option>CASH ON HAND</option>
-                  <option>BANK – CURRENT</option>
-                </select>
-              </Row>
-
-              {/* Manual Entry No */}
-              <Row>
-                <Label>Manual Entry No</Label>
-                <input className={inputBase} placeholder="—" />
-              </Row>
-
-              {/* Cheque / DD details in a 2-col grid */}
-              <div className="grid grid-cols-2 gap-2">
-                <Row>
-                  <Label>DD Cheque No, Dt.</Label>
-                  <div className="grid grid-cols-[1fr_auto] gap-2">
-                    <input className={inputBase} placeholder="Cheque No" />
-                    <input type="date" className={inputBase + " w-[140px]"} />
-                  </div>
-                </Row>
-                <Row>
-                  <Label>Clearing Details</Label>
-                  <select className={inputBase}>
-                    <option>No</option>
-                    <option>Yes</option>
-                  </select>
-                </Row>
-              </div>
-
-              {/* Department / Division */}
-              <div className="grid grid-cols-2 gap-2">
-                <Row>
-                  <Label>
-                    <Building2 className="w-3.5 h-3.5" />
-                    Department/Division
-                  </Label>
-                  <input className={inputBase} defaultValue="MAIN" />
-                </Row>
-                <Row>
-                  <Label>
-                    <Landmark className="w-3.5 h-3.5" />
-                    Account
-                  </Label>
-                  <input className={inputBase} placeholder="—" />
-                </Row>
-              </div>
-
-              {/* Remarks */}
-              <Row>
-                <Label>Remarks</Label>
-                <input className={inputBase} placeholder="—" />
-              </Row>
-
-              {/* Timestamp */}
-              <div className="text-xs text-gray-500 pt-1">
-                {new Date().toLocaleString()}
-              </div>
+      {/* Table */}
+      <div className="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
+        <div className="overflow-x-auto">
+          {loading ? (
+            <div className="p-8 text-center text-gray-500">
+              Loading payments…
             </div>
-
-            {/* Right side blank panel to match screenshot */}
-            <div className="border border-dashed border-gray-200 rounded-md bg-white"></div>
-          </div>
-        </section>
-
-        {/* Bills Payable Tabs + Table */}
-        <section className="px-4">
-          <div className="bg-white border border-gray-200 rounded-md">
-            {/* Faux tabs */}
-            <div className="flex items-center gap-4 px-3 py-2 border-b text-sm">
-              <button className="px-2 py-1 rounded-md bg-averix-red-dark text-white">
-                Bills Payable
-              </button>
-              <button className="px-2 py-1 rounded-md hover:bg-gray-100">
-                Account Details
-              </button>
-              <button className="px-2 py-1 rounded-md hover:bg-gray-100">
-                Claims
-              </button>
-              <button className="ml-auto px-2 py-1 rounded-md text-emerald-700 bg-emerald-50 border border-emerald-200">
-                QuickSet
-              </button>
+          ) : rows.length === 0 ? (
+            <div className="p-8 text-center text-gray-500">
+              {selected
+                ? "No payments for this supplier."
+                : "No payments recorded yet."}
             </div>
-
-            {/* Table */}
-            <div className="overflow-auto no-scrollbar">
-              <table className="min-w-[1200px] w-full text-sm">
-                <thead>
-                  <tr className="bg-gray-50 text-xs text-gray-600 uppercase">
-                    {[
-                      "Sl",
-                      "Entry No",
-                      "Bill No",
-                      "Bill Total",
-                      "Paid",
-                      "Balance",
-                      "PDC",
-                      "Balance-PDC",
-                      "Payment",
-                      "Blnc-After",
-                      "Verified",
-                      "Date",
-                      "Days",
-                      "Priority",
-                      "Narration",
-                    ].map((h) => (
-                      <th
-                        key={h}
-                        className="px-3 py-2 text-left whitespace-nowrap"
-                      >
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {/* Empty mock row */}
-                  <tr>
-                    {new Array(15).fill(0).map((_, i) => (
-                      <td key={i} className="px-3 py-3 text-gray-400">
-                        —
+          ) : (
+            <table className="w-full">
+              <thead>
+                <tr className="bg-gradient-to-r from-averix-red-dark to-averix-red-accent">
+                  {[
+                    { key: "date", label: "Date", width: "w-40" },
+                    { key: "supplier", label: "Supplier", width: "w-48" },
+                    { key: "mode", label: "Mode", width: "w-24" },
+                    { key: "amount", label: "Amount", width: "w-32" },
+                    { key: "type", label: "Type", width: "w-40" },
+                    { key: "notes", label: "Notes", width: "w-48" },
+                  ].map((col) => (
+                    <th
+                      key={col.key}
+                      className={`${col.width} px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wide`}
+                    >
+                      {col.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {rows.map((r, idx) => {
+                  return (
+                    <tr
+                      key={r.id}
+                      className={`transition-all duration-200 hover:bg-blue-50/30 ${
+                        idx % 2 === 0 ? "bg-white" : "bg-gray-50/30"
+                      }`}
+                    >
+                      <td className="px-6 py-4">
+                        <div className="text-sm text-gray-900 font-medium">
+                          {new Date(r.date).toLocaleDateString()}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {new Date(r.date).toLocaleTimeString()}
+                        </div>
                       </td>
-                    ))}
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+                      <td className="px-6 py-4">
+                        <div className="font-medium text-gray-900 text-sm">
+                          {r.supplierName || r.supplierId}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="inline-flex items-center px-2 py-1 rounded-md bg-blue-100 text-blue-800 text-xs font-medium">
+                          {r.mode}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="text-gray-900 font-medium text-sm">
+                          ₹{Number(r.amount || 0).toFixed(2)}
+                        </span>
+                      </td>
 
-            {/* Totals bar */}
-            <div className="flex items-center justify-end gap-6 px-4 py-3 border-t text-sm">
-              <Total label="0.00" />
-              <Total label="0.00" />
-              <Total label="0.00" />
-              <Total label="0.00" />
-              <Total label="0.00" highlight />
-              <Total label="0.00" highlight />
-              <div className="w-16" />
-            </div>
+                      {/* Type */}
+                      <td className="px-6 py-4">
+                        {(r.bills?.length || 0) > 0 ||
+                        Number(r.allocated || 0) > 0 ? (
+                          <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium border bg-green-50 text-green-700 border-green-200">
+                            Bill-wise
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium border bg-blue-50 text-blue-700 border-blue-200">
+                            Whole payment
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="px-6 py-4">
+                        <span className="text-gray-600 text-sm">
+                          {r.notes || "—"}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* Pagination */}
+        <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between bg-gray-50/50">
+          <div className="text-sm text-gray-600 font-medium">
+            Page {page} of {pages}
           </div>
-
-          {/* Payment details subheading */}
-          <div className="mt-4 text-averix-red-dark font-semibold">
-            Payment Details
-          </div>
-        </section>
-
-        {/* Footer actions */}
-        <section className="px-4 py-3 bg-white border-t flex items-center gap-3">
-          <button className="px-4 h-9 rounded-md border bg-white hover:bg-gray-50 inline-flex items-center gap-2">
-            <Printer className="w-4 h-4" />
-            Cheque Print
-          </button>
-
-          <div className="ml-auto flex items-center gap-3">
-            <button className="px-4 h-9 rounded-md border bg-white hover:bg-gray-50 inline-flex items-center gap-2">
-              <CheckSquare className="w-4 h-4" />
-              Modify
+          <div className="flex gap-2">
+            <button
+              className="px-4 py-2 border border-gray-200 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              Prev
             </button>
             <button
-              disabled
-              className="px-4 h-9 rounded-md border bg-white text-gray-400 inline-flex items-center gap-2 cursor-not-allowed"
+              className="px-4 py-2 border border-gray-200 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              disabled={page >= pages}
+              onClick={() => setPage((p) => Math.min(pages, p + 1))}
             >
-              <Printer className="w-4 h-4" />
-              Print
-            </button>
-            <button className="px-4 h-9 rounded-md border bg-white hover:bg-gray-50 inline-flex items-center gap-2">
-              <PlusSquare className="w-4 h-4" />
-              New
-            </button>
-            <button className="px-4 h-9 rounded-md bg-averix-red-dark text-white hover:bg-averix-red-accent inline-flex items-center gap-2">
-              <Save className="w-4 h-4" />
-              Save
-            </button>
-            <button className="px-4 h-9 rounded-md border bg-white hover:bg-gray-50">
-              Close
+              Next
             </button>
           </div>
-        </section>
+        </div>
       </div>
-    </div>
-  );
-}
 
-/* ---------- tiny helpers & styles ---------- */
-
-const inputBase =
-  "h-8 px-2 rounded-md border border-gray-300 bg-white outline-none focus:border-averix-red-dark focus:ring-2 focus:ring-averix-red-light/30 transition";
-
-function Row({ children }: { children: React.ReactNode }) {
-  return <div className="space-y-1">{children}</div>;
-}
-
-function Label({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="text-xs text-gray-600 font-medium mb-0.5 flex items-center gap-1">
-      {children}
-    </div>
-  );
-}
-
-function Total({
-  label,
-  highlight = false,
-}: {
-  label: string;
-  highlight?: boolean;
-}) {
-  return (
-    <div
-      className={
-        "min-w-[72px] text-center px-2 py-1 rounded " +
-        (highlight ? "bg-yellow-200 font-semibold" : "bg-gray-100")
-      }
-    >
-      {label}
+      {/* Record Payment modal */}
+      {open && selected && (
+        <SupplierLedgerModal
+          isOpen={open}
+          onClose={() => {
+            setOpen(false);
+            loadPayments();
+          }}
+          onSaved={() => {
+            loadPayments();
+          }}
+          licenseId={licenseId}
+          supplierId={selected.id}
+          supplierName={selected.name}
+        />
+      )}
     </div>
   );
 }

@@ -3,9 +3,108 @@ const { v4: uuidv4 } = require("uuid");
 const { ipcMain } = require("electron");
 const db = require("../db");
 
+// ========= BATCH HELPER FUNCTIONS =========
+// These should ideally be imported from products.js or a shared batches.js module
+// For now, including them here for completeness
+
+function buildBatchIdentityWhere(alias, payload) {
+  const p = alias ? `${alias}.` : "";
+
+  const where = [
+    `${p}licenseId = @licenseId`,
+    `${p}productId = @productId`,
+    `COALESCE(${p}deletedAt,'') = ''`,
+  ];
+  const params = {
+    licenseId: payload.licenseId,
+    productId: payload.productId,
+  };
+
+  const fields = [
+    "barcode",
+    "mrp",
+    "salePrice",
+    "batchNo",
+    "mfgDate",
+    "expiryDate",
+  ];
+  for (const f of fields) {
+    const val = payload[f] ?? null;
+    if (val === null) {
+      where.push(`${p}${f} IS NULL`);
+    } else {
+      where.push(`${p}${f} = @${f}`);
+      params[f] = val;
+    }
+  }
+  return { where, params };
+}
+
+function findOrCreateBatch(payload) {
+  const { where, params } = buildBatchIdentityWhere("", payload);
+
+  let batch = db
+    .prepare(
+      `SELECT * FROM product_batches WHERE ${where.join(" AND ")} LIMIT 1`
+    )
+    .get(params);
+
+  if (batch) return { batch };
+
+  const now = new Date().toISOString();
+  const batchId = uuidv4();
+
+  db.prepare(
+    `
+    INSERT INTO product_batches (
+      id, licenseId, productId, barcode, mrp, salePrice, costPrice,
+      batchNo, mfgDate, expiryDate, receivedAt, stock, createdAt, updatedAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `
+  ).run(
+    batchId,
+    payload.licenseId,
+    payload.productId,
+    payload.barcode ?? null,
+    payload.mrp ?? null,
+    payload.salePrice ?? null,
+    payload.costPrice ?? null,
+    payload.batchNo ?? null,
+    payload.mfgDate ?? null,
+    payload.expiryDate ?? null,
+    payload.receivedAt || now,
+    payload.stock || 0,
+    now,
+    now
+  );
+
+  batch = db.prepare(`SELECT * FROM product_batches WHERE id = ?`).get(batchId);
+  return { batch };
+}
+
+function bumpBatchAndProductStock({ batchId, productId, deltaQty }) {
+  const delta = Number(deltaQty || 0);
+
+  db.prepare(
+    `
+    UPDATE product_batches
+    SET stock = COALESCE(stock, 0) + ?,
+        updatedAt = ?
+    WHERE id = ?
+  `
+  ).run(delta, new Date().toISOString(), batchId);
+
+  db.prepare(
+    `
+    UPDATE products
+    SET stock = COALESCE(stock, 0) + ?
+    WHERE id = ?
+  `
+  ).run(delta, productId);
+}
+
 // ========= HELPER FUNCTIONS =========
 
-// Helper: total calc
 function sum(arr) {
   return arr.reduce((s, n) => s + (Number(n) || 0), 0);
 }
@@ -14,7 +113,7 @@ function getItemsForPurchase(purchaseId) {
   return db
     .prepare(
       `
-    SELECT productId, quantity, isFree
+    SELECT productId, quantity, isFree, batchId
     FROM purchase_items
     WHERE purchaseId = ? AND COALESCE(deletedAt,'') = ''
   `
@@ -57,6 +156,67 @@ function getNextHoldNo(licenseId) {
 // ========= PURCHASE CRUD HANDLERS =========
 
 function registerPurchaseHandlers() {
+  // ========= BATCH RESOLVER =========
+  ipcMain.handle("product.batch:resolve", (e, payload) => {
+    // payload: { licenseId, productId, barcode?, mrp?, salePrice?, batchNo?, mfgDate?, expiryDate? }
+    const { where, params } = buildBatchIdentityWhere("b", payload);
+    const exact = db
+      .prepare(
+        `SELECT * FROM product_batches b WHERE ${where.join(" AND ")} LIMIT 1`
+      )
+      .get(params);
+
+    // If exact match exists => reuse
+    if (exact) {
+      return { success: true, decision: "REUSE", batch: exact };
+    }
+
+    // If barcode present, check if some batch exists with same barcode but different price fields
+    if (payload.barcode) {
+      const sameBarcode = db
+        .prepare(
+          `SELECT * FROM product_batches
+         WHERE licenseId=@licenseId AND productId=@productId
+           AND COALESCE(deletedAt,'')='' AND barcode=@barcode
+         ORDER BY datetime(receivedAt) DESC LIMIT 1`
+        )
+        .get({
+          licenseId: payload.licenseId,
+          productId: payload.productId,
+          barcode: payload.barcode,
+        });
+
+      if (sameBarcode) {
+        // because get-by-barcode assumes uniqueness, same barcode must not create a new batch
+        // tell UI it's a "CONFLICT" and it should either REUSE or CHANGE barcode
+        const diffs = {};
+        for (const k of [
+          "mrp",
+          "salePrice",
+          "batchNo",
+          "mfgDate",
+          "expiryDate",
+        ]) {
+          if ((payload[k] ?? null) !== (sameBarcode[k] ?? null)) {
+            diffs[k] = {
+              current: sameBarcode[k] ?? null,
+              proposed: payload[k] ?? null,
+            };
+          }
+        }
+        return {
+          success: true,
+          decision: "CONFLICT_BARCODE",
+          batch: sameBarcode,
+          diffs,
+        };
+      }
+    }
+
+    // No exact match => NEW batch is clean
+    return { success: true, decision: "NEW" };
+  });
+
   // ========= LIST PURCHASES (with filters) =========
   ipcMain.handle("purchase:list", (event, licenseId, filters = {}) => {
     const {
@@ -148,7 +308,7 @@ function registerPurchaseHandlers() {
     return { success: true, purchase: p, items };
   });
 
-  // ========= CREATE PURCHASE =========
+  // ========= CREATE PURCHASE (WITH BATCH SYSTEM) =========
   ipcMain.handle("create-purchase", (event, purchase, items) => {
     if (!purchase?.supplierId) {
       throw new Error("Supplier is required for purchases.");
@@ -173,10 +333,10 @@ function registerPurchaseHandlers() {
     INSERT INTO purchase_items (
       id, purchaseId, productId, barcode, quantity, unit, rate, mrp,
       taxPercent, taxAmount, discount, salePrice, profit, totalCost, billedValue, effectiveUnitValue,
-      batchNo, mfgDate, expiryDate, discountType, lineNo, isFree,
+      batchNo, mfgDate, expiryDate, discountType, lineNo, isFree, batchId,
       createdAt, updatedAt, isSynced
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
   `);
 
     const trx = db.transaction((purchase, items) => {
@@ -235,6 +395,40 @@ function registerPurchaseHandlers() {
 
         totalAmount += billedValue;
 
+        // --- NEW: resolve/create batch ---
+        // Rule: if product has a product-level barcode equal to entered barcode, prefer batch.barcode=NULL
+        const prod = db
+          .prepare(`SELECT barcode FROM products WHERE id=?`)
+          .get(item.productId);
+        const batchBarcode =
+          item.barcode && prod?.barcode && prod.barcode === item.barcode
+            ? null
+            : item.barcode || null;
+
+        // find or create the exact identity batch
+        const { batch } = findOrCreateBatch({
+          licenseId: purchase.licenseId,
+          productId: item.productId,
+          barcode: batchBarcode,
+          mrp: item.mrp ?? null,
+          salePrice: salePrice ?? item.salePrice ?? null,
+          costPrice: item.rate ?? null,
+          batchNo: item.batchNo ?? null,
+          mfgDate: item.mfgDate ?? null,
+          expiryDate: item.expiryDate ?? null,
+          receivedAt: purchase.purchaseDate || now,
+          stock: 0,
+        });
+
+        // bump batch stock (skip if free)
+        if (!item.isFree) {
+          bumpBatchAndProductStock({
+            batchId: batch.id,
+            productId: item.productId,
+            deltaQty: item.quantity,
+          });
+        }
+
         insertItem.run(
           uuidv4(),
           newId,
@@ -258,19 +452,10 @@ function registerPurchaseHandlers() {
           item.discountType || "ABS",
           item.lineNo || index + 1,
           item.isFree ? 1 : 0,
+          batch.id, // batchId
           now,
           now
         );
-
-        if (!item.isFree) {
-          db.prepare(
-            `
-          UPDATE products
-          SET stock = COALESCE(stock, 0) + ?
-          WHERE id = ?
-          `
-          ).run(item.quantity, item.productId);
-        }
       });
 
       db.prepare(
@@ -331,7 +516,7 @@ function registerPurchaseHandlers() {
     return { success: true, purchaseId: newId, slNo, totalAmount };
   });
 
-  // ========= UPDATE PURCHASE (with stock & ledger reconciliation) =========
+  // ========= UPDATE PURCHASE (WITH BATCH SYSTEM) =========
   ipcMain.handle("purchase:update", (event, payload) => {
     const { id, header, items } = payload;
     if (!id) return { success: false, error: "id required" };
@@ -342,17 +527,24 @@ function registerPurchaseHandlers() {
 
       const now = new Date().toISOString();
 
-      // Reverse stock from OLD items
+      // Reverse stock from OLD items (by batch)
       const oldItems = getItemsForPurchase(id);
       for (const it of oldItems) {
-        if (!it.isFree) {
+        if (!it.isFree && it.batchId) {
+          bumpBatchAndProductStock({
+            batchId: it.batchId,
+            productId: it.productId,
+            deltaQty: -Number(it.quantity || 0),
+          });
+        } else if (!it.isFree) {
+          // legacy fallback (no batchId recorded)
           db.prepare(
-            `UPDATE products SET stock = COALESCE(stock,0) - ? WHERE id=?`
+            `UPDATE products SET stock=COALESCE(stock,0)-? WHERE id=?`
           ).run(it.quantity, it.productId);
         }
       }
 
-      //  Upsert header
+      // Upsert header
       const totalAmount = items.reduce(
         (s, it) => s + Number(it.billedValue || 0),
         0
@@ -403,12 +595,12 @@ function registerPurchaseHandlers() {
         INSERT INTO purchase_items(
           id, purchaseId, productId, quantity, unit, rate, taxPercent, taxAmount,
           discount, discountType, salePrice, profit, totalCost, billedValue,
-          barcode, mrp, batchNo, mfgDate, expiryDate, lineNo, isFree,
+          barcode, mrp, batchNo, mfgDate, expiryDate, lineNo, isFree, batchId,
           effectiveUnitValue, createdAt, updatedAt, isSynced, syncedAt
         ) VALUES (
           lower(hex(randomblob(16))), @purchaseId, @productId, @quantity, @unit, @rate, @taxPercent, @taxAmount,
           @discount, @discountType, @salePrice, @profit, @totalCost, @billedValue,
-          @barcode, @mrp, @batchNo, @mfgDate, @expiryDate, @lineNo, @isFree,
+          @barcode, @mrp, @batchNo, @mfgDate, @expiryDate, @lineNo, @isFree, @batchId,
           @effectiveUnitValue, @now, @now, 0, NULL
         )
       `);
@@ -418,6 +610,29 @@ function registerPurchaseHandlers() {
         const qty = Number(it.quantity || 0);
         const isFree = it.isFree ? 1 : 0;
         const effUnit = qty > 0 ? Number(it.billedValue || 0) / qty : 0;
+
+        // Resolve/create batch
+        const prod = db
+          .prepare(`SELECT barcode FROM products WHERE id=?`)
+          .get(it.productId);
+        const batchBarcode =
+          it.barcode && prod?.barcode && prod.barcode === it.barcode
+            ? null
+            : it.barcode || null;
+
+        const { batch } = findOrCreateBatch({
+          licenseId: header.licenseId,
+          productId: it.productId,
+          barcode: batchBarcode,
+          mrp: it.mrp ?? null,
+          salePrice: it.salePrice ?? null,
+          costPrice: it.rate ?? null,
+          batchNo: it.batchNo ?? null,
+          mfgDate: it.mfgDate ?? null,
+          expiryDate: it.expiryDate ?? null,
+          receivedAt: header.purchaseDate || now,
+          stock: 0,
+        });
 
         insItem.run({
           purchaseId: id,
@@ -440,14 +655,17 @@ function registerPurchaseHandlers() {
           expiryDate: it.expiryDate ?? null,
           lineNo,
           isFree,
+          batchId: batch.id,
           effectiveUnitValue: effUnit,
           now,
         });
 
         if (!isFree) {
-          db.prepare(
-            `UPDATE products SET stock = COALESCE(stock,0) + ? WHERE id=?`
-          ).run(qty, it.productId);
+          bumpBatchAndProductStock({
+            batchId: batch.id,
+            productId: it.productId,
+            deltaQty: qty,
+          });
         }
       });
 
@@ -513,24 +731,23 @@ function registerPurchaseHandlers() {
     }
   });
 
-  // ========= DELETE PURCHASE  =========
+  // ========= DELETE PURCHASE (WITH BATCH SYSTEM) =========
   ipcMain.handle("purchase:delete", (event, id) => {
     const now = new Date().toISOString();
 
     const trx = db.transaction(() => {
-      // Reverse stock
-      const items = db
-        .prepare(
-          `
-        SELECT productId, quantity, isFree
-        FROM purchase_items
-        WHERE purchaseId = ? AND COALESCE(deletedAt,'') = ''
-      `
-        )
-        .all(id);
+      // Reverse stock (by batch)
+      const items = getItemsForPurchase(id);
 
       for (const it of items) {
-        if (!it.isFree) {
+        if (!it.isFree && it.batchId) {
+          bumpBatchAndProductStock({
+            batchId: it.batchId,
+            productId: it.productId,
+            deltaQty: -Number(it.quantity || 0),
+          });
+        } else if (!it.isFree) {
+          // legacy fallback
           db.prepare(
             `UPDATE products SET stock = COALESCE(stock,0) - ? WHERE id=?`
           ).run(it.quantity, it.productId);
@@ -791,6 +1008,7 @@ function registerPurchaseHandlers() {
         "licenseId=@licenseId",
         "supplierId=@supplierId",
         "COALESCE(deletedAt,'')=''",
+        "kind IN ('OPENING','PURCHASE','PAYMENT','ADJUSTMENT')",
       ];
       const params = { licenseId, supplierId };
 
@@ -857,7 +1075,15 @@ function registerPurchaseHandlers() {
     "supplier-ledger:payment:create",
     (
       e,
-      { licenseId, supplierId, amount, date, mode = "CASH", notes = null }
+      {
+        licenseId,
+        supplierId,
+        amount,
+        date,
+        mode = "CASH",
+        notes = null,
+        allocations = [],
+      }
     ) => {
       if (!licenseId || !supplierId || !amount || Number(amount) <= 0) {
         return {
@@ -865,42 +1091,104 @@ function registerPurchaseHandlers() {
           error: "licenseId, supplierId and positive amount required",
         };
       }
+
       const now = new Date().toISOString();
       const txId = uuidv4();
+      const payAmt = Number(amount);
+
+      let allocSum = 0;
+      for (const a of allocations || []) {
+        const v = Number(a?.amount || 0);
+        if (v < 0)
+          return { success: false, error: "Allocation amount must be >= 0" };
+        allocSum += v;
+
+        const pr = db
+          .prepare(
+            `SELECT licenseId, supplierId, totalAmount, discount, deletedAt, purchaseType FROM purchases WHERE id=?`
+          )
+          .get(a.purchaseId);
+
+        if (
+          !pr ||
+          pr.licenseId !== licenseId ||
+          pr.supplierId !== supplierId ||
+          pr.deletedAt
+        ) {
+          return {
+            success: false,
+            error: `Invalid purchaseId in allocation: ${a.purchaseId}`,
+          };
+        }
+        if (pr.purchaseType !== "CREDIT") {
+          return {
+            success: false,
+            error: `Cannot allocate to non-CREDIT purchase: ${a.purchaseId}`,
+          };
+        }
+      }
+
+      if (allocSum > payAmt) {
+        return {
+          success: false,
+          error: "Sum of allocations exceeds payment amount",
+        };
+      }
 
       const trx = db.transaction(() => {
-        // Supplier ledger entry: PAYMENT reduces balance => sign = -1
+        // Supplier ledger payment (reduces balance => sign = -1)
         db.prepare(
           `
-      INSERT INTO supplier_transactions
-      (id, licenseId, supplierId, kind, refId, refNo, date, amount, sign, notes, createdAt, updatedAt, isSynced)
-      VALUES(?, ?, ?, 'PAYMENT', NULL, NULL, ?, ?, -1, ?, ?, ?, 0)
-    `
+        INSERT INTO supplier_transactions
+        (id, licenseId, supplierId, kind, refId, refNo, date, amount, sign, notes, createdAt, updatedAt, isSynced)
+        VALUES(?, ?, ?, 'PAYMENT', NULL, NULL, ?, ?, -1, ?, ?, ?, 0)
+      `
         ).run(
           txId,
           licenseId,
           supplierId,
           date || now,
-          Number(amount),
-          notes || "Payment"
+          payAmt,
+          notes || "Payment",
+          now,
+          now
         );
 
-        // Optional: record cash/bank outflow
-        if (mode === "CASH" || mode === "BANK") {
+        // Optional bill-wise allocations
+        for (const a of allocations || []) {
+          if (Number(a.amount || 0) <= 0) continue;
           db.prepare(
             `
-        INSERT INTO cash_transactions
-        (id, licenseId, kind, refId, refNo, date, amount, sign, notes, createdAt, updatedAt, isSynced)
-        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
-      `
+          INSERT INTO supplier_bill_settlements
+          (id, licenseId, supplierId, paymentTxId, purchaseId, amount, createdAt)
+          VALUES(?, ?, ?, ?, ?, ?, ?)
+        `
           ).run(
             uuidv4(),
             licenseId,
-            mode === "CASH" ? "SUPPLIER_PAYMENT_CASH" : "SUPPLIER_PAYMENT_BANK",
+            supplierId,
+            txId,
+            a.purchaseId,
+            Number(a.amount),
+            now
+          );
+        }
+
+        if (mode === "CASH" || mode === "BANK") {
+          db.prepare(
+            `
+          INSERT INTO cash_transactions
+          (id, licenseId, kind, refId, refNo, date, amount, sign, notes, createdAt, updatedAt, isSynced)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?, 0)
+        `
+          ).run(
+            uuidv4(),
+            licenseId,
+            "PAYMENT",
             txId,
             null,
             date || now,
-            Number(amount),
+            payAmt,
             -1,
             mode === "CASH"
               ? "Supplier Payment (Cash)"
@@ -913,10 +1201,212 @@ function registerPurchaseHandlers() {
 
       try {
         trx();
-        return { success: true, id: txId };
+        return {
+          success: true,
+          id: txId,
+          allocated: allocSum,
+          unallocated: payAmt - allocSum,
+        };
       } catch (err) {
         return { success: false, error: String(err?.message || err) };
       }
+    }
+  );
+
+  // ===== SUPPLIER OUTSTANDING BILLS (bill-wise) =====
+  ipcMain.handle(
+    "supplier:outstanding-bills",
+    (e, { licenseId, supplierId, q = "", page = 1, pageSize = 50 }) => {
+      if (!licenseId || !supplierId)
+        return { success: false, error: "licenseId & supplierId required" };
+
+      const like = `%${q.trim()}%`;
+
+      const baseRows = db
+        .prepare(
+          `
+        SELECT
+          p.id,
+          p.slNo,
+          p.billNo,
+          p.purchaseDate,
+          p.totalAmount,
+          p.discount,
+          p.purchaseType
+        FROM purchases p
+        WHERE p.licenseId = ? AND p.supplierId = ? AND COALESCE(p.deletedAt,'') = ''
+          AND p.purchaseType = 'CREDIT'
+          AND (COALESCE(p.billNo,'') LIKE ? OR COALESCE(p.supplierName,'') LIKE ?)
+        ORDER BY datetime(p.purchaseDate) DESC, p.slNo DESC
+        LIMIT ? OFFSET ?
+      `
+        )
+        .all(
+          licenseId,
+          supplierId,
+          like,
+          like,
+          pageSize,
+          (page - 1) * pageSize
+        );
+
+      const total = db
+        .prepare(
+          `
+        SELECT COUNT(*) AS cnt
+        FROM purchases p
+        WHERE p.licenseId = ? AND p.supplierId = ? AND COALESCE(p.deletedAt,'') = ''
+          AND p.purchaseType = 'CREDIT'
+          AND (COALESCE(p.billNo,'') LIKE ? OR COALESCE(p.supplierName,'') LIKE ?)
+      `
+        )
+        .get(licenseId, supplierId, like, like).cnt;
+
+      const rows = baseRows.map((r) => {
+        const grand = Math.max(
+          0,
+          Number(r.totalAmount || 0) - Number(r.discount || 0)
+        );
+
+        const paid = db
+          .prepare(
+            `
+          SELECT COALESCE(SUM(amount),0) AS paid
+          FROM supplier_bill_settlements
+          WHERE licenseId=? AND purchaseId=?
+        `
+          )
+          .get(licenseId, r.id).paid;
+
+        const remaining = Math.max(0, grand - Number(paid || 0));
+        return {
+          ...r,
+          grandAmount: grand,
+          paidAmount: Number(paid || 0),
+          remainingDue: remaining,
+        };
+      });
+
+      return { success: true, page, pageSize, total, rows };
+    }
+  );
+
+  // ===== PAYMENTS: list =====
+  ipcMain.handle(
+    "payments:list",
+    (
+      e,
+      {
+        licenseId,
+        supplierId = null,
+        q = "",
+        dateFrom = null,
+        dateTo = null,
+        page = 1,
+        pageSize = 50,
+      }
+    ) => {
+      if (!licenseId) return { success: false, error: "licenseId required" };
+
+      const where = [
+        "st.licenseId = @licenseId",
+        "COALESCE(st.deletedAt,'')=''",
+        "st.kind = 'PAYMENT'",
+      ];
+      const params = {
+        licenseId,
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
+      };
+
+      if (supplierId) {
+        where.push("st.supplierId = @supplierId");
+        params.supplierId = supplierId;
+      }
+      if (dateFrom) {
+        where.push("st.date >= @dateFrom");
+        params.dateFrom = dateFrom;
+      }
+      if (dateTo) {
+        where.push("st.date < @dateTo");
+        params.dateTo = dateTo;
+      }
+      if (q && q.trim()) {
+        where.push(
+          "(COALESCE(s.name,'') LIKE @q OR COALESCE(st.notes,'') LIKE @q)"
+        );
+        params.q = `%${q.trim()}%`;
+      }
+
+      const base = `
+      FROM supplier_transactions st
+      LEFT JOIN suppliers s ON s.id = st.supplierId
+      LEFT JOIN cash_transactions ct
+        ON ct.licenseId = st.licenseId
+       AND ct.refId = st.id
+       AND ct.kind = 'PAYMENT'
+      WHERE ${where.join(" AND ")}
+    `;
+
+      const total = db
+        .prepare(`SELECT COUNT(*) AS cnt ${base}`)
+        .get(params).cnt;
+
+      // Pull payments + allocated sum
+      const rows = db
+        .prepare(
+          `
+      SELECT
+        st.id,
+        st.supplierId,
+        COALESCE(s.name,'') AS supplierName,
+        st.date,
+        st.amount,
+        st.notes,
+        st.createdAt,
+        CASE
+          WHEN LOWER(COALESCE(ct.notes,'')) LIKE '%bank%' THEN 'BANK'
+          WHEN LOWER(COALESCE(ct.notes,'')) LIKE '%cash%' THEN 'CASH'
+          ELSE 'CASH'
+        END AS mode,
+        (SELECT COALESCE(SUM(amount),0)
+           FROM supplier_bill_settlements b
+          WHERE b.licenseId = st.licenseId AND b.paymentTxId = st.id) AS allocated
+      ${base}
+      ORDER BY datetime(st.date) DESC, datetime(st.createdAt) DESC
+      LIMIT @limit OFFSET @offset
+      `
+        )
+        .all(params);
+
+      // For each payment, fetch the bills it was applied to
+      const billStmt = db.prepare(`
+      SELECT b.purchaseId,
+             COALESCE(p.billNo, printf('SL-%d', p.slNo)) AS billRef
+        FROM supplier_bill_settlements b
+        LEFT JOIN purchases p
+               ON p.id = b.purchaseId
+       WHERE b.licenseId = ? AND b.paymentTxId = ?
+       ORDER BY datetime(p.purchaseDate) DESC, p.slNo DESC
+    `);
+
+      const mapped = rows.map((r) => {
+        const bills = billStmt.all(licenseId, r.id) || [];
+        const allocated = Number(r.allocated || 0);
+        const unallocated = Math.max(0, Number(r.amount || 0) - allocated);
+
+        return {
+          ...r,
+          allocated,
+          unallocated,
+          bills: bills.map((x) => ({
+            purchaseId: x.purchaseId,
+            billRef: x.billRef || x.purchaseId,
+          })),
+        };
+      });
+
+      return { success: true, total, page, pageSize, rows: mapped };
     }
   );
 }

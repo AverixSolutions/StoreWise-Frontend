@@ -1,3 +1,4 @@
+// src/components/tax/TaxSettings.tsx
 "use client";
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
@@ -62,6 +63,16 @@ function isStdInter(c: TaxCategory) {
   );
 }
 
+const renderSplit = (c: TaxCategory) => {
+  if (isNoTax(c)) return "No tax";
+  const comps = c.components || [];
+  if (comps.length) {
+    return comps.map((x) => `${x.component} ${Number(x.rate)}%`).join(" + ");
+  }
+
+  return c.isInterstate ? `IGST ${Number(c.rate)}%` : `GST ${Number(c.rate)}%`;
+};
+
 function isNoTax(c?: TaxCategory | null) {
   if (!c) return false;
   const total = Number(c.rate || 0);
@@ -72,6 +83,10 @@ function isNoTax(c?: TaxCategory | null) {
 function first<T>(arr: T[]) {
   return arr.length ? arr[0] : undefined;
 }
+
+const EPS = 1e-6;
+const sameRate = (a?: number | null, b?: number | null) =>
+  a == null || b == null ? true : Math.abs(Number(a) - Number(b)) < EPS;
 
 function optsFor(
   all: AccountOption[],
@@ -89,7 +104,7 @@ function optsFor(
     (o) =>
       o.taxType === taxType &&
       o.gstComponent === component &&
-      (rate == null || Number(o.rate ?? -1) === Number(rate))
+      sameRate(o.rate ?? null, rate ?? null)
   );
 }
 
@@ -130,58 +145,109 @@ export default function TaxSettings() {
     loadAccounts();
   }, []);
 
-  // Auto-fill defaults when opening editor
+  // Close on ESC
+  useEffect(() => {
+    if (!editing) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setEditing(null);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [editing]);
+
+  const equalDefaults = (a?: TaxDefaults | null, b?: TaxDefaults | null) => {
+    const keys: (keyof TaxDefaults)[] = [
+      "salesAccountId",
+      "purchaseAccountId",
+      "salesReturnAccountId",
+      "purchaseReturnAccountId",
+      "outputCgstAccountId",
+      "outputSgstAccountId",
+      "outputIgstAccountId",
+      "inputCgstAccountId",
+      "inputSgstAccountId",
+      "inputIgstAccountId",
+      "cessAccountId",
+      "singleTaxAccountId",
+    ];
+    return keys.every((k) => (a?.[k] ?? null) === (b?.[k] ?? null));
+  };
+
   useEffect(() => {
     if (!editing || !acctOpts.length) return;
 
-    const d = editing.defaults || {};
-    const hasAny =
-      d.salesAccountId ||
-      d.purchaseAccountId ||
-      d.salesReturnAccountId ||
-      d.purchaseReturnAccountId ||
-      d.inputCgstAccountId ||
-      d.inputSgstAccountId ||
-      d.inputIgstAccountId ||
-      d.outputCgstAccountId ||
-      d.outputSgstAccountId ||
-      d.outputIgstAccountId;
+    setEditing((prev) => {
+      if (!prev) return prev;
 
-    if (hasAny) return;
+      const d = prev.defaults || {};
 
-    const intra = isStdIntra(editing);
-    const inter = isStdInter(editing);
-    const half = intra ? Number(editing.rate || 0) / 2 : null;
-    const ig = inter ? Number(editing.rate || 0) : null;
+      const copyBaseToReturnsIfBlank = (dx: TaxDefaults): TaxDefaults => ({
+        ...dx,
+        salesReturnAccountId:
+          dx.salesReturnAccountId ?? dx.salesAccountId ?? null,
+        purchaseReturnAccountId:
+          dx.purchaseReturnAccountId ?? dx.purchaseAccountId ?? null,
+      });
 
-    const pick = (
-      taxType: "INPUT" | "OUTPUT",
-      comp: "CGST" | "SGST" | "IGST",
-      rate?: number | null
-    ) =>
-      first(
-        optsFor(acctOpts, { taxType, component: comp, rate: rate ?? undefined })
-      )?.id || null;
+      const hasAny =
+        d.salesAccountId ||
+        d.purchaseAccountId ||
+        d.salesReturnAccountId ||
+        d.purchaseReturnAccountId ||
+        d.inputCgstAccountId ||
+        d.inputSgstAccountId ||
+        d.inputIgstAccountId ||
+        d.outputCgstAccountId ||
+        d.outputSgstAccountId ||
+        d.outputIgstAccountId;
 
-    const nextDefaults: TaxDefaults = {
-      salesAccountId: d.salesAccountId ?? null,
-      purchaseAccountId: d.purchaseAccountId ?? null,
-      salesReturnAccountId: d.salesReturnAccountId ?? null,
-      purchaseReturnAccountId: d.purchaseReturnAccountId ?? null,
-    };
+      const intra = isStdIntra(prev);
+      const inter = isStdInter(prev);
+      const half = intra ? Number(prev.rate || 0) / 2 : null;
+      const ig = inter ? Number(prev.rate || 0) : null;
 
-    if (intra) {
-      nextDefaults.inputCgstAccountId = pick("INPUT", "CGST", half);
-      nextDefaults.inputSgstAccountId = pick("INPUT", "SGST", half);
-      nextDefaults.outputCgstAccountId = pick("OUTPUT", "CGST", half);
-      nextDefaults.outputSgstAccountId = pick("OUTPUT", "SGST", half);
-    } else if (inter) {
-      nextDefaults.inputIgstAccountId = pick("INPUT", "IGST", ig);
-      nextDefaults.outputIgstAccountId = pick("OUTPUT", "IGST", ig);
-    }
+      const pick = (
+        taxType: "INPUT" | "OUTPUT",
+        comp: "CGST" | "SGST" | "IGST",
+        rate?: number | null
+      ) =>
+        first(
+          optsFor(acctOpts, {
+            taxType,
+            component: comp,
+            rate: rate ?? undefined,
+          })
+        )?.id || null;
 
-    setEditing({ ...editing, defaults: nextDefaults });
-  }, [editing, acctOpts]);
+      let nextDefaults: TaxDefaults = {
+        salesAccountId: d.salesAccountId ?? null,
+        purchaseAccountId: d.purchaseAccountId ?? null,
+        salesReturnAccountId: d.salesReturnAccountId ?? null,
+        purchaseReturnAccountId: d.purchaseReturnAccountId ?? null,
+      };
+
+      if (!hasAny) {
+        if (intra) {
+          nextDefaults.inputCgstAccountId = pick("INPUT", "CGST", half);
+          nextDefaults.inputSgstAccountId = pick("INPUT", "SGST", half);
+          nextDefaults.outputCgstAccountId = pick("OUTPUT", "CGST", half);
+          nextDefaults.outputSgstAccountId = pick("OUTPUT", "SGST", half);
+        } else if (inter) {
+          nextDefaults.inputIgstAccountId = pick("INPUT", "IGST", ig);
+          nextDefaults.outputIgstAccountId = pick("OUTPUT", "IGST", ig);
+        }
+      }
+
+      nextDefaults = copyBaseToReturnsIfBlank(nextDefaults);
+
+      if (equalDefaults(d, nextDefaults)) return prev;
+      return { ...prev, defaults: nextDefaults };
+    });
+  }, [
+    acctOpts,
+    editing?.id,
+    editing?.rate,
+    editing?.isInterstate,
+    editing?.components?.map((c) => `${c.component}:${c.rate}`).join("|"),
+  ]);
 
   const onSeed = async () => {
     const ok = await (window as any).electronAPI.seedIndiaGST(licenseId);
@@ -221,6 +287,10 @@ export default function TaxSettings() {
       value: o.id,
       label: o.name,
     }));
+
+  // Helper to show account names in table
+  const idToName = new Map(acctOpts.map((a) => [a.id, a.name]));
+  const showName = (id?: string | null) => (id ? idToName.get(id) || id : "—");
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-6">
@@ -283,7 +353,7 @@ export default function TaxSettings() {
                     Type
                   </th>
                   <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                    Components
+                    Split
                   </th>
                   <th className="px-6 py-4 text-right text-xs font-semibold text-gray-700 uppercase tracking-wider">
                     Actions
@@ -313,15 +383,20 @@ export default function TaxSettings() {
                         {r.isInterstate ? "Interstate" : "Intrastate"}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-600">
-                      {(r.components || [])
-                        .map((c) => `${c.component} ${c.rate}%`)
-                        .join(" + ")}
+                    <td className="px-6 py-4 text-sm text-gray-900 font-medium">
+                      {renderSplit(r)}
                     </td>
+
                     <td className="px-6 py-4 text-right">
                       <div className="flex gap-2 justify-end">
                         <button
-                          onClick={() => setEditing(r)}
+                          onClick={() =>
+                            setEditing(
+                              structuredClone
+                                ? structuredClone(r)
+                                : JSON.parse(JSON.stringify(r))
+                            )
+                          }
                           className="px-3 py-1.5 text-sm border-2 border-averix-red-light text-averix-red-dark rounded-lg hover:bg-averix-red-light hover:text-white transition-all font-medium"
                         >
                           Edit
@@ -379,8 +454,15 @@ export default function TaxSettings() {
 
       {/* Modal Editor */}
       {editing && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 animate-in fade-in duration-200"
+          onClick={() => setEditing(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+            key={editing.id || "new"}
+          >
             {/* Modal Header */}
             <div className="bg-gradient-to-r from-averix-red-dark to-averix-red-light text-white px-6 py-4 flex items-center justify-between">
               <div>
@@ -580,7 +662,7 @@ export default function TaxSettings() {
                       Sales Account
                     </label>
                     <SearchableDropdown
-                      value={editing.defaults?.salesAccountId || ""}
+                      value={editing.defaults?.salesAccountId ?? ""}
                       onChange={(v) =>
                         setEditing({
                           ...editing,
@@ -599,7 +681,7 @@ export default function TaxSettings() {
                       Purchase Account
                     </label>
                     <SearchableDropdown
-                      value={editing.defaults?.purchaseAccountId || ""}
+                      value={editing.defaults?.purchaseAccountId ?? ""}
                       onChange={(v) =>
                         setEditing({
                           ...editing,
@@ -618,7 +700,7 @@ export default function TaxSettings() {
                       Sales Return Account
                     </label>
                     <SearchableDropdown
-                      value={editing.defaults?.salesReturnAccountId || ""}
+                      value={editing.defaults?.salesReturnAccountId ?? ""}
                       onChange={(v) =>
                         setEditing({
                           ...editing,
@@ -637,7 +719,7 @@ export default function TaxSettings() {
                       Purchase Return Account
                     </label>
                     <SearchableDropdown
-                      value={editing.defaults?.purchaseReturnAccountId || ""}
+                      value={editing.defaults?.purchaseReturnAccountId ?? ""}
                       onChange={(v) =>
                         setEditing({
                           ...editing,
@@ -663,77 +745,68 @@ export default function TaxSettings() {
                       </div>
                       {!editing.isInterstate ? (
                         <div className="space-y-3">
-                          <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">
-                              INPUT CGST {halfRate != null && `(${halfRate}%)`}
-                            </label>
-                            <SearchableDropdown
-                              value={editing.defaults?.inputCgstAccountId || ""}
-                              onChange={(v) =>
-                                setEditing({
-                                  ...editing,
-                                  defaults: {
-                                    ...(editing.defaults || {}),
-                                    inputCgstAccountId: v || null,
-                                  },
-                                })
-                              }
-                              options={makeFilteredOpts(
-                                "INPUT",
-                                "CGST",
-                                halfRate ?? undefined
-                              )}
-                              placeholder="Select..."
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">
-                              INPUT SGST {halfRate != null && `(${halfRate}%)`}
-                            </label>
-                            <SearchableDropdown
-                              value={editing.defaults?.inputSgstAccountId || ""}
-                              onChange={(v) =>
-                                setEditing({
-                                  ...editing,
-                                  defaults: {
-                                    ...(editing.defaults || {}),
-                                    inputSgstAccountId: v || null,
-                                  },
-                                })
-                              }
-                              options={makeFilteredOpts(
-                                "INPUT",
-                                "SGST",
-                                halfRate ?? undefined
-                              )}
-                              placeholder="Select..."
-                            />
-                          </div>
-                        </div>
-                      ) : (
-                        <div>
-                          <label className="block text-xs font-medium text-gray-700 mb-1">
-                            INPUT IGST {igstRate != null && `(${igstRate}%)`}
-                          </label>
                           <SearchableDropdown
-                            value={editing.defaults?.inputIgstAccountId || ""}
+                            value={editing.defaults?.inputCgstAccountId ?? ""}
                             onChange={(v) =>
                               setEditing({
                                 ...editing,
                                 defaults: {
                                   ...(editing.defaults || {}),
-                                  inputIgstAccountId: v || null,
+                                  inputCgstAccountId: v || null,
                                 },
                               })
                             }
                             options={makeFilteredOpts(
                               "INPUT",
-                              "IGST",
-                              igstRate ?? undefined
+                              "CGST",
+                              halfRate ?? undefined
                             )}
-                            placeholder="Select..."
+                            placeholder={`CGST ${
+                              halfRate != null ? `(${halfRate}%)` : ""
+                            }`}
+                          />
+                          <SearchableDropdown
+                            value={editing.defaults?.inputSgstAccountId ?? ""}
+                            onChange={(v) =>
+                              setEditing({
+                                ...editing,
+                                defaults: {
+                                  ...(editing.defaults || {}),
+                                  inputSgstAccountId: v || null,
+                                },
+                              })
+                            }
+                            options={makeFilteredOpts(
+                              "INPUT",
+                              "SGST",
+                              halfRate ?? undefined
+                            )}
+                            placeholder={`SGST ${
+                              halfRate != null ? `(${halfRate}%)` : ""
+                            }`}
                           />
                         </div>
+                      ) : (
+                        <SearchableDropdown
+                          value={editing.defaults?.inputIgstAccountId ?? ""}
+                          onChange={(v) =>
+                            setEditing({
+                              ...editing,
+                              defaults: {
+                                ...(editing.defaults || {}),
+                                inputIgstAccountId: v || null,
+                              },
+                            })
+                          }
+                          options={makeFilteredOpts(
+                            "INPUT",
+                            "IGST",
+                            igstRate ?? undefined
+                          )}
+                          placeholder={`IGST ${
+                            igstRate != null ? `(${igstRate}%)` : ""
+                          }`}
+                        />
                       )}
                     </div>
 
@@ -744,81 +817,68 @@ export default function TaxSettings() {
                       </div>
                       {!editing.isInterstate ? (
                         <div className="space-y-3">
-                          <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">
-                              OUTPUT CGST {halfRate != null && `(${halfRate}%)`}
-                            </label>
-                            <SearchableDropdown
-                              value={
-                                editing.defaults?.outputCgstAccountId || ""
-                              }
-                              onChange={(v) =>
-                                setEditing({
-                                  ...editing,
-                                  defaults: {
-                                    ...(editing.defaults || {}),
-                                    outputCgstAccountId: v || null,
-                                  },
-                                })
-                              }
-                              options={makeFilteredOpts(
-                                "OUTPUT",
-                                "CGST",
-                                halfRate ?? undefined
-                              )}
-                              placeholder="Select..."
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">
-                              OUTPUT SGST {halfRate != null && `(${halfRate}%)`}
-                            </label>
-                            <SearchableDropdown
-                              value={
-                                editing.defaults?.outputSgstAccountId || ""
-                              }
-                              onChange={(v) =>
-                                setEditing({
-                                  ...editing,
-                                  defaults: {
-                                    ...(editing.defaults || {}),
-                                    outputSgstAccountId: v || null,
-                                  },
-                                })
-                              }
-                              options={makeFilteredOpts(
-                                "OUTPUT",
-                                "SGST",
-                                halfRate ?? undefined
-                              )}
-                              placeholder="Select..."
-                            />
-                          </div>
-                        </div>
-                      ) : (
-                        <div>
-                          <label className="block text-xs font-medium text-gray-700 mb-1">
-                            OUTPUT IGST {igstRate != null && `(${igstRate}%)`}
-                          </label>
                           <SearchableDropdown
-                            value={editing.defaults?.outputIgstAccountId || ""}
+                            value={editing.defaults?.outputCgstAccountId ?? ""}
                             onChange={(v) =>
                               setEditing({
                                 ...editing,
                                 defaults: {
                                   ...(editing.defaults || {}),
-                                  outputIgstAccountId: v || null,
+                                  outputCgstAccountId: v || null,
                                 },
                               })
                             }
                             options={makeFilteredOpts(
                               "OUTPUT",
-                              "IGST",
-                              igstRate ?? undefined
+                              "CGST",
+                              halfRate ?? undefined
                             )}
-                            placeholder="Select..."
+                            placeholder={`CGST ${
+                              halfRate != null ? `(${halfRate}%)` : ""
+                            }`}
+                          />
+                          <SearchableDropdown
+                            value={editing.defaults?.outputSgstAccountId ?? ""}
+                            onChange={(v) =>
+                              setEditing({
+                                ...editing,
+                                defaults: {
+                                  ...(editing.defaults || {}),
+                                  outputSgstAccountId: v || null,
+                                },
+                              })
+                            }
+                            options={makeFilteredOpts(
+                              "OUTPUT",
+                              "SGST",
+                              halfRate ?? undefined
+                            )}
+                            placeholder={`SGST ${
+                              halfRate != null ? `(${halfRate}%)` : ""
+                            }`}
                           />
                         </div>
+                      ) : (
+                        <SearchableDropdown
+                          value={editing.defaults?.outputIgstAccountId ?? ""}
+                          onChange={(v) =>
+                            setEditing({
+                              ...editing,
+                              defaults: {
+                                ...(editing.defaults || {}),
+                                outputIgstAccountId: v || null,
+                              },
+                            })
+                          }
+                          options={makeFilteredOpts(
+                            "OUTPUT",
+                            "IGST",
+                            igstRate ?? undefined
+                          )}
+                          placeholder={`IGST ${
+                            igstRate != null ? `(${igstRate}%)` : ""
+                          }`}
+                        />
                       )}
                     </div>
 
@@ -829,77 +889,68 @@ export default function TaxSettings() {
                       </div>
                       {!editing.isInterstate ? (
                         <div className="space-y-3">
-                          <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">
-                              INPUT CGST {halfRate != null && `(${halfRate}%)`}
-                            </label>
-                            <SearchableDropdown
-                              value={editing.defaults?.inputCgstAccountId || ""}
-                              onChange={(v) =>
-                                setEditing({
-                                  ...editing,
-                                  defaults: {
-                                    ...(editing.defaults || {}),
-                                    inputCgstAccountId: v || null,
-                                  },
-                                })
-                              }
-                              options={makeFilteredOpts(
-                                "INPUT",
-                                "CGST",
-                                halfRate ?? undefined
-                              )}
-                              placeholder="Select..."
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">
-                              INPUT SGST {halfRate != null && `(${halfRate}%)`}
-                            </label>
-                            <SearchableDropdown
-                              value={editing.defaults?.inputSgstAccountId || ""}
-                              onChange={(v) =>
-                                setEditing({
-                                  ...editing,
-                                  defaults: {
-                                    ...(editing.defaults || {}),
-                                    inputSgstAccountId: v || null,
-                                  },
-                                })
-                              }
-                              options={makeFilteredOpts(
-                                "INPUT",
-                                "SGST",
-                                halfRate ?? undefined
-                              )}
-                              placeholder="Select..."
-                            />
-                          </div>
-                        </div>
-                      ) : (
-                        <div>
-                          <label className="block text-xs font-medium text-gray-700 mb-1">
-                            INPUT IGST {igstRate != null && `(${igstRate}%)`}
-                          </label>
                           <SearchableDropdown
-                            value={editing.defaults?.inputIgstAccountId || ""}
+                            value={editing.defaults?.inputCgstAccountId ?? ""}
                             onChange={(v) =>
                               setEditing({
                                 ...editing,
                                 defaults: {
                                   ...(editing.defaults || {}),
-                                  inputIgstAccountId: v || null,
+                                  inputCgstAccountId: v || null,
                                 },
                               })
                             }
                             options={makeFilteredOpts(
                               "INPUT",
-                              "IGST",
-                              igstRate ?? undefined
+                              "CGST",
+                              halfRate ?? undefined
                             )}
-                            placeholder="Select..."
+                            placeholder={`CGST ${
+                              halfRate != null ? `(${halfRate}%)` : ""
+                            }`}
+                          />
+                          <SearchableDropdown
+                            value={editing.defaults?.inputSgstAccountId ?? ""}
+                            onChange={(v) =>
+                              setEditing({
+                                ...editing,
+                                defaults: {
+                                  ...(editing.defaults || {}),
+                                  inputSgstAccountId: v || null,
+                                },
+                              })
+                            }
+                            options={makeFilteredOpts(
+                              "INPUT",
+                              "SGST",
+                              halfRate ?? undefined
+                            )}
+                            placeholder={`SGST ${
+                              halfRate != null ? `(${halfRate}%)` : ""
+                            }`}
                           />
                         </div>
+                      ) : (
+                        <SearchableDropdown
+                          value={editing.defaults?.inputIgstAccountId ?? ""}
+                          onChange={(v) =>
+                            setEditing({
+                              ...editing,
+                              defaults: {
+                                ...(editing.defaults || {}),
+                                inputIgstAccountId: v || null,
+                              },
+                            })
+                          }
+                          options={makeFilteredOpts(
+                            "INPUT",
+                            "IGST",
+                            igstRate ?? undefined
+                          )}
+                          placeholder={`IGST ${
+                            igstRate != null ? `(${igstRate}%)` : ""
+                          }`}
+                        />
                       )}
                     </div>
 
@@ -910,81 +961,68 @@ export default function TaxSettings() {
                       </div>
                       {!editing.isInterstate ? (
                         <div className="space-y-3">
-                          <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">
-                              OUTPUT CGST {halfRate != null && `(${halfRate}%)`}
-                            </label>
-                            <SearchableDropdown
-                              value={
-                                editing.defaults?.outputCgstAccountId || ""
-                              }
-                              onChange={(v) =>
-                                setEditing({
-                                  ...editing,
-                                  defaults: {
-                                    ...(editing.defaults || {}),
-                                    outputCgstAccountId: v || null,
-                                  },
-                                })
-                              }
-                              options={makeFilteredOpts(
-                                "OUTPUT",
-                                "CGST",
-                                halfRate ?? undefined
-                              )}
-                              placeholder="Select..."
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">
-                              OUTPUT SGST {halfRate != null && `(${halfRate}%)`}
-                            </label>
-                            <SearchableDropdown
-                              value={
-                                editing.defaults?.outputSgstAccountId || ""
-                              }
-                              onChange={(v) =>
-                                setEditing({
-                                  ...editing,
-                                  defaults: {
-                                    ...(editing.defaults || {}),
-                                    outputSgstAccountId: v || null,
-                                  },
-                                })
-                              }
-                              options={makeFilteredOpts(
-                                "OUTPUT",
-                                "SGST",
-                                halfRate ?? undefined
-                              )}
-                              placeholder="Select..."
-                            />
-                          </div>
-                        </div>
-                      ) : (
-                        <div>
-                          <label className="block text-xs font-medium text-gray-700 mb-1">
-                            OUTPUT IGST {igstRate != null && `(${igstRate}%)`}
-                          </label>
                           <SearchableDropdown
-                            value={editing.defaults?.outputIgstAccountId || ""}
+                            value={editing.defaults?.outputCgstAccountId ?? ""}
                             onChange={(v) =>
                               setEditing({
                                 ...editing,
                                 defaults: {
                                   ...(editing.defaults || {}),
-                                  outputIgstAccountId: v || null,
+                                  outputCgstAccountId: v || null,
                                 },
                               })
                             }
                             options={makeFilteredOpts(
                               "OUTPUT",
-                              "IGST",
-                              igstRate ?? undefined
+                              "CGST",
+                              halfRate ?? undefined
                             )}
-                            placeholder="Select..."
+                            placeholder={`CGST ${
+                              halfRate != null ? `(${halfRate}%)` : ""
+                            }`}
+                          />
+                          <SearchableDropdown
+                            value={editing.defaults?.outputSgstAccountId ?? ""}
+                            onChange={(v) =>
+                              setEditing({
+                                ...editing,
+                                defaults: {
+                                  ...(editing.defaults || {}),
+                                  outputSgstAccountId: v || null,
+                                },
+                              })
+                            }
+                            options={makeFilteredOpts(
+                              "OUTPUT",
+                              "SGST",
+                              halfRate ?? undefined
+                            )}
+                            placeholder={`SGST ${
+                              halfRate != null ? `(${halfRate}%)` : ""
+                            }`}
                           />
                         </div>
+                      ) : (
+                        <SearchableDropdown
+                          value={editing.defaults?.outputIgstAccountId ?? ""}
+                          onChange={(v) =>
+                            setEditing({
+                              ...editing,
+                              defaults: {
+                                ...(editing.defaults || {}),
+                                outputIgstAccountId: v || null,
+                              },
+                            })
+                          }
+                          options={makeFilteredOpts(
+                            "OUTPUT",
+                            "IGST",
+                            igstRate ?? undefined
+                          )}
+                          placeholder={`IGST ${
+                            igstRate != null ? `(${igstRate}%)` : ""
+                          }`}
+                        />
                       )}
                     </div>
                   </div>
