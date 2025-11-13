@@ -17,6 +17,7 @@ interface ItemsTableSectionProps {
   onShowHolds?: () => void;
   onShowReports: () => void;
   showHoldControls?: boolean;
+  onRequestBatchSelect?: (rowIndex: number) => void;
 }
 
 export default function ItemsTableSection({
@@ -33,6 +34,7 @@ export default function ItemsTableSection({
   onShowHolds,
   onShowReports,
   showHoldControls = true,
+  onRequestBatchSelect,
 }: ItemsTableSectionProps) {
   const itemCount = rows.filter((r) => r.productId).length;
 
@@ -88,7 +90,7 @@ export default function ItemsTableSection({
         </div>
       </div>
 
-      {/* Table Container - Now properly scrollable with stable scrollbar */}
+      {/* Table Container */}
 
       <div className="flex-1 overflow-auto relative overflow-y-scroll">
         <ItemsTable
@@ -98,6 +100,7 @@ export default function ItemsTableSection({
           onUpdateRow={onUpdateRow}
           onRemoveRow={onRemoveRow}
           onAddRow={onAddRow}
+          onRequestBatchSelect={onRequestBatchSelect}
         />
       </div>
 

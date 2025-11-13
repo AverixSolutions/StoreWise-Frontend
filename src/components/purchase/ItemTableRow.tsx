@@ -52,8 +52,9 @@ interface ItemTableRowProps {
     rowIndex: number,
     col: any
   ) => void;
-  rowsLength: number; // NEW
-  onAddRow?: () => void; // NEW
+  rowsLength: number;
+  onAddRow?: () => void;
+  onRequestBatchSelect?: (rowIndex: number) => void;
 }
 
 export default function ItemTableRow({
@@ -65,8 +66,9 @@ export default function ItemTableRow({
   onRemoveRow,
   canRemove,
   onGridKey,
-  rowsLength, // NEW
-  onAddRow, // NEW
+  rowsLength,
+  onAddRow,
+  onRequestBatchSelect,
 }: ItemTableRowProps) {
   const taxOptions = [
     { value: "NT", label: "No Tax" },
@@ -94,7 +96,6 @@ export default function ItemTableRow({
 
     if (nr >= rowsLength && dir === 1 && onAddRow) {
       onAddRow();
-      // focus after row appears
       setTimeout(() => focusCell(nr, nc), 0);
       return;
     }
@@ -126,7 +127,7 @@ export default function ItemTableRow({
             onChange={(v) => {
               onSelectProduct(idx, v);
             }}
-            onEnter={(dir) => goFrom("product", dir)} // pass dir
+            onEnter={(dir) => goFrom("product", dir)}
             autoOpenOnFocus
             options={products.map((p) => ({ value: p.id, label: p.name }))}
             placeholder="Select product..."
@@ -141,7 +142,7 @@ export default function ItemTableRow({
         </div>
       </td>
 
-      {/* Barcode */}
+      {/* Barcode  */}
       <td className="px-2.5 py-2 min-w-[110px]">
         <div className="w-full">
           <input
@@ -150,7 +151,34 @@ export default function ItemTableRow({
             onChange={(e) => onUpdateRow(idx, { barcode: e.target.value })}
             placeholder="Barcode"
             data-cell={`${idx}:barcode`}
-            onKeyDown={(e) => onGridKey(e, idx, "barcode")}
+            onFocus={(e) => {
+              e.currentTarget.select();
+              console.log("Barcode focus row", idx, "row data", r);
+
+              if (onRequestBatchSelect && r.productId && !r.barcode) {
+                console.log("Triggering batch select for row", idx);
+                setTimeout(() => {
+                  onRequestBatchSelect(idx);
+                }, 50);
+              }
+            }}
+            onClick={(e) => {
+              e.currentTarget.select();
+            }}
+            onKeyDown={(e) => {
+              if (
+                (e.key === "F2" ||
+                  (e.ctrlKey && e.key.toLowerCase() === "b")) &&
+                r.productId
+              ) {
+                e.preventDefault();
+                if (onRequestBatchSelect) {
+                  onRequestBatchSelect(idx);
+                }
+                return;
+              }
+              onGridKey(e, idx, "barcode");
+            }}
           />
         </div>
       </td>
@@ -539,7 +567,7 @@ export default function ItemTableRow({
         </div>
       </td>
 
-      {/* Unit Value (read-only) */}
+      {/* Unit Value  */}
       <td className="px-2.5 py-2 min-w-[110px] text-center">
         <div className="w-full text-center">
           <span className="inline-flex items-center px-2 py-1 rounded-md bg-blue-50 text-blue-700 text-xs font-semibold">
@@ -548,7 +576,7 @@ export default function ItemTableRow({
         </div>
       </td>
 
-      {/* Total (read-only, sticky) */}
+      {/* Total */}
       <td className="px-2.5 py-2 min-w-[90px] sticky [right:var(--actw)] bg-white z-40 border-l border-gray-200 text-center">
         <div className="w-full text-center">
           <span className="inline-flex items-center px-2 py-1 rounded-md bg-green-100 text-green-800 text-xs font-semibold">

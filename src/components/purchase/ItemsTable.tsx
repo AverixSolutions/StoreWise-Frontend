@@ -11,6 +11,7 @@ interface ItemsTableProps {
   onUpdateRow: (index: number, patch: Partial<ItemRow>) => void;
   onRemoveRow: (index: number) => void;
   onAddRow?: () => void;
+  onRequestBatchSelect?: (rowIndex: number) => void;
 }
 
 export default function ItemsTable({
@@ -20,6 +21,7 @@ export default function ItemsTable({
   onUpdateRow,
   onRemoveRow,
   onAddRow,
+  onRequestBatchSelect,
 }: ItemsTableProps) {
   const REQUIRED: Partial<Record<ColKey, (r: ItemRow) => boolean>> = {
     product: (r) => !!r.productId,
@@ -150,6 +152,7 @@ export default function ItemsTable({
               canRemove={rows.length > 1}
               rowsLength={rows.length}
               onAddRow={onAddRow}
+              onRequestBatchSelect={onRequestBatchSelect}
             />
           ))}
         </tbody>

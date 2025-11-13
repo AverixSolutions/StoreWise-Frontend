@@ -69,6 +69,7 @@ export function createEmptyRow(lineNo: number): ItemRow {
     profit: 0,
     totalCost: 0,
     unitBilled: 0,
+    overrideBatchPrices: false,
   };
 }
 
@@ -173,6 +174,7 @@ export function mapItems(rows: ItemRow[]) {
       expiryDate: r.expiryDate || null,
       isFree: r.lineType === "FREE" ? 1 : 0,
       lineNo: r.lineNo ?? i + 1,
+      overrideBatchPrices: r.overrideBatchPrices === true,
     }));
 }
 

@@ -36,6 +36,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("product.batch:delete", { batchId }),
   rebuildProductStock: (productId) =>
     ipcRenderer.invoke("product:rebuild-stock", productId),
+  resolveProductBatch: (payload) =>
+    ipcRenderer.invoke("product.batch:resolve", payload),
 
   // Optional richer fetch
   getProductWithBatches: (productId) =>

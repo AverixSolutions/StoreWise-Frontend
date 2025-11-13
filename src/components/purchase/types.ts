@@ -39,6 +39,7 @@ export interface ItemRow {
   expiryDate?: string | null;
   lineType?: LineType;
   unitBilled?: number;
+  overrideBatchPrices?: boolean;
 }
 
 export interface HeaderForm {
@@ -51,4 +52,12 @@ export interface HeaderForm {
   entryTime: string;
   discount: number;
   purchaseType: PurchaseType;
+}
+
+export interface BatchInfo {
+  id: string;
+  barcode: string;
+  batchNo?: string | null;
+  mfgDate?: string | null;
+  expiryDate?: string | null;
 }

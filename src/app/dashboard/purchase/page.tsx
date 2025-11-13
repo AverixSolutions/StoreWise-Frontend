@@ -8,10 +8,16 @@ import ItemsTableSection from "@/components/purchase/ItemsTableSection";
 import SupplierFormModal from "@/components/suppliers/SupplierFormModal";
 import HoldsModal from "@/components/purchase/HoldsModal";
 import PurchaseReportsModal from "@/components/purchase/PurchaseReportsModal";
+import BatchSelectModal from "@/components/purchase/BatchSelectModal";
 import PromptModal from "@/components/ui/PromptModal";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import ValidationModal from "@/components/ui/ValidationModal";
-import { HeaderForm, ItemRow, Product } from "@/components/purchase/types";
+import {
+  HeaderForm,
+  ItemRow,
+  Product,
+  BatchInfo,
+} from "@/components/purchase/types";
 import {
   createEmptyRow,
   calcRow,
@@ -21,6 +27,8 @@ import {
   headerFromPurchaseDb,
   rowsFromDbItems,
 } from "@/components/purchase/utils";
+
+type BatchDecision = "OVERRIDE" | "NEW";
 
 function normalizeHeaderFromHold(
   saved: Partial<HeaderForm>,
@@ -90,7 +98,6 @@ export default function PurchasePage() {
   const [showSupplierModal, setShowSupplierModal] = useState(false);
   const [nextEntryNo, setNextEntryNo] = useState<number | null>(null);
 
-  // A) Track which purchase is being edited
   const [editingPurchaseId, setEditingPurchaseId] = useState<string | null>(
     null
   );
@@ -107,6 +114,17 @@ export default function PurchasePage() {
     purchaseType: "CREDIT",
   });
 
+  const [batchPicker, setBatchPicker] = useState<{
+    rowIndex: number;
+    productId: string;
+    batches: BatchInfo[];
+    productName?: string;
+  } | null>(null);
+
+  const [batchDecisions, setBatchDecisions] = useState<
+    Record<number, BatchDecision>
+  >({});
+
   const [rows, setRows] = useState<ItemRow[]>([createEmptyRow(1)]);
   const [isDirty, setIsDirty] = useState(false);
 
@@ -120,6 +138,18 @@ export default function PurchasePage() {
   const [validationOpen, setValidationOpen] = useState(false);
   const [validationMsgs, setValidationMsgs] = useState<string[]>([]);
   const [editingSlNo, setEditingSlNo] = useState<number | null>(null);
+
+  const [batchConflicts, setBatchConflicts] = useState<{
+    rows: {
+      rowIndex: number;
+      productName: string;
+      barcode?: string | null;
+      diffs: Record<string, { current: any; proposed: any }>;
+    }[];
+  } | null>(null);
+
+  const [batchConfirmOpen, setBatchConfirmOpen] = useState(false);
+  const [savingAfterBatchConfirm, setSavingAfterBatchConfirm] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -183,8 +213,14 @@ export default function PurchasePage() {
               name: product.name,
               unit: product.unit,
               taxPercent: product.tax,
-              barcode: product.barcode || product.code,
+              barcode:
+                product.barcode && String(product.barcode).trim().length > 0
+                  ? product.barcode
+                  : product.code || "",
               rate: Number(product.costPrice) || 0,
+              batchNo: "",
+              mfgDate: null,
+              expiryDate: null,
               salePrice:
                 r.profitPercent && r.profitPercent > 0
                   ? r.salePrice
@@ -194,6 +230,106 @@ export default function PurchasePage() {
             }
       )
     );
+
+    setTimeout(() => {
+      const el = document.querySelector<HTMLInputElement>(
+        `[data-cell="${rowIndex}:barcode"]`
+      );
+      if (el) {
+        el.focus();
+        el.select();
+      }
+    }, 0);
+
+    setTimeout(() => {
+      handleRequestBatchSelect(rowIndex, productId);
+    }, 10);
+  };
+
+  const handleRequestBatchSelect = async (
+    rowIndex: number,
+    explicitProductId?: string
+  ) => {
+    const row = rows[rowIndex];
+    const productId = explicitProductId || row?.productId;
+
+    console.log("handleRequestBatchSelect called for row", rowIndex, {
+      row,
+      productId,
+    });
+
+    if (!productId) return;
+
+    try {
+      const res = await (window as any).electronAPI.listBatchesForProduct(
+        productId
+      );
+
+      console.log("BATCH RES for product", productId, res);
+
+      let batches: BatchInfo[] = [];
+      if (Array.isArray(res)) {
+        batches = res as BatchInfo[];
+      } else if (Array.isArray(res?.batches)) {
+        batches = res.batches as BatchInfo[];
+      } else if (Array.isArray(res?.rows)) {
+        batches = res.rows as BatchInfo[];
+      }
+
+      if (batches.length === 0) {
+        setTimeout(() => {
+          const el = document.querySelector<HTMLInputElement>(
+            `[data-cell="${rowIndex}:barcode"]`
+          );
+          if (el) {
+            el.focus();
+            el.select();
+          }
+        }, 0);
+        return;
+      }
+
+      if (batches.length === 1) {
+        const b = batches[0];
+        setRows((prev) =>
+          prev.map((r, i) =>
+            i !== rowIndex
+              ? r
+              : {
+                  ...r,
+                  barcode: b.barcode || r.barcode,
+                  batchNo: b.batchNo ?? r.batchNo,
+                  mfgDate: b.mfgDate ?? r.mfgDate,
+                  expiryDate: b.expiryDate ?? r.expiryDate,
+                }
+          )
+        );
+
+        setTimeout(() => {
+          const el = document.querySelector<HTMLInputElement>(
+            `[data-cell="${rowIndex}:barcode"]`
+          );
+          if (el) {
+            el.focus();
+            el.select();
+          }
+        }, 50);
+
+        return;
+      }
+
+      const productName =
+        products.find((p) => p.id === productId)?.name || row?.name;
+
+      setBatchPicker({
+        rowIndex,
+        productId,
+        batches,
+        productName,
+      });
+    } catch (e) {
+      console.error("Failed to load product batches", e);
+    }
   };
 
   useEffect(() => {
@@ -263,6 +399,42 @@ export default function PurchasePage() {
     setShowHolds(true);
   }
 
+  function handleBarcodeError(err: any) {
+    const msg = String(err?.message || err || "");
+
+    if (!msg.includes("BARCODE_IN_USE")) return false;
+
+    let barcode: string | null = null;
+    const m = msg.match(/BARCODE_IN_USE:\s*Barcode\s+(.+?)\s+already/i);
+    if (m && m[1]) {
+      barcode = m[1].trim();
+    }
+
+    let rowHint = "";
+    if (barcode) {
+      const idx = rows.findIndex((r) => r.barcode === barcode);
+      if (idx >= 0) {
+        rowHint = ` (Row #${idx + 1})`;
+      }
+    }
+
+    const lines: string[] = [];
+
+    if (barcode) {
+      lines.push(
+        `Barcode "${barcode}" is already used for another product.${rowHint}`
+      );
+    } else {
+      lines.push("A barcode you entered is already used for another product.");
+    }
+
+    lines.push("Please change or clear that barcode and try again.");
+
+    setValidationMsgs(lines);
+    setValidationOpen(true);
+    return true;
+  }
+
   async function handleResumeHold(holdId: string) {
     if (suppliers.length === 0) {
       await loadSuppliers();
@@ -297,12 +469,70 @@ export default function PurchasePage() {
     setIsDirty(true);
   }
 
-  async function handleOpenReturnFromReport(returnId: string) {
-    sessionStorage.setItem("openPurchaseReturnId", returnId);
-    router.push("/dashboard/purchase-return");
+  async function checkBatchConflicts(
+    items: ReturnType<typeof mapItems>
+  ): Promise<
+    {
+      rowIndex: number;
+      productName: string;
+      barcode?: string | null;
+      diffs: Record<string, { current: any; proposed: any }>;
+    }[]
+  > {
+    const conflicts: {
+      rowIndex: number;
+      productName: string;
+      barcode?: string | null;
+      diffs: Record<string, { current: any; proposed: any }>;
+    }[] = [];
+
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (!it.productId) continue;
+
+      const row = rows[i];
+      if (row?.overrideBatchPrices) continue;
+
+      if (!it.barcode) continue;
+
+      try {
+        const res = await (window as any).electronAPI.resolveProductBatch({
+          licenseId,
+          productId: it.productId,
+          barcode: it.barcode,
+          mrp: it.mrp ?? null,
+          salePrice: it.salePrice ?? null,
+          batchNo: it.batchNo ?? null,
+          mfgDate: it.mfgDate ?? null,
+          expiryDate: it.expiryDate ?? null,
+        });
+
+        if (
+          res?.success &&
+          res.decision === "CONFLICT_BARCODE" &&
+          res.diffs &&
+          Object.keys(res.diffs).length > 0
+        ) {
+          const productName =
+            products.find((p) => p.id === it.productId)?.name ||
+            `Row #${i + 1}`;
+
+          conflicts.push({
+            rowIndex: i,
+            productName,
+            barcode: it.barcode,
+            diffs: res.diffs,
+          });
+        }
+      } catch (err) {
+        console.error("batch resolve failed for row", i + 1, err);
+      }
+    }
+
+    return conflicts;
   }
 
-  const handleSave = async () => {
+  const handleSave = async (opts?: { skipBatchCheck?: boolean }) => {
     const items = mapItems(rows);
     const errs = validatePurchaseBill(header, items);
     if (errs.length) {
@@ -317,6 +547,24 @@ export default function PurchasePage() {
       return false;
     }
 
+    if (!opts?.skipBatchCheck) {
+      const conflicts = await checkBatchConflicts(items);
+
+      if (conflicts.length > 0) {
+        setBatchConflicts({ rows: conflicts });
+
+        setBatchDecisions(
+          Object.fromEntries(
+            conflicts.map((c) => [c.rowIndex, "OVERRIDE" as BatchDecision])
+          )
+        );
+
+        setBatchConfirmOpen(true);
+        return false;
+      }
+    }
+
+    // === EDITING FLOW ===
     if (editingPurchaseId) {
       const payload = {
         id: editingPurchaseId,
@@ -336,18 +584,30 @@ export default function PurchasePage() {
         items,
       };
 
-      const res = await (window as any).electronAPI.updatePurchase(payload);
-      if (res?.success) {
-        alert("✅ Updated!");
-        setEditingPurchaseId(null);
-        resetAll();
-        return true;
-      } else {
-        alert("Update failed: " + (res?.error || "Unknown error"));
+      try {
+        const res = await (window as any).electronAPI.updatePurchase(payload);
+
+        if (res?.success) {
+          alert("✅ Updated!");
+          setEditingPurchaseId(null);
+          resetAll();
+          return true;
+        } else {
+          const msg = res?.error || "Unknown error";
+          if (!handleBarcodeError({ message: msg })) {
+            alert("Update failed: " + msg);
+          }
+          return false;
+        }
+      } catch (err: any) {
+        if (!handleBarcodeError(err)) {
+          alert("Update failed: " + String(err?.message || err));
+        }
         return false;
       }
     }
 
+    // === CREATE NEW PURCHASE FLOW ===
     const purchase = {
       billNo: header.billNo || null,
       supplierId: header.supplier!.id,
@@ -363,12 +623,20 @@ export default function PurchasePage() {
       purchaseType: header.purchaseType,
     };
 
-    const res = await (window as any).electronAPI.createPurchase(
-      purchase,
-      items
-    );
+    try {
+      const res = await (window as any).electronAPI.createPurchase(
+        purchase,
+        items
+      );
 
-    if (res?.success) {
+      if (!res?.success) {
+        const msg = res?.error || "Unknown error";
+        if (!handleBarcodeError({ message: msg })) {
+          alert("Save failed: " + msg);
+        }
+        return false;
+      }
+
       alert(`✅ Saved! SlNo: ${res.slNo}, Total: ${res.totalAmount}`);
 
       try {
@@ -426,10 +694,15 @@ export default function PurchasePage() {
           }
         }
       }
+
       resetAll();
       return true;
+    } catch (err: any) {
+      if (!handleBarcodeError(err)) {
+        alert("Save failed: " + String(err?.message || err));
+      }
+      return false;
     }
-    return false;
   };
 
   const handleCancel = () => {
@@ -553,6 +826,7 @@ export default function PurchasePage() {
             onShowHolds={handleShowHolds}
             onShowReports={() => setShowReports(true)}
             showHoldControls={!editingPurchaseId}
+            onRequestBatchSelect={handleRequestBatchSelect}
           />
         </div>
       </div>
@@ -601,45 +875,246 @@ export default function PurchasePage() {
         }}
       />
 
-      {/* Leave confirm modal */}
-      <ConfirmModal
-        isOpen={leaveOpen}
-        title="Leave this page?"
-        message={
-          "You have unsaved changes.\n\n• Save & Exit: save the bill and go.\n• Discard: leave without saving.\n• Cancel: stay on this page."
-        }
-        confirmText="Save & Exit"
-        secondaryText="Discard"
-        cancelText="Cancel"
-        onConfirm={async () => {
-          setLeaveOpen(false);
-          const ok = await handleSave();
-          if (ok && pendingPath) {
-            const path = pendingPath;
-            setPendingPath(null);
-            router.push(path);
-          }
-        }}
-        onSecondary={() => {
-          setLeaveOpen(false);
-          setIsDirty(false);
-          if (pendingPath) {
-            const path = pendingPath;
-            setPendingPath(null);
-            router.push(path);
-          }
-        }}
-        onCancel={() => {
-          setLeaveOpen(false);
-          setPendingPath(null);
-        }}
-      />
+      {/* Batch conflict modal with per-row choices */}
+      {batchConfirmOpen && batchConflicts && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full mx-4 max-h-[80vh] flex flex-col">
+            {/* Header */}
+            <div className="px-5 py-3 border-b">
+              <h2 className="text-lg font-semibold text-gray-900">
+                Batch price conflicts
+              </h2>
+              <p className="mt-1 text-xs text-gray-600">
+                For each product, choose whether to update the existing batch
+                prices or create a new batch.
+              </p>
+            </div>
+
+            {/* Body */}
+            <div className="px-5 py-3 overflow-auto flex-1">
+              <div className="space-y-4 text-xs">
+                {batchConflicts.rows.map((c) => {
+                  const decision = batchDecisions[c.rowIndex] ?? "OVERRIDE";
+                  return (
+                    <div
+                      key={c.rowIndex}
+                      className="border border-gray-200 rounded-md p-3 bg-gray-50/60"
+                    >
+                      <div className="flex justify-between items-start gap-4">
+                        <div>
+                          <div className="font-medium text-gray-900">
+                            Row #{c.rowIndex + 1} – {c.productName}
+                          </div>
+                          {c.barcode && (
+                            <div className="text-[11px] text-gray-500">
+                              Barcode: {c.barcode}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Per-row radio options */}
+                        <div className="flex gap-3 text-[11px]">
+                          <label className="inline-flex items-center gap-1 cursor-pointer">
+                            <input
+                              type="radio"
+                              className="h-3 w-3"
+                              checked={decision === "OVERRIDE"}
+                              onChange={() =>
+                                setBatchDecisions((prev) => ({
+                                  ...prev,
+                                  [c.rowIndex]: "OVERRIDE",
+                                }))
+                              }
+                            />
+                            <span>Override existing batch</span>
+                          </label>
+                          <label className="inline-flex items-center gap-1 cursor-pointer">
+                            <input
+                              type="radio"
+                              className="h-3 w-3"
+                              checked={decision === "NEW"}
+                              onChange={() =>
+                                setBatchDecisions((prev) => ({
+                                  ...prev,
+                                  [c.rowIndex]: "NEW",
+                                }))
+                              }
+                            />
+                            <span>Create new batch</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* Diff cards */}
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        {Object.entries(c.diffs).map(([field, diff]) => (
+                          <div
+                            key={field}
+                            className="text-[11px] bg-white rounded border border-gray-200 px-2 py-1"
+                          >
+                            <div className="font-semibold text-gray-700">
+                              {field}
+                            </div>
+                            <div className="text-gray-500 line-through">
+                              Current: {diff.current ?? "—"}
+                            </div>
+                            <div className="text-emerald-700">
+                              New: {diff.proposed ?? "—"}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Footer buttons */}
+            <div className="px-5 py-3 border-t flex justify-between items-center gap-3">
+              {/* Confirm-all helpers */}
+              <div className="flex gap-2 text-[11px]">
+                <button
+                  type="button"
+                  className="px-2.5 py-1.5 rounded border border-gray-300 text-gray-700 hover:bg-gray-50"
+                  onClick={() => {
+                    setBatchDecisions((prev) => {
+                      const next = { ...prev };
+                      batchConflicts.rows.forEach((c) => {
+                        next[c.rowIndex] = "OVERRIDE";
+                      });
+                      return next;
+                    });
+                  }}
+                >
+                  Override all
+                </button>
+                <button
+                  type="button"
+                  className="px-2.5 py-1.5 rounded border border-gray-300 text-gray-700 hover:bg-gray-50"
+                  onClick={() => {
+                    setBatchDecisions((prev) => {
+                      const next = { ...prev };
+                      batchConflicts.rows.forEach((c) => {
+                        next[c.rowIndex] = "NEW";
+                      });
+                      return next;
+                    });
+                  }}
+                >
+                  New batch for all
+                </button>
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className="px-3 py-1.5 rounded border border-gray-300 text-sm text-gray-700 hover:bg-gray-50"
+                  onClick={() => {
+                    setBatchConfirmOpen(false);
+                    setBatchConflicts(null);
+                    setBatchDecisions({});
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="px-3 py-1.5 rounded bg-averix-red-dark text-sm text-white hover:bg-averix-red-accent"
+                  onClick={async () => {
+                    if (!batchConflicts) return;
+
+                    const indices = new Set(
+                      batchConflicts.rows.map((c) => c.rowIndex)
+                    );
+
+                    // Apply decisions into rows: OVERRIDE → true, NEW → false
+                    setRows((prev) =>
+                      prev.map((r, idx) => {
+                        if (!indices.has(idx)) return r;
+                        const decision =
+                          batchDecisions[idx] ?? ("OVERRIDE" as BatchDecision);
+                        return {
+                          ...r,
+                          overrideBatchPrices: decision === "OVERRIDE",
+                        };
+                      })
+                    );
+
+                    setBatchConfirmOpen(false);
+                    setBatchConflicts(null);
+                    setBatchDecisions({});
+
+                    // Save again, but skip conflict check
+                    await handleSave({ skipBatchCheck: true });
+                  }}
+                >
+                  Confirm & Save
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Validation modal */}
       <ValidationModal
         isOpen={validationOpen}
         messages={validationMsgs}
         onClose={() => setValidationOpen(false)}
+      />
+
+      {/* Batch picker modal */}
+      <BatchSelectModal
+        isOpen={Boolean(batchPicker)}
+        onClose={() => setBatchPicker(null)}
+        batches={batchPicker?.batches || []}
+        productName={batchPicker?.productName}
+        onSelect={(batch) => {
+          if (!batchPicker) return;
+
+          const rowIndex = batchPicker.rowIndex;
+
+          if (!batch) {
+            setBatchPicker(null);
+            setTimeout(() => {
+              const el = document.querySelector<HTMLInputElement>(
+                `[data-cell="${rowIndex}:barcode"]`
+              );
+              if (el) {
+                el.focus();
+                el.select();
+              }
+            }, 0);
+            return;
+          }
+
+          setRows((prev) =>
+            prev.map((r, i) =>
+              i !== rowIndex
+                ? r
+                : {
+                    ...r,
+                    barcode: batch.barcode || r.barcode,
+                    batchNo: batch.batchNo ?? r.batchNo,
+                    mfgDate: batch.mfgDate ?? r.mfgDate,
+                    expiryDate: batch.expiryDate ?? r.expiryDate,
+                  }
+            )
+          );
+
+          setBatchPicker(null);
+
+          setTimeout(() => {
+            const el = document.querySelector<HTMLInputElement>(
+              `[data-cell="${rowIndex}:barcode"]`
+            );
+            if (el) {
+              el.focus();
+              el.select();
+            }
+          }, 0);
+        }}
       />
     </div>
   );

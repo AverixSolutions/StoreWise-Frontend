@@ -41,6 +41,67 @@ function buildBatchIdentityWhere(alias, payload) {
 }
 
 function findOrCreateBatch(payload) {
+  const now = new Date().toISOString();
+  const overrideExisting = !!payload.overrideExisting;
+
+  if (payload.barcode) {
+    const existing = db
+      .prepare(
+        `
+        SELECT *
+        FROM product_batches
+        WHERE licenseId = ? AND barcode = ?
+          AND COALESCE(deletedAt,'') = ''
+        LIMIT 1
+      `
+      )
+      .get(payload.licenseId, payload.barcode);
+
+    if (existing) {
+      if (existing.productId === payload.productId) {
+        if (overrideExisting) {
+          db.prepare(
+            `
+            UPDATE product_batches
+            SET
+              mrp       = COALESCE(@mrp, mrp),
+              salePrice = COALESCE(@salePrice, salePrice),
+              costPrice = COALESCE(@costPrice, costPrice),
+              batchNo   = COALESCE(@batchNo, batchNo),
+              mfgDate   = COALESCE(@mfgDate, mfgDate),
+              expiryDate= COALESCE(@expiryDate, expiryDate),
+              updatedAt = @now
+            WHERE id = @id
+          `
+          ).run({
+            id: existing.id,
+            mrp: payload.mrp ?? null,
+            salePrice: payload.salePrice ?? null,
+            costPrice: payload.costPrice ?? null,
+            batchNo: payload.batchNo ?? null,
+            mfgDate: payload.mfgDate ?? null,
+            expiryDate: payload.expiryDate ?? null,
+            now,
+          });
+
+          const updated = db
+            .prepare(`SELECT * FROM product_batches WHERE id = ?`)
+            .get(existing.id);
+          return { batch: updated };
+        }
+
+        return { batch: existing };
+      }
+
+      const err = new Error(
+        `BARCODE_IN_USE: Barcode ${payload.barcode} already used for another product`
+      );
+      err.code = "BARCODE_IN_USE";
+      err.existingProductId = existing.productId;
+      throw err;
+    }
+  }
+
   const { where, params } = buildBatchIdentityWhere("", payload);
 
   let batch = db
@@ -51,7 +112,7 @@ function findOrCreateBatch(payload) {
 
   if (batch) return { batch };
 
-  const now = new Date().toISOString();
+  // === create new batch ===
   const batchId = uuidv4();
 
   db.prepare(
@@ -187,8 +248,6 @@ function registerPurchaseHandlers() {
         });
 
       if (sameBarcode) {
-        // because get-by-barcode assumes uniqueness, same barcode must not create a new batch
-        // tell UI it's a "CONFLICT" and it should either REUSE or CHANGE barcode
         const diffs = {};
         for (const k of [
           "mrp",
@@ -213,7 +272,6 @@ function registerPurchaseHandlers() {
       }
     }
 
-    // No exact match => NEW batch is clean
     return { success: true, decision: "NEW" };
   });
 
@@ -317,6 +375,7 @@ function registerPurchaseHandlers() {
     const newId = purchase.id || uuidv4();
     const now = new Date().toISOString();
     const slNo = getNextPurchaseSlNo(purchase.licenseId);
+    const batchNameBase = `${slNo}-${purchase.billNo || "NO-BILL"}`;
 
     let totalAmount = 0;
 
@@ -405,7 +464,6 @@ function registerPurchaseHandlers() {
             ? null
             : item.barcode || null;
 
-        // find or create the exact identity batch
         const { batch } = findOrCreateBatch({
           licenseId: purchase.licenseId,
           productId: item.productId,
@@ -413,11 +471,12 @@ function registerPurchaseHandlers() {
           mrp: item.mrp ?? null,
           salePrice: salePrice ?? item.salePrice ?? null,
           costPrice: item.rate ?? null,
-          batchNo: item.batchNo ?? null,
+          batchNo: item.batchNo ?? batchNameBase,
           mfgDate: item.mfgDate ?? null,
           expiryDate: item.expiryDate ?? null,
           receivedAt: purchase.purchaseDate || now,
           stock: 0,
+          overrideExisting: item.overrideBatchPrices === true,
         });
 
         // bump batch stock (skip if free)
@@ -525,6 +584,8 @@ function registerPurchaseHandlers() {
       const existing = db.prepare(`SELECT * FROM purchases WHERE id=?`).get(id);
       if (!existing) throw new Error("Purchase not found");
 
+      const batchNameBase = `${existing.slNo}-${existing.billNo || "NO-BILL"}`;
+
       const now = new Date().toISOString();
 
       // Reverse stock from OLD items (by batch)
@@ -627,11 +688,12 @@ function registerPurchaseHandlers() {
           mrp: it.mrp ?? null,
           salePrice: it.salePrice ?? null,
           costPrice: it.rate ?? null,
-          batchNo: it.batchNo ?? null,
+          batchNo: it.batchNo ?? batchNameBase,
           mfgDate: it.mfgDate ?? null,
           expiryDate: it.expiryDate ?? null,
           receivedAt: header.purchaseDate || now,
           stock: 0,
+          overrideExisting: it.overrideBatchPrices === true,
         });
 
         insItem.run({
