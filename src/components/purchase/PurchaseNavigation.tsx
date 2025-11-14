@@ -24,7 +24,6 @@ export default function PurchaseNavigation({
     return "Inventory";
   }, [pathname, title]);
 
-  // Online/offline indicator (works offline in Electron as well)
   const [online, setOnline] = useState(
     typeof navigator !== "undefined" ? navigator.onLine : true
   );
@@ -39,7 +38,6 @@ export default function PurchaseNavigation({
     };
   }, []);
 
-  // Keyboard: Ctrl/Cmd + B to go back to dashboard quickly
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {

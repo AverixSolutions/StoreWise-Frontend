@@ -92,13 +92,9 @@ db.prepare(
 db.prepare(
   `CREATE INDEX IF NOT EXISTS idx_batches_barcode ON product_batches(licenseId, barcode)`
 ).run();
-db.prepare(
-  `CREATE UNIQUE INDEX IF NOT EXISTS idx_batches_barcode_unique
-   ON product_batches(licenseId, barcode)
-   WHERE barcode IS NOT NULL`
-).run();
+
 try {
-  db.prepare(`DROP INDEX IF EXISTS idx_products_barcode`).run();
+  db.prepare(`DROP INDEX IF EXISTS idx_batches_barcode_unique`).run();
 } catch (_) {}
 
 addColumnIfMissing("purchase_items", "batchId", "TEXT");

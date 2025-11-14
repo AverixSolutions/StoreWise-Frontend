@@ -7,6 +7,7 @@ export interface Product {
   tax: "NT" | "P5" | "P12" | "P18" | "P28";
   costPrice: number;
   salePrice?: number | null;
+  mrp?: number | null;
   barcode?: string | null;
 }
 
@@ -40,6 +41,7 @@ export interface ItemRow {
   lineType?: LineType;
   unitBilled?: number;
   overrideBatchPrices?: boolean;
+  forceNewBatch?: boolean;
 }
 
 export interface HeaderForm {
@@ -60,4 +62,6 @@ export interface BatchInfo {
   batchNo?: string | null;
   mfgDate?: string | null;
   expiryDate?: string | null;
+  mrp?: number | null;
+  salePrice?: number | null;
 }

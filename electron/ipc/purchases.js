@@ -43,6 +43,7 @@ function buildBatchIdentityWhere(alias, payload) {
 function findOrCreateBatch(payload) {
   const now = new Date().toISOString();
   const overrideExisting = !!payload.overrideExisting;
+  const forceNewBatch = !!payload.forceNewBatch;
 
   if (payload.barcode) {
     const existing = db
@@ -58,7 +59,16 @@ function findOrCreateBatch(payload) {
       .get(payload.licenseId, payload.barcode);
 
     if (existing) {
-      if (existing.productId === payload.productId) {
+      if (existing.productId !== payload.productId) {
+        const err = new Error(
+          `BARCODE_IN_USE: Barcode ${payload.barcode} already used for another product`
+        );
+        err.code = "BARCODE_IN_USE";
+        err.existingProductId = existing.productId;
+        throw err;
+      }
+
+      if (!forceNewBatch) {
         if (overrideExisting) {
           db.prepare(
             `
@@ -90,29 +100,24 @@ function findOrCreateBatch(payload) {
           return { batch: updated };
         }
 
+        // Simple reuse
         return { batch: existing };
       }
-
-      const err = new Error(
-        `BARCODE_IN_USE: Barcode ${payload.barcode} already used for another product`
-      );
-      err.code = "BARCODE_IN_USE";
-      err.existingProductId = existing.productId;
-      throw err;
     }
   }
 
-  const { where, params } = buildBatchIdentityWhere("", payload);
+  if (!forceNewBatch) {
+    const { where, params } = buildBatchIdentityWhere("", payload);
 
-  let batch = db
-    .prepare(
-      `SELECT * FROM product_batches WHERE ${where.join(" AND ")} LIMIT 1`
-    )
-    .get(params);
+    let batch = db
+      .prepare(
+        `SELECT * FROM product_batches WHERE ${where.join(" AND ")} LIMIT 1`
+      )
+      .get(params);
 
-  if (batch) return { batch };
+    if (batch) return { batch };
+  }
 
-  // === create new batch ===
   const batchId = uuidv4();
 
   db.prepare(
@@ -139,7 +144,9 @@ function findOrCreateBatch(payload) {
     now
   );
 
-  batch = db.prepare(`SELECT * FROM product_batches WHERE id = ?`).get(batchId);
+  const batch = db
+    .prepare(`SELECT * FROM product_batches WHERE id = ?`)
+    .get(batchId);
   return { batch };
 }
 
@@ -464,6 +471,11 @@ function registerPurchaseHandlers() {
             ? null
             : item.barcode || null;
 
+        const batchNoForInsert =
+          item.forceNewBatch === true || !item.batchNo
+            ? batchNameBase
+            : item.batchNo;
+
         const { batch } = findOrCreateBatch({
           licenseId: purchase.licenseId,
           productId: item.productId,
@@ -471,12 +483,13 @@ function registerPurchaseHandlers() {
           mrp: item.mrp ?? null,
           salePrice: salePrice ?? item.salePrice ?? null,
           costPrice: item.rate ?? null,
-          batchNo: item.batchNo ?? batchNameBase,
+          batchNo: batchNoForInsert,
           mfgDate: item.mfgDate ?? null,
           expiryDate: item.expiryDate ?? null,
           receivedAt: purchase.purchaseDate || now,
           stock: 0,
           overrideExisting: item.overrideBatchPrices === true,
+          forceNewBatch: item.forceNewBatch === true,
         });
 
         // bump batch stock (skip if free)
@@ -505,7 +518,7 @@ function registerPurchaseHandlers() {
           totalCost,
           billedValue,
           effectiveUnitValue,
-          item.batchNo || null,
+          batchNoForInsert,
           item.mfgDate || null,
           item.expiryDate || null,
           item.discountType || "ABS",
@@ -681,6 +694,9 @@ function registerPurchaseHandlers() {
             ? null
             : it.barcode || null;
 
+        const batchNoForInsert =
+          it.forceNewBatch === true || !it.batchNo ? batchNameBase : it.batchNo;
+
         const { batch } = findOrCreateBatch({
           licenseId: header.licenseId,
           productId: it.productId,
@@ -688,12 +704,13 @@ function registerPurchaseHandlers() {
           mrp: it.mrp ?? null,
           salePrice: it.salePrice ?? null,
           costPrice: it.rate ?? null,
-          batchNo: it.batchNo ?? batchNameBase,
+          batchNo: batchNoForInsert,
           mfgDate: it.mfgDate ?? null,
           expiryDate: it.expiryDate ?? null,
           receivedAt: header.purchaseDate || now,
           stock: 0,
           overrideExisting: it.overrideBatchPrices === true,
+          forceNewBatch: it.forceNewBatch === true,
         });
 
         insItem.run({
@@ -712,7 +729,7 @@ function registerPurchaseHandlers() {
           billedValue: Number(it.billedValue || 0),
           barcode: it.barcode ?? null,
           mrp: it.mrp ?? null,
-          batchNo: it.batchNo ?? null,
+          batchNo: batchNoForInsert,
           mfgDate: it.mfgDate ?? null,
           expiryDate: it.expiryDate ?? null,
           lineNo,

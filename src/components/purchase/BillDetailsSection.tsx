@@ -121,14 +121,12 @@ export default function BillDetailsSection({
 
         {/* Bill No */}
         <div>
-          <label className={labelCls}>
-            <Receipt className="w-3.5 h-3.5" />
-            Bill No
-          </label>
           <div className={fieldWrap}>
-            <div className={leftIcon}>
-              <Receipt className="w-4 h-4" />
-            </div>
+            <label className={labelCls}>
+              <Receipt className="w-3.5 h-3.5" />
+              Bill No <span className="text-red-500">*</span>
+            </label>
+
             <input
               className={inputWithIcon}
               value={header.billNo}

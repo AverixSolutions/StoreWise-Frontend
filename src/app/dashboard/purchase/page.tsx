@@ -1,6 +1,6 @@
 // src/app/dashboard/purchase/page.tsx
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import PurchaseNavigation from "@/components/purchase/PurchaseNavigation";
 import BillDetailsSection from "@/components/purchase/BillDetailsSection";
@@ -81,8 +81,32 @@ function normalizeHeaderFromHold(
   };
 }
 
+function makeSnapshot(header: HeaderForm, rows: ItemRow[]) {
+  return JSON.stringify({
+    header,
+    rows: rows.map((r) => ({
+      productId: r.productId,
+      unit: r.unit,
+      rate: r.rate,
+      quantity: r.quantity,
+      mrp: r.mrp,
+      taxPercent: r.taxPercent,
+      discountType: r.discountType,
+      discount: r.discount,
+      profitPercent: r.profitPercent,
+      salePrice: r.salePrice,
+      batchNo: r.batchNo,
+      mfgDate: r.mfgDate,
+      expiryDate: r.expiryDate,
+      lineType: r.lineType,
+    })),
+  });
+}
+
 export default function PurchasePage() {
   const router = useRouter();
+
+  const initialSnapshot = useRef<string | null>(null);
 
   const licenseId =
     typeof window !== "undefined" ? localStorage.getItem("licenseId")! : "";
@@ -138,6 +162,7 @@ export default function PurchasePage() {
   const [validationOpen, setValidationOpen] = useState(false);
   const [validationMsgs, setValidationMsgs] = useState<string[]>([]);
   const [editingSlNo, setEditingSlNo] = useState<number | null>(null);
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
 
   const [batchConflicts, setBatchConflicts] = useState<{
     rows: {
@@ -201,6 +226,7 @@ export default function PurchasePage() {
   const handleSelectProduct = async (rowIndex: number, productId: string) => {
     const product = await (window as any).electronAPI.getProduct(productId);
     if (!product) return;
+    console.log("Selected product", productId, product);
 
     setRows((prev) =>
       prev.map((r, i) =>
@@ -221,10 +247,14 @@ export default function PurchasePage() {
               batchNo: "",
               mfgDate: null,
               expiryDate: null,
+
+              mrp:
+                product.mrp != null && !Number.isNaN(Number(product.mrp))
+                  ? Number(product.mrp)
+                  : null,
               salePrice:
-                r.profitPercent && r.profitPercent > 0
-                  ? r.salePrice
-                  : product.salePrice != null
+                product.salePrice != null &&
+                !Number.isNaN(Number(product.salePrice))
                   ? Number(product.salePrice)
                   : 0,
             }
@@ -301,6 +331,18 @@ export default function PurchasePage() {
                   batchNo: b.batchNo ?? r.batchNo,
                   mfgDate: b.mfgDate ?? r.mfgDate,
                   expiryDate: b.expiryDate ?? r.expiryDate,
+                  mrp:
+                    typeof r.mrp === "number" && r.mrp > 0
+                      ? r.mrp
+                      : b.mrp != null
+                      ? Number(b.mrp)
+                      : r.mrp,
+                  salePrice:
+                    typeof r.salePrice === "number" && r.salePrice > 0
+                      ? r.salePrice
+                      : b.salePrice != null
+                      ? Number(b.salePrice)
+                      : r.salePrice,
                 }
           )
         );
@@ -532,8 +574,13 @@ export default function PurchasePage() {
     return conflicts;
   }
 
-  const handleSave = async (opts?: { skipBatchCheck?: boolean }) => {
-    const items = mapItems(rows);
+  const handleSave = async (opts?: {
+    skipBatchCheck?: boolean;
+    rowsOverride?: ItemRow[];
+  }) => {
+    const rowsToUse = opts?.rowsOverride ?? rows;
+
+    const items = mapItems(rowsToUse);
     const errs = validatePurchaseBill(header, items);
     if (errs.length) {
       setValidationMsgs(errs);
@@ -647,7 +694,7 @@ export default function PurchasePage() {
       } catch {}
 
       if (priceUpdateSettings.updatePricesAfterSave) {
-        const priceUpdates = rows
+        const priceUpdates = rowsToUse
           .filter(
             (r) =>
               r.productId &&
@@ -706,35 +753,28 @@ export default function PurchasePage() {
   };
 
   const handleCancel = () => {
-    const ok = confirm("Discard current bill?");
-    if (ok) resetAll();
+    if (!isDirty) {
+      resetAll();
+      return;
+    }
+
+    setCancelConfirmOpen(true);
   };
 
   useEffect(() => {
-    setIsDirty(true);
-  }, [
-    JSON.stringify(header),
-    JSON.stringify(
-      rows.map((r) => ({
-        productId: r.productId,
-        unit: r.unit,
-        rate: r.rate,
-        quantity: r.quantity,
-        mrp: r.mrp,
-        taxPercent: r.taxPercent,
-        discountType: r.discountType,
-        discount: r.discount,
-        profitPercent: r.profitPercent,
-        salePrice: r.salePrice,
-        batchNo: r.batchNo,
-        mfgDate: r.mfgDate,
-        expiryDate: r.expiryDate,
-      }))
-    ),
-  ]);
+    const snap = makeSnapshot(header, rows);
+
+    if (initialSnapshot.current === null) {
+      initialSnapshot.current = snap;
+      setIsDirty(false);
+      return;
+    }
+
+    setIsDirty(initialSnapshot.current !== snap);
+  }, [header, rows]);
 
   function resetAll() {
-    setHeader({
+    const freshHeader: HeaderForm = {
       billNo: "",
       supplier: null,
       department: "",
@@ -744,10 +784,16 @@ export default function PurchasePage() {
       entryTime: new Date().toISOString(),
       discount: 0,
       purchaseType: "CREDIT",
-    });
-    setRows([createEmptyRow(1)]);
+    };
+
+    const freshRows = [createEmptyRow(1)];
+
+    setHeader(freshHeader);
+    setRows(freshRows);
     setEditingPurchaseId(null);
     setEditingSlNo(null);
+
+    initialSnapshot.current = makeSnapshot(freshHeader, freshRows);
     setIsDirty(false);
   }
 
@@ -1028,25 +1074,27 @@ export default function PurchasePage() {
                       batchConflicts.rows.map((c) => c.rowIndex)
                     );
 
-                    // Apply decisions into rows: OVERRIDE → true, NEW → false
-                    setRows((prev) =>
-                      prev.map((r, idx) => {
-                        if (!indices.has(idx)) return r;
-                        const decision =
-                          batchDecisions[idx] ?? ("OVERRIDE" as BatchDecision);
-                        return {
-                          ...r,
-                          overrideBatchPrices: decision === "OVERRIDE",
-                        };
-                      })
-                    );
+                    const patchedRows = rows.map((r, idx) => {
+                      if (!indices.has(idx)) return r;
+                      const decision =
+                        batchDecisions[idx] ?? ("OVERRIDE" as BatchDecision);
+                      return {
+                        ...r,
+                        overrideBatchPrices: decision === "OVERRIDE",
+                        forceNewBatch: decision === "NEW",
+                      };
+                    });
+
+                    setRows(patchedRows);
 
                     setBatchConfirmOpen(false);
                     setBatchConflicts(null);
                     setBatchDecisions({});
 
-                    // Save again, but skip conflict check
-                    await handleSave({ skipBatchCheck: true });
+                    await handleSave({
+                      skipBatchCheck: true,
+                      rowsOverride: patchedRows,
+                    });
                   }}
                 >
                   Confirm & Save
@@ -1099,6 +1147,18 @@ export default function PurchasePage() {
                     batchNo: batch.batchNo ?? r.batchNo,
                     mfgDate: batch.mfgDate ?? r.mfgDate,
                     expiryDate: batch.expiryDate ?? r.expiryDate,
+                    mrp:
+                      typeof r.mrp === "number" && r.mrp > 0
+                        ? r.mrp
+                        : batch.mrp != null
+                        ? Number(batch.mrp)
+                        : r.mrp,
+                    salePrice:
+                      typeof r.salePrice === "number" && r.salePrice > 0
+                        ? r.salePrice
+                        : batch.salePrice != null
+                        ? Number(batch.salePrice)
+                        : r.salePrice,
                   }
             )
           );
@@ -1114,6 +1174,42 @@ export default function PurchasePage() {
               el.select();
             }
           }, 0);
+        }}
+      />
+      {/* Confirm discard current bill */}
+      <ConfirmModal
+        isOpen={cancelConfirmOpen}
+        title="Discard current bill?"
+        message="You have unsaved changes in this purchase entry. Do you really want to clear everything?"
+        confirmText="Discard"
+        cancelText="Keep editing"
+        onConfirm={() => {
+          setCancelConfirmOpen(false);
+          resetAll();
+        }}
+        onCancel={() => {
+          setCancelConfirmOpen(false);
+        }}
+      />
+
+      {/* Leave page confirm modal */}
+      <ConfirmModal
+        isOpen={leaveOpen}
+        title="Leave without saving?"
+        message="You have unsaved changes in this purchase. Are you sure you want to leave this page?"
+        confirmText="Leave page"
+        cancelText="Stay here"
+        onConfirm={() => {
+          setLeaveOpen(false);
+          if (pendingPath) {
+            setIsDirty(false);
+            router.push(pendingPath);
+            setPendingPath(null);
+          }
+        }}
+        onCancel={() => {
+          setLeaveOpen(false);
+          setPendingPath(null);
         }}
       />
     </div>

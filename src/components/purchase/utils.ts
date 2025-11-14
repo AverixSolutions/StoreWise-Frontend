@@ -70,6 +70,7 @@ export function createEmptyRow(lineNo: number): ItemRow {
     totalCost: 0,
     unitBilled: 0,
     overrideBatchPrices: false,
+    forceNewBatch: false,
   };
 }
 
@@ -128,6 +129,11 @@ export function validateBill(
   itemsMapped: ReturnType<typeof mapItems>
 ) {
   const errors: string[] = [];
+
+  if (!header.billNo || !header.billNo.trim()) {
+    errors.push("Bill number is required.");
+  }
+
   if (!header.supplier) errors.push("Select a supplier.");
   if (!itemsMapped.length) errors.push("Add at least one item.");
 
@@ -175,6 +181,7 @@ export function mapItems(rows: ItemRow[]) {
       isFree: r.lineType === "FREE" ? 1 : 0,
       lineNo: r.lineNo ?? i + 1,
       overrideBatchPrices: r.overrideBatchPrices === true,
+      forceNewBatch: r.forceNewBatch === true,
     }));
 }
 
@@ -198,10 +205,15 @@ export function fromDateTime(date: string, time: string) {
 
 export function validatePurchaseBill(header: HeaderForm, items: ItemRow[]) {
   const errs: string[] = [];
+
   const hasLine = items.some(
     (r) => r.productId && (r.quantity ?? 0) > 0 && (r.rate ?? 0) >= 0
   );
   if (!hasLine) errs.push("Add at least one item with quantity > 0.");
+
+  if (!header.billNo || !header.billNo.trim()) {
+    errs.push("Bill number is required.");
+  }
 
   if (!header.supplier) errs.push("Select a supplier.");
 

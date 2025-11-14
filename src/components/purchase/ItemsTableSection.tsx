@@ -92,7 +92,10 @@ export default function ItemsTableSection({
 
       {/* Table Container */}
 
-      <div className="flex-1 overflow-auto relative overflow-y-scroll">
+      <div
+        className="flex-1 overflow-auto relative overflow-y-scroll"
+        data-grid-scroll-container
+      >
         <ItemsTable
           rows={rows}
           products={products}

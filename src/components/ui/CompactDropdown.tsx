@@ -163,8 +163,13 @@ export default function CompactDropdown({
               setIsOpen(false);
 
               onEnter?.(e.shiftKey ? -1 : 1);
-            } else if (e.key === "Escape" || e.key === "Tab") {
+            } else if (e.key === "Escape") {
+              e.preventDefault();
               setIsOpen(false);
+            } else if (e.key === "Tab") {
+              e.preventDefault();
+              setIsOpen(false);
+              onEnter?.(e.shiftKey ? -1 : 1);
             }
           }}
         >
