@@ -60,14 +60,18 @@ export default function PurchaseReportsModal({
         q,
         supplierId: supplierId || null,
         dateFrom: dateFrom ? new Date(dateFrom).toISOString() : null,
-        dateTo: dateTo ? new Date(dateTo).toISOString() : null,
+        dateTo: dateTo
+          ? new Date(
+              new Date(dateTo).getTime() + 24 * 60 * 60 * 1000,
+            ).toISOString()
+          : null,
         page,
         pageSize,
       };
 
       const res = await (window as any).electronAPI.listPurchases(
         licenseId,
-        filters
+        filters,
       );
       const mapped: Row[] = (res.rows || []).map((r: any) => ({
         id: r.id,
@@ -212,7 +216,10 @@ export default function PurchaseReportsModal({
                   setDateFrom("");
                   setDateTo("");
                   setPage(1);
-                  refresh();
+
+                  setTimeout(() => {
+                    refresh();
+                  }, 0);
                 }}
                 className="px-3 h-9 rounded-md bg-gray-800 text-white text-sm hover:bg-black"
               >

@@ -47,7 +47,7 @@ export default function SupplierFormModal({
 
   // Derived UI state for opening balance
   const [openingSide, setOpeningSide] = useState<"we_owe" | "they_owe">(
-    "we_owe"
+    "we_owe",
   );
   const [openingAmount, setOpeningAmount] = useState<number>(0);
   const [hasCreditLimit, setHasCreditLimit] = useState<boolean>(false);
@@ -121,7 +121,7 @@ export default function SupplierFormModal({
 
   const handleKeyDown = (
     e: React.KeyboardEvent<HTMLElement>,
-    index: number
+    index: number,
   ) => {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -133,7 +133,7 @@ export default function SupplierFormModal({
         } else {
           (document.activeElement as HTMLElement).blur();
           const form = (e.currentTarget as HTMLElement).closest(
-            "form"
+            "form",
           ) as HTMLFormElement | null;
           form?.requestSubmit();
         }
@@ -145,7 +145,7 @@ export default function SupplierFormModal({
     const licenseId = localStorage.getItem("licenseId") || "demo-license";
     try {
       const d = await (window as any).electronAPI.getSupplierDistincts(
-        licenseId
+        licenseId,
       );
       setDistincts({
         categories: d.categories || [],
@@ -210,7 +210,7 @@ export default function SupplierFormModal({
       setOpeningAmount(0);
       setHasCreditLimit(false);
 
-      const licenseId = localStorage.getItem("licenseId")!;
+      const licenseId = localStorage.getItem("licenseId") || "demo-license";
       (async () => {
         try {
           const { code: c, codeNumber: n } = await (
@@ -232,12 +232,12 @@ export default function SupplierFormModal({
 
   const handleSubmit = async (
     e: React.FormEvent,
-    saveAndClose: boolean = false
+    saveAndClose: boolean = false,
   ) => {
     e.preventDefault();
     setStatus({ type: null });
 
-    const licenseId = localStorage.getItem("licenseId")!;
+    const licenseId = localStorage.getItem("licenseId") || "demo-license";
 
     // Calculate signed opening balance from UI state
     const signedOpening =
@@ -265,7 +265,7 @@ export default function SupplierFormModal({
       license1: form.license1 || null,
       license2: form.license2 || null,
       settlementDays: form.settlementDays ?? null,
-      creditLimit: hasCreditLimit ? form.creditLimit ?? null : null,
+      creditLimit: hasCreditLimit ? (form.creditLimit ?? null) : null,
       openingBalance: signedOpening ?? 0,
       notes: form.notes || null,
     };
@@ -274,7 +274,7 @@ export default function SupplierFormModal({
       if (editSupplier?.id) {
         await (window as any).electronAPI.updateSupplier(
           editSupplier.id,
-          payload
+          payload,
         );
         onSuccess();
         onClose();
@@ -482,7 +482,7 @@ export default function SupplierFormModal({
                         setDistincts((d) => ({
                           ...d,
                           departments: Array.from(
-                            new Set([...d.departments, v])
+                            new Set([...d.departments, v]),
                           ),
                         }))
                       }
@@ -770,15 +770,22 @@ export default function SupplierFormModal({
                           min={0}
                           step="0.01"
                           value={openingAmount}
+                          disabled={!!editSupplier?.id}
                           onChange={(e) =>
                             setOpeningAmount(
-                              Math.max(0, Number(e.target.value || 0))
+                              Math.max(0, Number(e.target.value || 0)),
                             )
                           }
                           onKeyDown={(e) => handleKeyDown(e, 17)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-averix-red-light focus:border-transparent"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-averix-red-light focus:border-transparent disabled:bg-gray-100 disabled:text-gray-500"
                           placeholder="0.00"
                         />
+                        {editSupplier?.id && (
+                          <p className="text-xs text-amber-600">
+                            Opening balance is locked after supplier creation to
+                            keep ledger data consistent.
+                          </p>
+                        )}
                         <p className="text-xs text-gray-500">
                           {openingSide === "we_owe"
                             ? `Will be saved as +₹${(
@@ -825,7 +832,7 @@ export default function SupplierFormModal({
                           onChange={(e) =>
                             handleChange(
                               "creditLimit",
-                              e.target.value ? Number(e.target.value) : null
+                              e.target.value ? Number(e.target.value) : null,
                             )
                           }
                           onKeyDown={(e) => handleKeyDown(e, 18)}
@@ -856,7 +863,7 @@ export default function SupplierFormModal({
                         onChange={(e) =>
                           handleChange(
                             "settlementDays",
-                            e.target.value ? Number(e.target.value) : null
+                            e.target.value ? Number(e.target.value) : null,
                           )
                         }
                         onKeyDown={(e) => handleKeyDown(e, 19)}
@@ -936,7 +943,7 @@ export default function SupplierFormModal({
         <SupplierLedgerModal
           isOpen={ledgerOpen}
           onClose={() => setLedgerOpen(false)}
-          licenseId={localStorage.getItem("licenseId")!}
+          licenseId={localStorage.getItem("licenseId") || "demo-license"}
           supplierId={editSupplier.id}
           supplierName={editSupplier.name}
         />

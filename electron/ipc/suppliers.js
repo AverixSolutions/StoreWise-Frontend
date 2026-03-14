@@ -25,7 +25,7 @@ function registerSupplierHandlers() {
     if (!codeNumber || !code) {
       const seq = db
         .prepare(
-          "SELECT lastCodeNumber FROM supplier_sequence WHERE licenseId=?"
+          "SELECT lastCodeNumber FROM supplier_sequence WHERE licenseId=?",
         )
         .get(payload.licenseId);
       codeNumber = seq ? seq.lastCodeNumber + 1 : 1;
@@ -42,7 +42,7 @@ function registerSupplierHandlers() {
         THEN excluded.lastCodeNumber
         ELSE supplier_sequence.lastCodeNumber
       END
-  `
+  `,
     ).run(payload.licenseId, codeNumber);
 
     db.prepare(
@@ -54,7 +54,7 @@ function registerSupplierHandlers() {
       createdAt, updatedAt, isSynced
     )
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, ?, ?, 0)
-  `
+  `,
     ).run(
       id,
       payload.licenseId,
@@ -82,7 +82,7 @@ function registerSupplierHandlers() {
       Number(payload.openingBalance || 0),
       payload.notes || null,
       now,
-      now
+      now,
     );
 
     if (Number(payload.openingBalance || 0) !== 0) {
@@ -91,7 +91,7 @@ function registerSupplierHandlers() {
       INSERT INTO supplier_transactions
       (id, licenseId, supplierId, kind, refId, refNo, date, amount, sign, notes, createdAt, updatedAt, isSynced)
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?, 0)
-    `
+    `,
       ).run(
         uuidv4(),
         payload.licenseId,
@@ -104,7 +104,7 @@ function registerSupplierHandlers() {
         Number(payload.openingBalance) >= 0 ? 1 : -1,
         "Opening balance",
         now,
-        now
+        now,
       );
     }
 
@@ -144,7 +144,7 @@ function registerSupplierHandlers() {
       Number(changes.openingBalance ?? 0),
       changes.notes || null,
       now,
-      id
+      id,
     );
     if (!info.changes) throw new Error("Supplier not found");
     return { success: true };
@@ -153,7 +153,7 @@ function registerSupplierHandlers() {
   ipcMain.handle("supplier:delete", (e, id) => {
     const now = new Date().toISOString();
     db.prepare(
-      `UPDATE suppliers SET deletedAt=?, updatedAt=?, isSynced=0, syncedAt=NULL WHERE id=?`
+      `UPDATE suppliers SET deletedAt=?, updatedAt=?, isSynced=0, syncedAt=NULL WHERE id=?`,
     ).run(now, now, id);
     return { success: true };
   });
@@ -167,31 +167,31 @@ function registerSupplierHandlers() {
   });
 
   ipcMain.handle("supplier:summary", (e, licenseId, supplierId) => {
-    const s = db
-      .prepare(`SELECT openingBalance FROM suppliers WHERE id=?`)
-      .get(supplierId);
     const sum = db
       .prepare(
         `
-    SELECT COALESCE(SUM(sign*amount),0) AS txSum
-    FROM supplier_transactions
-    WHERE licenseId=? AND supplierId=? AND deletedAt IS NULL
-      AND kind IN ('OPENING','PURCHASE','PAYMENT','ADJUSTMENT')
-  `
+      SELECT COALESCE(SUM(sign * amount), 0) AS txSum
+      FROM supplier_transactions
+      WHERE licenseId=? AND supplierId=? AND deletedAt IS NULL
+        AND kind IN ('OPENING','PURCHASE','PAYMENT','ADJUSTMENT')
+    `,
       )
       .get(licenseId, supplierId).txSum;
 
-    const balance = Number(s?.openingBalance || 0) + Number(sum || 0); // >0 we owe them
     const purchased = db
       .prepare(
         `
       SELECT COALESCE(SUM(totalAmount),0) AS total
-      FROM purchases WHERE licenseId=? AND supplierId=? AND deletedAt IS NULL
-    `
+      FROM purchases
+      WHERE licenseId=? AND supplierId=? AND deletedAt IS NULL
+    `,
       )
       .get(licenseId, supplierId).total;
 
-    return { balance, purchased };
+    return {
+      balance: Number(sum || 0),
+      purchased: Number(purchased || 0),
+    };
   });
 
   ipcMain.handle("supplier:count", (e, licenseId, { q = "" } = {}) => {
@@ -203,7 +203,7 @@ function registerSupplierHandlers() {
       FROM suppliers
       WHERE licenseId=? AND deletedAt IS NULL
         AND (name LIKE ? OR phone LIKE ? OR gstin LIKE ?)
-    `
+    `,
       )
       .get(licenseId, like, like, like);
     return { count: row.cnt || 0 };
@@ -214,7 +214,7 @@ function registerSupplierHandlers() {
     (
       e,
       licenseId,
-      { q = "", name = "", category = "", page = 1, pageSize = 20 } = {}
+      { q = "", name = "", category = "", page = 1, pageSize = 20 } = {},
     ) => {
       const offset = (page - 1) * pageSize;
       const like = `%${q}%`;
@@ -242,7 +242,7 @@ function registerSupplierHandlers() {
         WHERE ${where}
         ORDER BY name ASC
         LIMIT ? OFFSET ?
-      `
+      `,
         )
         .all(...params, pageSize, offset);
 
@@ -251,12 +251,12 @@ function registerSupplierHandlers() {
           `
         SELECT COUNT(*) as cnt FROM suppliers
         WHERE ${where}
-      `
+      `,
         )
         .get(...params).cnt;
 
       return { suppliers: rows, total };
-    }
+    },
   );
 
   ipcMain.handle("supplier:distinct", (e, licenseId) => {
@@ -270,9 +270,9 @@ function registerSupplierHandlers() {
     FROM suppliers
     WHERE licenseId=? AND deletedAt IS NULL AND COALESCE(name,'') <> ''
     ORDER BY v
-  `
+  `,
         )
-        .all(licenseId)
+        .all(licenseId),
     );
 
     const categories = pick(
@@ -283,9 +283,9 @@ function registerSupplierHandlers() {
     FROM suppliers
     WHERE licenseId=? AND deletedAt IS NULL AND COALESCE(category,'') <> ''
     ORDER BY v
-  `
+  `,
         )
-        .all(licenseId)
+        .all(licenseId),
     );
 
     const departments = pick(
@@ -296,9 +296,9 @@ function registerSupplierHandlers() {
     FROM suppliers
     WHERE licenseId=? AND deletedAt IS NULL AND COALESCE(department,'') <> ''
     ORDER BY v
-  `
+  `,
         )
-        .all(licenseId)
+        .all(licenseId),
     );
 
     const cities = pick(
@@ -309,9 +309,9 @@ function registerSupplierHandlers() {
     FROM suppliers
     WHERE licenseId=? AND deletedAt IS NULL AND COALESCE(city,'') <> ''
     ORDER BY v
-  `
+  `,
         )
-        .all(licenseId)
+        .all(licenseId),
     );
 
     const states = pick(
@@ -322,9 +322,9 @@ function registerSupplierHandlers() {
     FROM suppliers
     WHERE licenseId=? AND deletedAt IS NULL AND COALESCE(state,'') <> ''
     ORDER BY v
-  `
+  `,
         )
-        .all(licenseId)
+        .all(licenseId),
     );
 
     const languages = pick(
@@ -335,9 +335,9 @@ function registerSupplierHandlers() {
     FROM suppliers
     WHERE licenseId=? AND deletedAt IS NULL AND COALESCE(language,'') <> ''
     ORDER BY v
-  `
+  `,
         )
-        .all(licenseId)
+        .all(licenseId),
     );
 
     return { names, categories, departments, cities, states, languages };

@@ -2,6 +2,20 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("electronAPI", {
+  listBarcodesForProduct: (licenseId, productId) =>
+    ipcRenderer.invoke("barcode:listForProduct", { licenseId, productId }),
+
+  peekNextBarcode: (licenseId) =>
+    ipcRenderer.invoke("barcode:peekNext", licenseId),
+
+  reserveBarcodes: (licenseId, count) =>
+    ipcRenderer.invoke("barcode:reserve", { licenseId, count }),
+
+  createBarcodeForProduct: (payload) =>
+    ipcRenderer.invoke("barcode:createForProduct", payload),
+
+  deleteBarcode: (licenseId, batchId) =>
+    ipcRenderer.invoke("barcode:deleteForProduct", { licenseId, batchId }),
   // ---- Product APIs ----
   getNextCode: (licenseId) => ipcRenderer.invoke("get-next-code", licenseId),
   createProduct: (product) => ipcRenderer.invoke("create-product", product),
@@ -62,6 +76,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("purchase-return:mark-synced", ids, serverSyncedAt),
   getNextPurchaseReturnSlNo: (licenseId) =>
     ipcRenderer.invoke("purchase-return:peek-next-slno", licenseId),
+  getPurchaseReturn: (id) => ipcRenderer.invoke("purchase-return:get", id),
+  getPurchaseReturnFull: (id) =>
+    ipcRenderer.invoke("purchase-return:getFull", id),
+  updatePurchaseReturn: (payload) =>
+    ipcRenderer.invoke("purchase-return:update", payload),
+  deletePurchaseReturn: (id) =>
+    ipcRenderer.invoke("purchase-return:delete", id),
 
   // ---- Purchase Holds ----
   savePurchaseHold: (payload) =>
@@ -153,6 +174,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("sale-return:create", payload),
   listSaleReturns: (licenseId, paging) =>
     ipcRenderer.invoke("sale-return:list", licenseId, paging),
+  getSaleReturn: (id) => ipcRenderer.invoke("sale-return:get", id),
+  getSaleReturnFull: (id) => ipcRenderer.invoke("sale-return:getFull", id),
+  updateSaleReturn: (payload) =>
+    ipcRenderer.invoke("sale-return:update", payload),
+  deleteSaleReturn: (id) => ipcRenderer.invoke("sale-return:delete", id),
   markSaleReturnsSynced: (ids, ts) =>
     ipcRenderer.invoke("sale-return:mark-synced", ids, ts),
   getNextSaleReturnSlNo: (licenseId) =>
@@ -200,6 +226,15 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getSyncState: (scope) => ipcRenderer.invoke("sync-state:get", scope),
   setSyncState: (scope, changes) =>
     ipcRenderer.invoke("sync-state:set", scope, changes),
+
+  // print
+  printHtml: (html, options) => ipcRenderer.invoke("print:html", html, options),
+
+  // SHOP SETTINGS
+  getShopSettings: (licenseId) =>
+    ipcRenderer.invoke("shop-settings:get", licenseId),
+  saveShopSettings: (payload) =>
+    ipcRenderer.invoke("shop-settings:save", payload),
 
   // Clears local DB
   wipeLocalData: () => ipcRenderer.invoke("wipe-local-data"),

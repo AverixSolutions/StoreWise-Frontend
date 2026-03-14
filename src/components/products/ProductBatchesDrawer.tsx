@@ -17,31 +17,33 @@ type Batch = {
 };
 
 // Type-safe API cast
-const api = (window as any).electronAPI as {
-  listBatchesForProduct: (
-    productId: string,
-    includeDeleted?: boolean
-  ) => Promise<{ success: boolean; rows: Batch[]; totalStock: number }>;
-  saveBatch: (payload: {
-    licenseId: string;
-    productId: string;
-    barcode?: string | null;
-    mrp?: number | null;
-    salePrice?: number | null;
-    costPrice?: number | null;
-    batchNo?: string | null;
-    mfgDate?: string | null;
-    expiryDate?: string | null;
-    receivedAt?: string;
-    deltaQty?: number;
-  }) => Promise<{ success: boolean; batch: Batch }>;
-  deleteBatch: (
-    batchId: string
-  ) => Promise<{ success: boolean; deletedAt: string }>;
-  rebuildProductStock: (
-    productId: string
-  ) => Promise<{ success: boolean; stock: number }>;
-};
+function getApi() {
+  return (window as any).electronAPI as {
+    listBatchesForProduct: (
+      productId: string,
+      includeDeleted?: boolean,
+    ) => Promise<{ success: boolean; rows: Batch[]; totalStock: number }>;
+    saveBatch: (payload: {
+      licenseId: string;
+      productId: string;
+      barcode?: string | null;
+      mrp?: number | null;
+      salePrice?: number | null;
+      costPrice?: number | null;
+      batchNo?: string | null;
+      mfgDate?: string | null;
+      expiryDate?: string | null;
+      receivedAt?: string;
+      deltaQty?: number;
+    }) => Promise<{ success: boolean; batch: Batch }>;
+    deleteBatch: (
+      batchId: string,
+    ) => Promise<{ success: boolean; deletedAt: string }>;
+    rebuildProductStock: (
+      productId: string,
+    ) => Promise<{ success: boolean; stock: number }>;
+  };
+}
 
 export default function ProductBatchesDrawer({
   open,
@@ -62,6 +64,7 @@ export default function ProductBatchesDrawer({
 
   async function refresh() {
     if (!productId) return;
+    const api = getApi();
     const res = await api.listBatchesForProduct(productId, false);
     if (res?.success) {
       setRows(res.rows);
@@ -75,6 +78,7 @@ export default function ProductBatchesDrawer({
 
   async function addOrAdjust(form: FormData) {
     if (!productId) return;
+    const api = getApi();
     setSaving(true);
     try {
       const payload = {
@@ -104,6 +108,7 @@ export default function ProductBatchesDrawer({
   async function onDelete(id: string) {
     if (!confirm("Delete this batch? Stock will be removed from totals."))
       return;
+    const api = getApi();
     await api.deleteBatch(id);
 
     if (productId) await api.rebuildProductStock(productId);

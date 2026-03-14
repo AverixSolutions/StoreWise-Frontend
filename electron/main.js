@@ -3,6 +3,8 @@ const { app, BrowserWindow, nativeImage, Menu } = require("electron");
 const { registerAllHandlers } = require("../electron/ipcHandlers");
 const path = require("path");
 
+app.setName("StoreWise");
+
 function createWindow() {
   const iconPath =
     process.platform === "win32"
@@ -27,7 +29,9 @@ function createWindow() {
     win.loadFile(path.join(__dirname, "../out/index.html"));
   }
 
-  win.webContents.openDevTools();
+  if (process.env.NODE_ENV === "development") {
+    win.webContents.openDevTools();
+  }
 }
 
 app.whenReady().then(() => {
@@ -36,7 +40,7 @@ app.whenReady().then(() => {
 
   if (process.platform === "darwin") {
     const icon = nativeImage.createFromPath(
-      path.join(__dirname, "public/Averix-icon.png")
+      path.join(__dirname, "public/Averix-icon.png"),
     );
     app.dock.setIcon(icon);
   }

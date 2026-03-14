@@ -5,7 +5,7 @@ import { useState, useEffect } from "react";
 import Pagination from "../ui/Pagination";
 import TableSkeleton from "../ui/TableSkeleton";
 import EmptyState from "../ui/EmptyState";
-import { PackagePlus, Edit2, Trash2, Layers } from "lucide-react";
+import { PackagePlus, Edit2, Trash2, Layers, Printer } from "lucide-react";
 
 interface Product {
   id: string;
@@ -22,18 +22,30 @@ interface Product {
 }
 
 interface ProductsTableProps {
+  onAdd: () => void;
   onEdit: (product: Product) => void;
   onDelete: (id: string) => void;
   onManageBatches: (product: Product) => void;
+  onPrintBarcodes: (
+    items: {
+      code: string;
+      name?: string;
+      salePrice?: number | null;
+      mrp?: number | null;
+      copies?: number;
+    }[],
+  ) => void;
   refreshTrigger: number;
   nameFilter?: string;
   categoryFilter?: string;
 }
 
 export default function ProductsTable({
+  onAdd,
   onEdit,
   onDelete,
   onManageBatches,
+  onPrintBarcodes,
   refreshTrigger,
   nameFilter = "",
   categoryFilter = "",
@@ -54,7 +66,7 @@ export default function ProductsTable({
         result = await window.electronAPI.getFilteredProducts(
           licenseId,
           { name: nameFilter || null, category: categoryFilter || null },
-          { page, pageSize }
+          { page, pageSize },
         );
       } else {
         result = await window.electronAPI.getProducts(licenseId, {
@@ -93,8 +105,52 @@ export default function ProductsTable({
     }
   };
 
+  const handlePrintBarcode = async (product: Product) => {
+    const licenseId = localStorage.getItem("licenseId") || "demo-license";
+
+    try {
+      const res = await window.electronAPI.listBarcodesForProduct(
+        licenseId,
+        product.id,
+      );
+
+      const rows = res?.rows || [];
+
+      if (!rows.length) {
+        alert("No saved batch barcodes found for this product");
+        return;
+      }
+
+      const items = rows
+        .filter((b: any) => String(b.barcode || "").trim())
+        .map((b: any) => ({
+          code: String(b.barcode || "").trim(),
+          name: product.name,
+          salePrice:
+            b.salePrice != null && !Number.isNaN(Number(b.salePrice))
+              ? Number(b.salePrice)
+              : (product.salePrice ?? null),
+          mrp:
+            b.mrp != null && !Number.isNaN(Number(b.mrp))
+              ? Number(b.mrp)
+              : null,
+          copies: 1,
+        }));
+
+      if (!items.length) {
+        alert("No printable barcodes found for this product");
+        return;
+      }
+
+      onPrintBarcodes(items);
+    } catch (error: any) {
+      alert("Failed to load barcodes: " + String(error?.message || error));
+      console.error("Barcode load error:", error);
+    }
+  };
+
   if (loading) {
-    return <TableSkeleton columns={11} rows={6} />;
+    return <TableSkeleton columns={10} rows={6} />;
   }
 
   if (products.length === 0) {
@@ -105,7 +161,7 @@ export default function ProductsTable({
         icon={<PackagePlus size={32} />}
         action={
           <button
-            onClick={() => onEdit(null as any)}
+            onClick={onAdd}
             className="mt-4 bg-averix-red-dark text-white px-6 py-3 rounded-lg hover:bg-averix-red-accent transition-colors font-medium"
           >
             Add Product
@@ -198,8 +254,8 @@ export default function ProductsTable({
                       product.stock <= 5
                         ? "bg-red-100 text-red-800"
                         : product.stock <= 20
-                        ? "bg-yellow-100 text-yellow-800"
-                        : "bg-green-100 text-green-800"
+                          ? "bg-yellow-100 text-yellow-800"
+                          : "bg-green-100 text-green-800"
                     }`}
                   >
                     {product.stock}
@@ -214,6 +270,15 @@ export default function ProductsTable({
                     >
                       <Layers className="w-4 h-4" />
                     </button>
+
+                    <button
+                      onClick={() => handlePrintBarcode(product)}
+                      className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-slate-50 text-slate-700 hover:bg-slate-100 hover:scale-105 transition-all duration-200"
+                      title="Print Barcode"
+                    >
+                      <Printer className="w-4 h-4" />
+                    </button>
+
                     <button
                       onClick={() => onEdit(product)}
                       className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 hover:scale-105 transition-all duration-200"
@@ -221,6 +286,7 @@ export default function ProductsTable({
                     >
                       <Edit2 className="w-4 h-4" />
                     </button>
+
                     <button
                       onClick={() => handleDelete(product.id, product.name)}
                       className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 hover:scale-105 transition-all duration-200"

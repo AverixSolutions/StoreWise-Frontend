@@ -13,7 +13,7 @@ function getNextCustomerCodeNo(licenseId) {
     INSERT INTO customer_sequence(licenseId, lastCodeNumber)
     VALUES(?,?)
     ON CONFLICT(licenseId) DO UPDATE SET lastCodeNumber = excluded.lastCodeNumber
-  `
+  `,
   ).run(licenseId, next);
   return next;
 }
@@ -25,12 +25,19 @@ function registerCustomerHandlers() {
     (
       evt,
       licenseId,
-      { q = "", name = "", category = "", page = 1, pageSize = 50 } = {}
+      { q = "", name = "", category = "", page = 1, pageSize = 50 } = {},
     ) => {
       const offset = (page - 1) * pageSize;
 
-      let where = `licenseId=? AND COALESCE(deletedAt,'')=''`;
-      const params = [licenseId];
+      let where = `licenseId=@licenseId AND COALESCE(deletedAt,'')=''`;
+      const params = {
+        licenseId,
+        q: `%${q}%`,
+        name,
+        category,
+        limit: pageSize,
+        offset,
+      };
 
       if (q) {
         where += ` AND (name LIKE @q OR COALESCE(phone,'') LIKE @q OR COALESCE(code,'') LIKE @q)`;
@@ -45,38 +52,28 @@ function registerCustomerHandlers() {
       const rows = db
         .prepare(
           `
-        SELECT id, code, codeNumber, name, phone, email, gstin, category,
-               city, state, openingBalance, createdAt, updatedAt
-        FROM customers
-        WHERE ${where}
-        ORDER BY name COLLATE NOCASE
-        LIMIT @limit OFFSET @offset
-      `
+      SELECT id, code, codeNumber, name, phone, email, gstin, category,
+             city, state, openingBalance, createdAt, updatedAt
+      FROM customers
+      WHERE ${where}
+      ORDER BY name COLLATE NOCASE
+      LIMIT @limit OFFSET @offset
+    `,
         )
-        .all(licenseId, {
-          q: `%${q}%`,
-          name,
-          category,
-          limit: pageSize,
-          offset,
-        });
+        .all(params);
 
       const total = db
         .prepare(
           `
-        SELECT COUNT(*) as count
-        FROM customers
-        WHERE ${where}
-      `
+      SELECT COUNT(*) as count
+      FROM customers
+      WHERE ${where}
+    `,
         )
-        .get(licenseId, {
-          q: `%${q}%`,
-          name,
-          category,
-        }).count;
+        .get(params).count;
 
-      return { customers: rows, total };
-    }
+      return { success: true, customers: rows, total, page, pageSize };
+    },
   );
 
   ipcMain.handle("customer:get", (evt, id) => {
@@ -88,77 +85,140 @@ function registerCustomerHandlers() {
   // create/update
   ipcMain.handle("customer:save", (evt, payload) => {
     const now = new Date().toISOString();
-    if (payload.id) {
+
+    const trx = db.transaction((payload) => {
+      const openingBalance = Number(payload.openingBalance || 0);
+
+      if (payload.id) {
+        db.prepare(
+          `
+        UPDATE customers SET
+          name=@name,
+          phone=@phone,
+          email=@email,
+          gstin=@gstin,
+          category=@category,
+          addressLine1=@addressLine1,
+          addressLine2=@addressLine2,
+          city=@city,
+          state=@state,
+          pincode=@pincode,
+          openingBalance=@openingBalance,
+          notes=@notes,
+          updatedAt=@now,
+          isSynced=0
+        WHERE id=@id AND licenseId=@licenseId
+      `,
+        ).run({
+          ...payload,
+          openingBalance,
+          now,
+        });
+
+        db.prepare(
+          `
+        DELETE FROM customer_transactions
+        WHERE customerId=@customerId
+          AND licenseId=@licenseId
+          AND kind='OPENING'
+      `,
+        ).run({
+          customerId: payload.id,
+          licenseId: payload.licenseId,
+        });
+
+        if (openingBalance !== 0) {
+          db.prepare(
+            `
+          INSERT INTO customer_transactions
+          (id, licenseId, customerId, kind, refId, refNo, date, amount, sign, notes, createdAt, updatedAt, isSynced)
+          VALUES(?, ?, ?, 'OPENING', ?, ?, ?, ?, ?, 'Opening Balance', ?, ?, 0)
+        `,
+          ).run(
+            uuidv4(),
+            payload.licenseId,
+            payload.id,
+            null,
+            null,
+            now,
+            Math.abs(openingBalance),
+            openingBalance >= 0 ? 1 : -1,
+            now,
+            now,
+          );
+        }
+
+        return { success: true, id: payload.id };
+      }
+
+      const id = uuidv4();
+      const codeNumber = getNextCustomerCodeNo(payload.licenseId);
+      const code = payload.code || `C${String(codeNumber).padStart(5, "0")}`;
+
       db.prepare(
         `
-        UPDATE customers SET
-          name=@name, phone=@phone, email=@email, gstin=@gstin, category=@category,
-          addressLine1=@addressLine1, addressLine2=@addressLine2, city=@city, state=@state, pincode=@pincode,
-          openingBalance=@openingBalance, notes=@notes, updatedAt=@now, isSynced=0
-        WHERE id=@id AND licenseId=@licenseId
-      `
-      ).run({ ...payload, now });
-      return { success: true, id: payload.id };
-    }
-    const id = uuidv4();
-    const codeNumber = getNextCustomerCodeNo(payload.licenseId);
-    const code = payload.code || `C${String(codeNumber).padStart(5, "0")}`;
-    db.prepare(
-      `
       INSERT INTO customers(
         id, licenseId, code, codeNumber, name, phone, email, gstin, category,
         addressLine1, addressLine2, city, state, pincode, openingBalance, notes, createdAt, updatedAt, isSynced
       ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)
-    `
-    ).run(
-      id,
-      payload.licenseId,
-      code,
-      codeNumber,
-      payload.name,
-      payload.phone || null,
-      payload.email || null,
-      payload.gstin || null,
-      payload.category || null,
-      payload.addressLine1 || null,
-      payload.addressLine2 || null,
-      payload.city || null,
-      payload.state || null,
-      payload.pincode || null,
-      Number(payload.openingBalance || 0),
-      payload.notes || null,
-      now,
-      now
-    );
-    // Opening balance -> ledger OPENING
-    if (Number(payload.openingBalance || 0) > 0) {
-      db.prepare(
-        `
+    `,
+      ).run(
+        id,
+        payload.licenseId,
+        code,
+        codeNumber,
+        payload.name,
+        payload.phone || null,
+        payload.email || null,
+        payload.gstin || null,
+        payload.category || null,
+        payload.addressLine1 || null,
+        payload.addressLine2 || null,
+        payload.city || null,
+        payload.state || null,
+        payload.pincode || null,
+        openingBalance,
+        payload.notes || null,
+        now,
+        now,
+      );
+
+      if (openingBalance !== 0) {
+        db.prepare(
+          `
         INSERT INTO customer_transactions
         (id, licenseId, customerId, kind, refId, refNo, date, amount, sign, notes, createdAt, updatedAt, isSynced)
-        VALUES(?, ?, ?, 'OPENING', ?, ?, ?, ?, 1, 'Opening Balance', ?, ?, 0)
-      `
-      ).run(
-        uuidv4(),
-        payload.licenseId,
-        id,
-        null,
-        null,
-        now,
-        Number(payload.openingBalance),
-        now,
-        now
-      );
-    }
-    return { success: true, id, code, codeNumber };
+        VALUES(?, ?, ?, 'OPENING', ?, ?, ?, ?, ?, 'Opening Balance', ?, ?, 0)
+      `,
+        ).run(
+          uuidv4(),
+          payload.licenseId,
+          id,
+          null,
+          null,
+          now,
+          Math.abs(openingBalance),
+          openingBalance >= 0 ? 1 : -1,
+          now,
+          now,
+        );
+      }
+
+      return { success: true, id, code, codeNumber };
+    });
+
+    return trx(payload);
   });
 
-  ipcMain.handle("customer:delete", (evt, id) => {
+  ipcMain.handle("customer:delete", (evt, id, licenseId) => {
     const now = new Date().toISOString();
-    db.prepare(`UPDATE customers SET deletedAt=?, isSynced=0 WHERE id=?`).run(
-      now,
-      id
-    );
+    db.prepare(
+      `
+    UPDATE customers
+    SET deletedAt=?, isSynced=0, updatedAt=?
+    WHERE id=? AND licenseId=?
+  `,
+    ).run(now, now, id, licenseId);
     return { success: true, deletedAt: now };
   });
 
@@ -183,7 +243,7 @@ function registerCustomerHandlers() {
       FROM customers
       WHERE licenseId=? AND COALESCE(deletedAt,'')=''
         AND (name LIKE ? OR COALESCE(phone,'') LIKE ? OR COALESCE(code,'') LIKE ?)
-    `
+    `,
       )
       .get(licenseId, like, like, like);
     return { count: row?.cnt || 0 };
@@ -201,9 +261,9 @@ function registerCustomerHandlers() {
         FROM customers
         WHERE licenseId=? AND COALESCE(deletedAt,'')='' AND COALESCE(name,'')<>''
         ORDER BY v COLLATE NOCASE
-      `
+      `,
         )
-        .all(licenseId)
+        .all(licenseId),
     );
 
     const categories = pick(
@@ -214,9 +274,9 @@ function registerCustomerHandlers() {
         FROM customers
         WHERE licenseId=? AND COALESCE(deletedAt,'')='' AND COALESCE(category,'')<>''
         ORDER BY v COLLATE NOCASE
-      `
+      `,
         )
-        .all(licenseId)
+        .all(licenseId),
     );
 
     const cities = pick(
@@ -227,9 +287,9 @@ function registerCustomerHandlers() {
         FROM customers
         WHERE licenseId=? AND COALESCE(deletedAt,'')='' AND COALESCE(city,'')<>''
         ORDER BY v COLLATE NOCASE
-      `
+      `,
         )
-        .all(licenseId)
+        .all(licenseId),
     );
 
     const states = pick(
@@ -240,9 +300,9 @@ function registerCustomerHandlers() {
         FROM customers
         WHERE licenseId=? AND COALESCE(deletedAt,'')='' AND COALESCE(state,'')<>''
         ORDER BY v COLLATE NOCASE
-      `
+      `,
         )
-        .all(licenseId)
+        .all(licenseId),
     );
 
     return { names, categories, cities, states };

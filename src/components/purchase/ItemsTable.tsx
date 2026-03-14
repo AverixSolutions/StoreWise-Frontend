@@ -12,6 +12,7 @@ interface ItemsTableProps {
   onRemoveRow: (index: number) => void;
   onAddRow?: () => void;
   onRequestBatchSelect?: (rowIndex: number) => void;
+  onBarcodeCommit?: (rowIndex: number) => void;
 }
 
 export default function ItemsTable({
@@ -22,6 +23,7 @@ export default function ItemsTable({
   onRemoveRow,
   onAddRow,
   onRequestBatchSelect,
+  onBarcodeCommit,
 }: ItemsTableProps) {
   const REQUIRED: Partial<Record<ColKey, (r: ItemRow) => boolean>> = {
     product: (r) => !!r.productId,
@@ -37,7 +39,7 @@ export default function ItemsTable({
   function handleGridKey(
     e: React.KeyboardEvent<HTMLElement>,
     rowIndex: number,
-    col: ColKey
+    col: ColKey,
   ) {
     if (e.key !== "Enter" && (e as any).key !== "NumpadEnter") return;
     e.preventDefault();
@@ -153,6 +155,7 @@ export default function ItemsTable({
               rowsLength={rows.length}
               onAddRow={onAddRow}
               onRequestBatchSelect={onRequestBatchSelect}
+              onBarcodeCommit={onBarcodeCommit}
             />
           ))}
         </tbody>

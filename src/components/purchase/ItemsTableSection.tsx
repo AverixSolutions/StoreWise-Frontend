@@ -1,5 +1,5 @@
 // src/components/purchase/ItemsTableSection.tsx
-import { Plus, PauseCircle, List, FileText } from "lucide-react";
+import { Plus, PauseCircle, List, FileText, Printer } from "lucide-react";
 import { ItemRow, Product } from "./types";
 import ItemsTable from "./ItemsTable";
 
@@ -18,6 +18,8 @@ interface ItemsTableSectionProps {
   onShowReports: () => void;
   showHoldControls?: boolean;
   onRequestBatchSelect?: (rowIndex: number) => void;
+  onBarcodeCommit?: (rowIndex: number) => void;
+  onPrintBarcodes?: () => void;
 }
 
 export default function ItemsTableSection({
@@ -35,6 +37,8 @@ export default function ItemsTableSection({
   onShowReports,
   showHoldControls = true,
   onRequestBatchSelect,
+  onBarcodeCommit,
+  onPrintBarcodes,
 }: ItemsTableSectionProps) {
   const itemCount = rows.filter((r) => r.productId).length;
 
@@ -50,6 +54,16 @@ export default function ItemsTableSection({
         </div>
 
         <div className="flex items-center gap-2">
+          {onPrintBarcodes && (
+            <button
+              onClick={onPrintBarcodes}
+              className="px-3 py-2 rounded-lg bg-slate-700 text-white hover:bg-slate-800 transition-colors flex items-center gap-2 font-medium shadow-sm cursor-pointer"
+              title="Print Barcodes"
+            >
+              <Printer className="w-4 h-4" />
+              Print
+            </button>
+          )}
           <button
             onClick={onShowReports}
             className="px-3 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors flex items-center gap-2 font-medium shadow-sm cursor-pointer"
@@ -104,6 +118,7 @@ export default function ItemsTableSection({
           onRemoveRow={onRemoveRow}
           onAddRow={onAddRow}
           onRequestBatchSelect={onRequestBatchSelect}
+          onBarcodeCommit={onBarcodeCommit}
         />
       </div>
 

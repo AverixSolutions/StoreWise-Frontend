@@ -54,10 +54,10 @@ export default function SalesReturnReportsModal({
         pageSize,
       };
 
-      const res = await (window as any).electronAPI.listSaleReturns(licenseId, {
-        page,
-        pageSize,
-      });
+      const res = await (window as any).electronAPI.listSaleReturns(
+        licenseId,
+        filters,
+      );
       const mapped: Row[] = (res.returns || []).map((r: any) => ({
         id: r.id,
         slNo: r.slNo ?? null,
@@ -78,7 +78,7 @@ export default function SalesReturnReportsModal({
 
   useEffect(() => {
     if (isOpen) refresh();
-  }, [isOpen, page, pageSize]);
+  }, [isOpen, page, pageSize, q, customerId, dateFrom, dateTo]);
 
   function resetAndRefresh() {
     setPage(1);
@@ -168,7 +168,7 @@ export default function SalesReturnReportsModal({
 
           <div className="mt-3 flex justify-between items-center">
             <div className="text-xs text-gray-500">
-              Filters are UI-only for now.
+              {total} record{total === 1 ? "" : "s"} found
             </div>
             <div className="flex gap-2">
               <button

@@ -1,15 +1,19 @@
 // src/components/purchase/BatchSelectModal.tsx
 "use client";
-import { X, Barcode, CalendarDays, Boxes } from "lucide-react";
+import { X, Barcode, CalendarDays, Boxes, Plus, Zap } from "lucide-react";
 import { BatchInfo } from "./types";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface BatchSelectModalProps {
   isOpen: boolean;
   onClose: () => void;
   batches: BatchInfo[];
   onSelect: (batch: BatchInfo | null) => void;
+  onAddNewBatch?: (barcode: string) => void; // user wants a brand-new barcode
   productName?: string;
+  nextBarcode?: string; // pre-fetched next global barcode (peek)
+  licenseId?: string;
+  allowCreateNew?: boolean;
 }
 
 export default function BatchSelectModal({
@@ -17,17 +21,24 @@ export default function BatchSelectModal({
   onClose,
   batches,
   onSelect,
+  onAddNewBatch,
   productName,
+  nextBarcode,
+  licenseId,
+  allowCreateNew = true,
 }: BatchSelectModalProps) {
   const firstButtonRef = useRef<HTMLButtonElement>(null);
+  const [customBarcode, setCustomBarcode] = useState("");
+  const [tab, setTab] = useState<"existing" | "new">("existing");
 
   useEffect(() => {
-    if (isOpen && firstButtonRef.current) {
-      setTimeout(() => {
-        firstButtonRef.current?.focus();
-      }, 100);
+    if (isOpen) {
+      setCustomBarcode("");
+      // If no existing batches, jump to "new" tab
+      setTab(batches.length === 0 ? "new" : "existing");
+      setTimeout(() => firstButtonRef.current?.focus(), 100);
     }
-  }, [isOpen]);
+  }, [isOpen, batches.length]);
 
   if (!isOpen) return null;
 
@@ -36,43 +47,30 @@ export default function BatchSelectModal({
     onClose();
   }
 
-  function handleItemKeyDown(
-    e: React.KeyboardEvent<HTMLButtonElement>,
-    batch: BatchInfo
-  ) {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      handleSelect(batch);
-    }
+  function handleAddNew(barcode: string) {
+    if (!barcode.trim()) return;
+    onAddNewBatch?.(barcode.trim());
+    onClose();
   }
 
   function handleListKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
-
-      const container = e.currentTarget as HTMLElement;
       const buttons = Array.from(
-        container.querySelectorAll<HTMLButtonElement>("[data-batch-btn='1']")
+        e.currentTarget.querySelectorAll<HTMLButtonElement>(
+          "[data-batch-btn='1']",
+        ),
       );
-
-      if (buttons.length === 0) return;
-
-      const currentIndex = buttons.findIndex(
-        (btn) => btn === document.activeElement
-      );
-
-      let nextIndex = 0;
-      if (currentIndex === -1) {
-        nextIndex = 0;
-      } else if (e.key === "ArrowDown") {
-        nextIndex = (currentIndex + 1) % buttons.length;
-      } else {
-        nextIndex = (currentIndex - 1 + buttons.length) % buttons.length;
-      }
-
-      buttons[nextIndex].focus();
+      if (!buttons.length) return;
+      const cur = buttons.findIndex((b) => b === document.activeElement);
+      const next =
+        cur === -1
+          ? 0
+          : e.key === "ArrowDown"
+            ? (cur + 1) % buttons.length
+            : (cur - 1 + buttons.length) % buttons.length;
+      buttons[next].focus();
     }
-
     if (e.key === "Escape") {
       e.preventDefault();
       onClose();
@@ -83,21 +81,19 @@ export default function BatchSelectModal({
     <div
       className="fixed inset-0 z-[1200] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4"
       onClick={(e) => {
-        if (e.target === e.currentTarget) {
-          onClose();
-        }
+        if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-full max-w-2xl max-h-[80vh] overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between bg-gradient-to-r from-blue-50 to-white">
+        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between bg-gradient-to-r from-blue-50 to-white flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg bg-blue-600/10 flex items-center justify-center">
               <Boxes className="w-5 h-5 text-blue-600" />
             </div>
             <div>
               <div className="text-base font-semibold text-gray-900">
-                Select Batch for Purchase
+                Select / Add Batch
               </div>
               {productName && (
                 <div className="text-sm text-gray-600 truncate max-w-[320px]">
@@ -106,7 +102,6 @@ export default function BatchSelectModal({
               )}
             </div>
           </div>
-
           <button
             onClick={onClose}
             className="w-9 h-9 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-500 hover:text-gray-700 transition-colors"
@@ -116,103 +111,214 @@ export default function BatchSelectModal({
           </button>
         </div>
 
+        {/* Tabs */}
+        <div className="flex border-b border-gray-100 flex-shrink-0">
+          <button
+            type="button"
+            className={`flex-1 py-2.5 text-sm font-medium transition-colors ${
+              tab === "existing"
+                ? "border-b-2 border-blue-600 text-blue-700 bg-blue-50"
+                : "text-gray-500 hover:text-gray-700"
+            }`}
+            onClick={() => setTab("existing")}
+          >
+            Existing Barcodes{" "}
+            <span className="ml-1 text-xs bg-gray-200 text-gray-700 px-1.5 py-0.5 rounded-full">
+              {batches.length}
+            </span>
+          </button>
+          {allowCreateNew && (
+            <button
+              type="button"
+              className={`flex-1 py-2.5 text-sm font-medium transition-colors ${
+                tab === "new"
+                  ? "border-b-2 border-blue-600 text-blue-700 bg-blue-50"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+              onClick={() => setTab("new")}
+            >
+              Add New Barcode
+            </button>
+          )}
+        </div>
+
         {/* Info Banner */}
-        <div className="px-4 py-2 bg-blue-50 border-b border-blue-100">
+        <div className="px-4 py-2 bg-blue-50 border-b border-blue-100 flex-shrink-0">
           <p className="text-xs text-blue-700">
-            💡 <strong>Tip:</strong> Use{" "}
-            <kbd className="px-1.5 py-0.5 bg-white border border-blue-200 rounded text-[10px] font-mono">
-              ↑
-            </kbd>{" "}
-            <kbd className="px-1.5 py-0.5 bg-white border border-blue-200 rounded text-[10px] font-mono">
-              ↓
-            </kbd>{" "}
-            to navigate,{" "}
-            <kbd className="px-1.5 py-0.5 bg-white border border-blue-200 rounded text-[10px] font-mono">
-              Enter
-            </kbd>{" "}
-            to select,{" "}
-            <kbd className="px-1.5 py-0.5 bg-white border border-blue-200 rounded text-[10px] font-mono">
-              Esc
-            </kbd>{" "}
-            to close.
+            💡 Each barcode = a separate batch with independent stock tracking.{" "}
+            {tab === "existing"
+              ? "Select an existing barcode or switch to add a new one. You can reopen this popup from barcode field using F2 or Ctrl+B."
+              : `Next auto-generated barcode: `}
+            {tab === "new" && nextBarcode && (
+              <span className="font-mono font-bold">{nextBarcode}</span>
+            )}
           </p>
         </div>
 
-        {/* List */}
-        <div
-          className="p-4 space-y-2 max-h-[50vh] overflow-y-auto"
-          onKeyDown={handleListKeyDown}
-        >
-          {batches.map((b, idx) => (
-            <button
-              key={b.id}
-              ref={idx === 0 ? firstButtonRef : null}
-              type="button"
-              data-batch-btn="1"
-              onClick={() => handleSelect(b)}
-              onKeyDown={(e) => handleItemKeyDown(e, b)}
-              className="w-full text-left border-2 border-gray-200 rounded-xl px-4 py-3 hover:border-blue-500 hover:bg-blue-50 focus:border-blue-600 focus:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-200 transition-all flex gap-3 items-start"
-            >
-              <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center flex-shrink-0">
-                <Barcode className="w-6 h-6 text-blue-700" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-sm font-semibold text-gray-900">
-                    {b.barcode || "No barcode"}
-                  </span>
-                  {b.batchNo && (
-                    <span className="inline-flex px-2 py-0.5 rounded-md bg-purple-100 text-xs font-medium text-purple-700">
-                      Batch: {b.batchNo}
-                    </span>
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-4">
+          {tab === "existing" && (
+            <div onKeyDown={handleListKeyDown} className="space-y-2">
+              {batches.length === 0 ? (
+                <div className="py-8 text-center text-gray-400">
+                  <Barcode className="w-10 h-10 mx-auto mb-2 opacity-40" />
+                  <p className="text-sm">No barcodes yet for this product.</p>
+                  {allowCreateNew ? (
+                    <button
+                      type="button"
+                      onClick={() => setTab("new")}
+                      className="mt-3 text-blue-600 text-sm underline"
+                    >
+                      Add a new barcode
+                    </button>
+                  ) : (
+                    <p className="mt-3 text-xs text-gray-500">
+                      No sellable batch available for this product.
+                    </p>
                   )}
                 </div>
-                {(b.mfgDate || b.expiryDate) && (
-                  <div className="mt-1 text-xs text-gray-600 flex items-center gap-3">
-                    <CalendarDays className="w-3.5 h-3.5 flex-shrink-0" />
-                    <div className="flex gap-3">
-                      {b.mfgDate && (
-                        <span>
-                          <span className="text-gray-500">MFG:</span>{" "}
-                          <span className="font-medium">
-                            {new Date(b.mfgDate).toLocaleDateString()}
-                          </span>
+              ) : (
+                batches.map((b, idx) => (
+                  <button
+                    key={b.id}
+                    ref={idx === 0 ? firstButtonRef : null}
+                    type="button"
+                    data-batch-btn="1"
+                    onClick={() => handleSelect(b)}
+                    className="w-full text-left border-2 border-gray-200 rounded-xl px-4 py-3 hover:border-blue-500 hover:bg-blue-50 focus:border-blue-600 focus:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-200 transition-all flex gap-3 items-start"
+                  >
+                    <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center flex-shrink-0">
+                      <Barcode className="w-6 h-6 text-blue-700" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <span className="text-sm font-semibold text-gray-900 font-mono">
+                          {b.barcode || "No barcode"}
                         </span>
+                        {b.batchNo && (
+                          <span className="inline-flex px-2 py-0.5 rounded-md bg-purple-100 text-xs font-medium text-purple-700">
+                            Batch: {b.batchNo}
+                          </span>
+                        )}
+                        {(b as any).stock !== undefined && (
+                          <span className="inline-flex px-2 py-0.5 rounded-md bg-green-100 text-xs font-medium text-green-700 ml-auto">
+                            Stock: {(b as any).stock}
+                          </span>
+                        )}
+                      </div>
+                      {(b.mrp || b.salePrice) && (
+                        <div className="text-xs text-gray-500 flex gap-3">
+                          {b.mrp && <span>MRP: ₹{b.mrp}</span>}
+                          {b.salePrice && <span>Sale: ₹{b.salePrice}</span>}
+                        </div>
                       )}
-                      {b.expiryDate && (
-                        <span>
-                          <span className="text-gray-500">EXP:</span>{" "}
-                          <span className="font-medium">
-                            {new Date(b.expiryDate).toLocaleDateString()}
-                          </span>
-                        </span>
+                      {(b.mfgDate || b.expiryDate) && (
+                        <div className="mt-1 text-xs text-gray-600 flex items-center gap-3">
+                          <CalendarDays className="w-3.5 h-3.5 flex-shrink-0" />
+                          {b.mfgDate && (
+                            <span>
+                              <span className="text-gray-400">MFG:</span>{" "}
+                              {new Date(b.mfgDate).toLocaleDateString()}
+                            </span>
+                          )}
+                          {b.expiryDate && (
+                            <span>
+                              <span className="text-gray-400">EXP:</span>{" "}
+                              {new Date(b.expiryDate).toLocaleDateString()}
+                            </span>
+                          )}
+                        </div>
                       )}
                     </div>
-                  </div>
-                )}
+                    <div className="text-xs text-gray-400 flex-shrink-0">
+                      #{idx + 1}
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+
+          {allowCreateNew && tab === "new" && (
+            <div className="space-y-4 py-2">
+              {/* Auto-generate option */}
+              <div className="border-2 border-blue-200 rounded-xl p-4 bg-blue-50">
+                <div className="flex items-center gap-2 mb-2">
+                  <Zap className="w-4 h-4 text-blue-600" />
+                  <span className="text-sm font-semibold text-blue-800">
+                    Auto-generate
+                  </span>
+                </div>
+                <p className="text-xs text-blue-600 mb-3">
+                  System will assign the next available barcode:{" "}
+                  <span className="font-mono font-bold">
+                    {nextBarcode || "—"}
+                  </span>
+                </p>
+                <button
+                  type="button"
+                  onClick={() => handleAddNew(nextBarcode || "")}
+                  disabled={!nextBarcode}
+                  className="w-full py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                >
+                  Use {nextBarcode}
+                </button>
               </div>
-              <div className="text-xs text-gray-400 flex-shrink-0">
-                #{idx + 1}
+
+              {/* Custom barcode */}
+              <div className="border-2 border-gray-200 rounded-xl p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Plus className="w-4 h-4 text-gray-600" />
+                  <span className="text-sm font-semibold text-gray-800">
+                    Custom barcode
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 mb-3">
+                  Enter any barcode value (EAN-13, QR code string, custom code,
+                  etc.)
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={customBarcode}
+                    onChange={(e) => setCustomBarcode(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleAddNew(customBarcode);
+                      }
+                    }}
+                    placeholder="e.g. 90808909 or EAN123456"
+                    className="flex-1 h-9 px-3 border border-gray-300 rounded-lg text-sm focus:border-blue-500 focus:outline-none"
+                    autoFocus={batches.length === 0}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleAddNew(customBarcode)}
+                    disabled={!customBarcode.trim()}
+                    className="px-4 py-2 rounded-lg bg-gray-800 text-white text-sm font-medium hover:bg-gray-900 disabled:opacity-50 transition-colors"
+                  >
+                    Use
+                  </button>
+                </div>
               </div>
-            </button>
-          ))}
+            </div>
+          )}
         </div>
 
         {/* Footer */}
-        <div className="px-4 py-3 border-t border-gray-100 bg-gray-50 flex justify-between items-center">
+        <div className="px-4 py-3 border-t border-gray-100 bg-gray-50 flex justify-between items-center flex-shrink-0">
           <div className="text-xs text-gray-500">
             <span className="font-medium">{batches.length}</span> batch
             {batches.length === 1 ? "" : "es"} available
           </div>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-3 py-1.5 rounded-lg border border-gray-300 text-xs font-medium text-gray-700 hover:bg-white transition-colors"
-            >
-              Close
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-1.5 rounded-lg border border-gray-300 text-xs font-medium text-gray-700 hover:bg-white transition-colors"
+          >
+            Close
+          </button>
         </div>
       </div>
     </div>

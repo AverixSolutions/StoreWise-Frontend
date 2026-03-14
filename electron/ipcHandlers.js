@@ -11,11 +11,15 @@ const { registerSaleReturnHandlers } = require("./ipc/saleReturns");
 const { registerCustomerHandlers } = require("./ipc/customers");
 const { registerAccountHandlers } = require("./ipc/accounts");
 const { registerTaxHandlers } = require("./ipc/tax");
+const { registerPrintingHandlers } = require("./ipc/printing");
+const { registerBarcodeHandlers } = require("./ipc/barcodes");
+const { registerShopSettingsHandlers } = require("./ipc/shopSettings");
 
 function registerAllHandlers() {
   registerProductHandlers();
   registerProductSyncHandlers();
   registerMaintenanceHandlers();
+  registerBarcodeHandlers();
   registerPurchaseHandlers();
   registerSupplierHandlers();
   registerSupplierSyncHandlers();
@@ -25,6 +29,8 @@ function registerAllHandlers() {
   registerCustomerHandlers();
   registerAccountHandlers();
   registerTaxHandlers();
+  registerPrintingHandlers();
+  registerShopSettingsHandlers();
 }
 
 module.exports = { registerAllHandlers };

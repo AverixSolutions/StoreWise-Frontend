@@ -36,7 +36,7 @@ export default function CustomerFormModal({
 
   // Derived UI state for opening balance
   const [openingSide, setOpeningSide] = useState<"they_owe" | "we_owe">(
-    "they_owe"
+    "they_owe",
   );
   const [openingAmount, setOpeningAmount] = useState<number>(0);
 
@@ -87,7 +87,7 @@ export default function CustomerFormModal({
 
   const handleKeyDown = (
     e: React.KeyboardEvent<HTMLElement>,
-    index: number
+    index: number,
   ) => {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -99,7 +99,7 @@ export default function CustomerFormModal({
         } else {
           (document.activeElement as HTMLElement).blur();
           const form = (e.currentTarget as HTMLElement).closest(
-            "form"
+            "form",
           ) as HTMLFormElement | null;
           form?.requestSubmit();
         }
@@ -150,14 +150,14 @@ export default function CustomerFormModal({
         city: "",
         state: "",
         pincode: "",
+        openingBalance: 0,
         notes: "",
       });
-
       // Reset UI state for new customer
       setOpeningSide("they_owe");
       setOpeningAmount(0);
 
-      const licenseId = localStorage.getItem("licenseId")!;
+      const licenseId = localStorage.getItem("licenseId") || "demo-license";
       (async () => {
         try {
           const { suggestedCode, nextCodeNumber } = await (
@@ -177,16 +177,10 @@ export default function CustomerFormModal({
   const handleChange = (k: keyof Customer, v: any) =>
     setForm((f) => ({ ...f, [k]: v }));
 
-  const handleSubmit = async (
-    e: React.FormEvent,
-    saveAndClose: boolean = false
-  ) => {
-    e.preventDefault();
+  const saveCustomer = async (saveAndClose: boolean = false) => {
     setStatus({ type: null });
 
-    const licenseId = localStorage.getItem("licenseId")!;
-
-    // Calculate signed opening balance from UI state
+    const licenseId = localStorage.getItem("licenseId") || "demo-license";
     const signedOpening =
       openingSide === "they_owe" ? openingAmount : -openingAmount;
 
@@ -208,58 +202,72 @@ export default function CustomerFormModal({
       notes: form.notes || null,
     };
 
+    if (editCustomer?.id) {
+      await (window as any).electronAPI.saveCustomer({
+        ...payload,
+        id: editCustomer.id,
+      });
+      onSuccess();
+      onClose();
+      return;
+    }
+
+    await (window as any).electronAPI.saveCustomer(payload);
+    onSuccess();
+
+    if (saveAndClose) {
+      onClose();
+      return;
+    }
+
+    setStatus({ type: "success", message: "Customer created successfully." });
+
+    const { suggestedCode: nextC, nextCodeNumber: nextN } = await (
+      window as any
+    ).electronAPI.peekNextCustomerCode(licenseId);
+    setCode(nextC);
+    setCodeNumber(nextN);
+
+    setForm({
+      name: "",
+      phone: "",
+      email: "",
+      gstin: "",
+      category: "",
+      addressLine1: "",
+      addressLine2: "",
+      city: "",
+      state: "",
+      pincode: "",
+      openingBalance: 0,
+      notes: "",
+    });
+
+    setOpeningSide("they_owe");
+    setOpeningAmount(0);
+
+    await refreshDistincts();
+    requestAnimationFrame(() => nameRef.current?.focus());
+
+    setTimeout(() => setStatus({ type: null }), 3000);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
     try {
-      if (editCustomer?.id) {
-        await (window as any).electronAPI.saveCustomer({
-          ...payload,
-          id: editCustomer.id,
-        });
-        onSuccess();
-        onClose();
-      } else {
-        await (window as any).electronAPI.saveCustomer(payload);
-        onSuccess();
+      await saveCustomer(false);
+    } catch (error: any) {
+      console.error("Error saving customer:", error);
+      setStatus({
+        type: "error",
+        message: error?.message || "Failed to save customer. Please try again.",
+      });
+    }
+  };
 
-        if (saveAndClose) {
-          onClose();
-        } else {
-          setStatus({
-            type: "success",
-            message: "Customer created successfully.",
-          });
-
-          const { suggestedCode: nextC, nextCodeNumber: nextN } = await (
-            window as any
-          ).electronAPI.peekNextCustomerCode(licenseId);
-          setCode(nextC);
-          setCodeNumber(nextN);
-
-          setForm({
-            name: "",
-            phone: "",
-            email: "",
-            gstin: "",
-            category: "",
-            addressLine1: "",
-            addressLine2: "",
-            city: "",
-            state: "",
-            pincode: "",
-            notes: "",
-          });
-
-          // Reset UI state
-          setOpeningSide("they_owe");
-          setOpeningAmount(0);
-
-          await refreshDistincts();
-          requestAnimationFrame(() => nameRef.current?.focus());
-
-          setTimeout(() => {
-            setStatus({ type: null });
-          }, 3000);
-        }
-      }
+  const handleSaveClick = async (saveAndClose: boolean) => {
+    try {
+      await saveCustomer(saveAndClose);
     } catch (error: any) {
       console.error("Error saving customer:", error);
       setStatus({
@@ -318,7 +326,7 @@ export default function CustomerFormModal({
         )}
 
         <div className="flex-1 overflow-y-auto no-scrollbar">
-          <form onSubmit={(e) => handleSubmit(e)} className="p-6">
+          <form onSubmit={handleSubmit} className="p-6">
             <div className="mb-6 p-4 bg-gray-50 rounded-lg">
               <div className="flex items-center gap-4">
                 <div>
@@ -578,7 +586,7 @@ export default function CustomerFormModal({
                           value={openingAmount}
                           onChange={(e) =>
                             setOpeningAmount(
-                              Math.max(0, Number(e.target.value || 0))
+                              Math.max(0, Number(e.target.value || 0)),
                             )
                           }
                           onKeyDown={(e) => handleKeyDown(e, 10)}
@@ -634,8 +642,8 @@ export default function CustomerFormModal({
 
           {editCustomer ? (
             <button
-              type="submit"
-              onClick={(e) => handleSubmit(e)}
+              type="button"
+              onClick={() => handleSaveClick(true)}
               className="px-4 py-2 text-sm font-medium text-white bg-averix-red-dark hover:bg-averix-red-darker rounded-md transition-colors"
             >
               Update Customer
@@ -644,14 +652,14 @@ export default function CustomerFormModal({
             <>
               <button
                 type="button"
-                onClick={(e) => handleSubmit(e, true)}
+                onClick={() => handleSaveClick(true)}
                 className="px-4 py-2 text-sm font-medium text-averix-red-dark bg-white border border-averix-red-dark hover:bg-averix-red-light/10 rounded-md transition-colors"
               >
                 Save & Close
               </button>
               <button
-                type="submit"
-                onClick={(e) => handleSubmit(e)}
+                type="button"
+                onClick={() => handleSaveClick(false)}
                 className="px-4 py-2 text-sm font-medium text-white bg-averix-red-dark hover:bg-averix-red-darker rounded-md transition-colors"
               >
                 Save & Add Another

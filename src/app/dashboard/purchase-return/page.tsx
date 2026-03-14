@@ -1,4 +1,4 @@
-// src/app/purchase-return/page.tsx
+// src/app/dashboard/purchase-return/page.tsx
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -8,7 +8,12 @@ import ItemsTableSection from "@/components/purchase/ItemsTableSection";
 import PromptModal from "@/components/ui/PromptModal";
 import ReturnHoldsModal from "@/components/purchase-return/ReturnHoldsModal";
 import ConfirmModal from "@/components/ui/ConfirmModal";
-import { HeaderForm, ItemRow, Product } from "@/components/purchase/types";
+import {
+  HeaderForm,
+  ItemRow,
+  Product,
+  BatchInfo,
+} from "@/components/purchase/types";
 import {
   createEmptyRow,
   calcRow,
@@ -17,6 +22,8 @@ import {
 } from "@/components/purchase/utils";
 import ValidationModal from "@/components/ui/ValidationModal";
 import PurchaseReturnReportsModal from "@/components/purchase-return/PurchaseReturnReportsModal";
+import BatchSelectModal from "@/components/purchase/BatchSelectModal";
+
 export default function PurchaseReturnPage() {
   const router = useRouter();
 
@@ -32,6 +39,10 @@ export default function PurchaseReturnPage() {
     Array<{ id: string; name: string }>
   >([]);
   const [nextEntryNo, setNextEntryNo] = useState<number | null>(null);
+
+  // ✅ CHANGE 1: Added editing state
+  const [editingReturnId, setEditingReturnId] = useState<string | null>(null);
+  const [editingSlNo, setEditingSlNo] = useState<number | null>(null);
 
   const [header, setHeader] = useState<HeaderForm>({
     billNo: "",
@@ -58,6 +69,14 @@ export default function PurchaseReturnPage() {
 
   const [showReports, setShowReports] = useState(false);
 
+  const [batchPicker, setBatchPicker] = useState<{
+    rowIndex: number;
+    productId: string;
+    batches: BatchInfo[];
+    productName?: string;
+    nextBarcode: string;
+  } | null>(null);
+
   async function tryNavigate(path: string) {
     if (!isDirty) {
       router.push(path);
@@ -78,7 +97,7 @@ export default function PurchaseReturnPage() {
 
     (async () => {
       const res = await (window as any).electronAPI.getNextPurchaseReturnSlNo(
-        licenseId
+        licenseId,
       );
       setNextEntryNo(res?.nextSlNo ?? 1);
     })();
@@ -97,7 +116,7 @@ export default function PurchaseReturnPage() {
     setHeader((s) =>
       !s.supplier && s.purchaseType === "CREDIT"
         ? { ...s, purchaseType: "CASH" }
-        : s
+        : s,
     );
   }, [header.supplier]);
 
@@ -105,31 +124,218 @@ export default function PurchaseReturnPage() {
     const product = await (window as any).electronAPI.getProduct(productId);
     if (!product) return;
 
+    const batchesRes = await (window as any).electronAPI.listBarcodesForProduct(
+      licenseId,
+      productId,
+    );
+
+    const liveBatches = (batchesRes?.rows || [])
+      .filter((b: any) => Number(b.stock || 0) > 0)
+      .map((b: any) => ({
+        id: b.id,
+        barcode: b.barcode,
+        batchNo: b.batchNo,
+        mfgDate: b.mfgDate,
+        expiryDate: b.expiryDate,
+        mrp: b.mrp,
+        salePrice: b.salePrice,
+        costPrice: b.costPrice,
+        stock: b.stock,
+      }));
+
+    const basePatch = {
+      productId,
+      code: product.code,
+      name: product.name,
+      unit: product.unit,
+      taxPercent: product.tax,
+      barcode: "",
+      batchNo: "",
+      mfgDate: null,
+      expiryDate: null,
+      mrp: null,
+      rate: Number(product.costPrice) || 0,
+      salePrice:
+        product.salePrice != null && !Number.isNaN(Number(product.salePrice))
+          ? Number(product.salePrice)
+          : 0,
+    };
+
+    if (liveBatches.length === 1) {
+      const b = liveBatches[0];
+      setRows((prev) =>
+        prev.map((r, i) =>
+          i !== rowIndex
+            ? r
+            : {
+                ...r,
+                ...basePatch,
+                barcode: b.barcode || "",
+                batchNo: b.batchNo ?? null,
+                mfgDate: b.mfgDate ?? null,
+                expiryDate: b.expiryDate ?? null,
+                mrp: b.mrp ?? null,
+                rate:
+                  b.costPrice != null && !Number.isNaN(Number(b.costPrice))
+                    ? Number(b.costPrice)
+                    : Number(product.costPrice) || 0,
+                salePrice:
+                  b.salePrice != null && !Number.isNaN(Number(b.salePrice))
+                    ? Number(b.salePrice)
+                    : Number(product.salePrice) || 0,
+              },
+        ),
+      );
+      return;
+    }
+
+    if (liveBatches.length > 1) {
+      setRows((prev) =>
+        prev.map((r, i) => (i !== rowIndex ? r : { ...r, ...basePatch })),
+      );
+      setBatchPicker({
+        rowIndex,
+        productId,
+        batches: liveBatches,
+        productName: product.name,
+        nextBarcode: "",
+      });
+      return;
+    }
+
     setRows((prev) =>
       prev.map((r, i) =>
         i !== rowIndex
           ? r
           : {
               ...r,
-              productId,
-              code: product.code,
-              name: product.name,
-              unit: product.unit,
-              taxPercent: product.tax,
-              barcode: product.barcode || product.code,
-              rate: Number(product.costPrice) || 0,
-              salePrice:
-                r.profitPercent && r.profitPercent > 0
-                  ? r.salePrice
-                  : product.salePrice != null
-                  ? Number(product.salePrice)
-                  : 0,
-            }
-      )
+              ...basePatch,
+              barcode: product.barcode || product.code || "",
+            },
+      ),
     );
   };
 
-  // Recalc
+  const handleRequestBatchSelect = async (
+    rowIndex: number,
+    explicitProductId?: string,
+  ) => {
+    const row = rows[rowIndex];
+    const productId = explicitProductId || row?.productId;
+    if (!productId) return;
+
+    try {
+      const batchesRes = await (
+        window as any
+      ).electronAPI.listBarcodesForProduct(licenseId, productId);
+
+      const liveBatches = (batchesRes?.rows || [])
+        .filter((b: any) => Number(b.stock || 0) > 0)
+        .map((b: any) => ({
+          id: b.id,
+          barcode: b.barcode,
+          batchNo: b.batchNo,
+          mfgDate: b.mfgDate,
+          expiryDate: b.expiryDate,
+          mrp: b.mrp,
+          salePrice: b.salePrice,
+          costPrice: b.costPrice,
+          stock: b.stock,
+        }));
+
+      if (!liveBatches.length) return;
+
+      const productName =
+        products.find((p) => p.id === productId)?.name || row?.name;
+
+      setBatchPicker({
+        rowIndex,
+        productId,
+        batches: liveBatches,
+        productName,
+        nextBarcode: "",
+      });
+    } catch (e) {
+      console.error("Failed to load return batches", e);
+    }
+  };
+
+  // ✅ CHANGE 2: handleOpenPurchaseReturnFromReport loader function
+  async function handleOpenPurchaseReturnFromReport(returnId: string) {
+    if (suppliers.length === 0) {
+      const { suppliers: sups } = await (
+        window as any
+      ).electronAPI.listSuppliers(licenseId, { q: "", page: 1, pageSize: 100 });
+      setSuppliers(sups.map((s: any) => ({ id: s.id, name: s.name })));
+    }
+
+    const res = await (window as any).electronAPI.getPurchaseReturnFull(
+      returnId,
+    );
+
+    if (!res?.success) {
+      setValidationMsgs(["Failed to load purchase return."]);
+      setValidationOpen(true);
+      return;
+    }
+
+    const ret = res.purchaseReturn;
+    const items = res.items || [];
+
+    const supplier = ret.supplierId
+      ? suppliers.find((s) => s.id === ret.supplierId) || {
+          id: ret.supplierId,
+          name: ret.supplierName || "",
+        }
+      : null;
+
+    const nextHeader: HeaderForm = {
+      billNo: ret.billNo || "",
+      supplier,
+      department: ret.department || "",
+      debitAccount: ret.debitAccount || "",
+      natureOfEntry: ret.natureOfEntry || "",
+      purchaseDate: ret.returnDate || new Date().toISOString(),
+      entryTime: ret.entryTime || ret.returnDate || new Date().toISOString(),
+      discount: Number(ret.discount || 0),
+      purchaseType: ret.purchaseType === "CREDIT" ? "CREDIT" : "CASH",
+    };
+
+    const nextRows: ItemRow[] = items.map((it: any, i: number) => ({
+      lineNo: it.lineNo ?? i + 1,
+      productId: it.productId,
+      code: "",
+      barcode: it.barcode ?? "",
+      name: "",
+      unit: it.unit,
+      rate: Number(it.rate) || 0,
+      quantity: Number(it.quantity) || 0,
+      mrp: it.mrp ?? null,
+      taxPercent: it.taxPercent,
+      discountType: it.discountType || "ABS",
+      discount: Number(it.discount) || 0,
+      profitPercent: 0,
+      salePrice: it.salePrice ?? null,
+      profit: it.profit ?? null,
+      totalCost: Number(it.totalCost) || 0,
+      billedValue: Number(it.billedValue || 0),
+      batchNo: it.batchNo ?? null,
+      mfgDate: it.mfgDate ?? null,
+      expiryDate: it.expiryDate ?? null,
+      lineType: "VALUED",
+      unitBilled: it.quantity
+        ? Number(it.billedValue || 0) / Number(it.quantity || 1)
+        : 0,
+    }));
+
+    setHeader(nextHeader);
+    setRows(nextRows);
+    setEditingReturnId(returnId);
+    setEditingSlNo(ret.slNo ?? null);
+    setShowReports(false);
+    setIsDirty(false);
+  }
+
   useEffect(() => {
     setRows((prev) => prev.map(calcRow));
   }, [
@@ -142,17 +348,17 @@ export default function PurchaseReturnPage() {
         d: r.discount,
         profitPercent: r.profitPercent,
         lineType: r.lineType,
-      }))
+      })),
     ),
   ]);
 
   const subTotal = useMemo(
     () => rows.reduce((s, r) => s + (r.billedValue || 0), 0),
-    [rows]
+    [rows],
   );
   const grandTotal = useMemo(
     () => Math.max(0, subTotal - (header.discount || 0)),
-    [subTotal, header.discount]
+    [subTotal, header.discount],
   );
 
   const addRow = () =>
@@ -161,10 +367,27 @@ export default function PurchaseReturnPage() {
     setRows((prev) =>
       prev
         .filter((_, i) => i !== index)
-        .map((r, i) => ({ ...r, lineNo: i + 1 }))
+        .map((r, i) => ({ ...r, lineNo: i + 1 })),
     );
 
-  // Save Return
+  function showPurchaseReturnError(err: any) {
+    const raw = String(err?.message || err || "Unknown error");
+
+    if (raw.includes("not enough stock") || raw.includes("Insufficient")) {
+      setValidationMsgs([
+        "Selected batch does not have enough stock for this return quantity.",
+        "Reduce quantity or choose another batch.",
+      ]);
+      setValidationOpen(true);
+      return;
+    }
+
+    setValidationMsgs([
+      "Something went wrong while saving the purchase return.",
+    ]);
+    setValidationOpen(true);
+  }
+
   const handleSave = async () => {
     const items = mapItems(rows);
     const errs = validateReturnBill(header, items);
@@ -192,22 +415,31 @@ export default function PurchaseReturnPage() {
       items,
     };
 
-    const res = await (window as any).electronAPI.createPurchaseReturn(payload);
+    try {
+      const res = await (window as any).electronAPI.createPurchaseReturn(
+        payload,
+      );
 
-    if (res?.success) {
-      alert(`✅ Return Saved! SlNo: ${res.slNo}, Total: ${res.totalAmount}`);
+      if (res?.success) {
+        alert(`✅ Return Saved! SlNo: ${res.slNo}, Total: ${res.totalAmount}`);
 
-      try {
-        const peek = await (
-          window as any
-        ).electronAPI.getNextPurchaseReturnSlNo(licenseId);
-        setNextEntryNo(peek?.nextSlNo ?? null);
-      } catch {}
+        try {
+          const peek = await (
+            window as any
+          ).electronAPI.getNextPurchaseReturnSlNo(licenseId);
+          setNextEntryNo(peek?.nextSlNo ?? null);
+        } catch {}
 
-      resetAll();
-      return true;
+        resetAll();
+        return true;
+      }
+
+      showPurchaseReturnError(res?.error || "Save failed");
+      return false;
+    } catch (err) {
+      showPurchaseReturnError(err);
+      return false;
     }
-    return false;
   };
 
   const handleCancel = () => {
@@ -219,6 +451,7 @@ export default function PurchaseReturnPage() {
     setLeaveOpen(true);
   };
 
+  // ✅ CHANGE 5: resetAll now clears editing state too
   function resetAll() {
     setHeader({
       billNo: "",
@@ -232,10 +465,11 @@ export default function PurchaseReturnPage() {
       purchaseType: "CASH",
     });
     setRows([createEmptyRow(1)]);
+    setEditingReturnId(null);
+    setEditingSlNo(null);
     setIsDirty(false);
   }
 
-  // Hold functionality
   async function saveHold(title?: string) {
     const payload = {
       id: undefined as string | undefined,
@@ -246,7 +480,7 @@ export default function PurchaseReturnPage() {
       rows,
     };
     const res = await (window as any).electronAPI.savePurchaseReturnHold(
-      payload
+      payload,
     );
     if (res?.success) {
       alert(`✅ Held as #${res.holdNo}${title ? ` • ${title}` : ""}`);
@@ -273,7 +507,6 @@ export default function PurchaseReturnPage() {
     }
   }
 
-  // Mark dirty when fields change
   useEffect(() => {
     setIsDirty(true);
   }, [
@@ -294,7 +527,7 @@ export default function PurchaseReturnPage() {
         mfgDate: r.mfgDate,
         expiryDate: r.expiryDate,
         lineType: r.lineType,
-      }))
+      })),
     ),
   ]);
 
@@ -308,7 +541,6 @@ export default function PurchaseReturnPage() {
     return () => window.removeEventListener("beforeunload", handler);
   }, [isDirty]);
 
-  // Ctrl/⌘+S
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
@@ -330,25 +562,27 @@ export default function PurchaseReturnPage() {
             header={header}
             setHeader={setHeader}
             suppliers={suppliers}
-            setShowSupplierModal={() => {
-              /* optional for returns */
-            }}
+            setShowSupplierModal={() => {}}
             subTotal={subTotal}
             grandTotal={grandTotal}
             onSave={handleSave}
             onCancel={handleCancel}
-            entryNo={nextEntryNo ?? undefined}
-            requireSupplier={false}
+            // ✅ CHANGE 4: Show editing slNo when viewing a saved return
+            entryNo={
+              editingReturnId
+                ? (editingSlNo ?? undefined)
+                : (nextEntryNo ?? undefined)
+            }
+            requireSupplier={header.purchaseType === "CREDIT"}
           />
 
-          {/* Right: Items table */}
           <ItemsTableSection
             rows={rows}
             products={products}
             onSelectProduct={handleSelectProduct}
             onUpdateRow={(index, patch) =>
               setRows((prev) =>
-                prev.map((r, i) => (i === index ? { ...r, ...patch } : r))
+                prev.map((r, i) => (i === index ? { ...r, ...patch } : r)),
               )
             }
             onAddRow={addRow}
@@ -359,6 +593,7 @@ export default function PurchaseReturnPage() {
             onHold={handleHold}
             onShowHolds={handleShowHolds}
             onShowReports={() => setShowReports(true)}
+            onRequestBatchSelect={handleRequestBatchSelect}
           />
         </div>
       </div>
@@ -369,11 +604,8 @@ export default function PurchaseReturnPage() {
           onClose={() => setShowReports(false)}
           licenseId={licenseId}
           suppliers={suppliers}
-          onOpenPurchaseReturn={(id) => {
-            // TODO: load this return into the editor if you support that
-            // e.g. router.push(`/dashboard/purchase-return?returnId=${id}`)
-            console.log("Open purchase return:", id);
-          }}
+          // ✅ CHANGE 3: Wire up real loader instead of console.log
+          onOpenPurchaseReturn={handleOpenPurchaseReturnFromReport}
         />
       )}
 
@@ -382,6 +614,54 @@ export default function PurchaseReturnPage() {
         onClose={() => setShowHolds(false)}
         licenseId={licenseId}
         onResume={handleResumeHold}
+      />
+
+      <BatchSelectModal
+        isOpen={Boolean(batchPicker)}
+        onClose={() => setBatchPicker(null)}
+        batches={batchPicker?.batches || []}
+        productName={batchPicker?.productName}
+        nextBarcode=""
+        allowCreateNew={false}
+        onSelect={(batch) => {
+          if (!batchPicker) return;
+          const rowIndex = batchPicker.rowIndex;
+
+          if (!batch) {
+            setBatchPicker(null);
+            return;
+          }
+
+          setRows((prev) =>
+            prev.map((r, i) =>
+              i !== rowIndex
+                ? r
+                : {
+                    ...r,
+                    barcode: batch.barcode || "",
+                    batchNo: batch.batchNo ?? null,
+                    mfgDate: batch.mfgDate ?? null,
+                    expiryDate: batch.expiryDate ?? null,
+                    mrp: batch.mrp ?? null,
+                    rate:
+                      batch.costPrice != null &&
+                      !Number.isNaN(Number(batch.costPrice))
+                        ? Number(batch.costPrice)
+                        : r.rate,
+                    salePrice:
+                      batch.salePrice != null &&
+                      !Number.isNaN(Number(batch.salePrice))
+                        ? Number(batch.salePrice)
+                        : r.salePrice,
+                  },
+            ),
+          );
+
+          setBatchPicker(null);
+        }}
+        onAddNewBatch={() => {
+          setBatchPicker(null);
+        }}
       />
 
       <PromptModal
@@ -398,7 +678,6 @@ export default function PurchaseReturnPage() {
         }}
       />
 
-      {/* Leave confirm modal */}
       <ConfirmModal
         isOpen={leaveOpen}
         title="Leave this page?"
@@ -415,7 +694,6 @@ export default function PurchaseReturnPage() {
             const path = pendingPath;
             setPendingPath(null);
             router.push(path);
-          } else if (ok && !pendingPath) {
           }
         }}
         onSecondary={() => {
@@ -434,6 +712,7 @@ export default function PurchaseReturnPage() {
           setPendingPath(null);
         }}
       />
+
       <ValidationModal
         isOpen={validationOpen}
         messages={validationMsgs}

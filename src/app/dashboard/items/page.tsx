@@ -6,6 +6,8 @@ import ProductsTable from "@/components/products/ProductsTable";
 import ProductFormModal from "@/components/products/ProductFormModal";
 import ProductBatchesDrawer from "@/components/products/ProductBatchesDrawer";
 import SearchableDropdown from "@/components/ui/SearchableDropdown";
+import BarcodePrintModal from "@/components/barcodes/BarcodePrintModal";
+import { BarcodePrintItem } from "@/lib/barcode/barcodeTemplates";
 
 interface Product {
   id: string;
@@ -13,6 +15,7 @@ interface Product {
   name: string;
   brand?: string;
   category?: string;
+  barcode?: string | null;
   unit: string;
   tax: string;
   hsn?: string;
@@ -32,11 +35,16 @@ export default function ItemsPage() {
   const [categories, setCategories] = useState<string[]>([]);
   const [products, setProducts] = useState<string[]>([]);
 
+  const [barcodePrintOpen, setBarcodePrintOpen] = useState(false);
+  const [barcodePrintItems, setBarcodePrintItems] = useState<
+    BarcodePrintItem[]
+  >([]);
+
   // Batch drawer state
   const [batchOpen, setBatchOpen] = useState(false);
   const [batchProductId, setBatchProductId] = useState<string | null>(null);
   const [batchProductName, setBatchProductName] = useState<string | undefined>(
-    undefined
+    undefined,
   );
 
   useEffect(() => {
@@ -51,9 +59,9 @@ export default function ItemsPage() {
             new Set(
               result.products
                 .map((p) => p.category)
-                .filter((c): c is string => !!c)
-            )
-          )
+                .filter((c): c is string => !!c),
+            ),
+          ),
         );
       });
   }, [refreshTrigger]);
@@ -85,6 +93,16 @@ export default function ItemsPage() {
     setBatchProductId(id);
     setBatchProductName(name);
     setBatchOpen(true);
+  };
+
+  const handleOpenBarcodePrint = (items: BarcodePrintItem[]) => {
+    if (!items.length) {
+      alert("No printable barcode items found.");
+      return;
+    }
+
+    setBarcodePrintItems(items);
+    setBarcodePrintOpen(true);
   };
 
   useEffect(() => {
@@ -168,9 +186,11 @@ export default function ItemsPage() {
 
         {/* Table */}
         <ProductsTable
+          onAdd={handleAddProduct}
           onEdit={handleEditProduct}
           onDelete={handleDeleteProduct}
           onManageBatches={(p) => openBatches(p.id, p.name)}
+          onPrintBarcodes={handleOpenBarcodePrint}
           refreshTrigger={refreshTrigger}
           nameFilter={nameFilter}
           categoryFilter={categoryFilter}
@@ -199,6 +219,13 @@ export default function ItemsPage() {
           licenseId={localStorage.getItem("licenseId") || "demo-license"}
         />
       </div>
+
+      <BarcodePrintModal
+        isOpen={barcodePrintOpen}
+        onClose={() => setBarcodePrintOpen(false)}
+        items={barcodePrintItems}
+        defaultShopName={localStorage.getItem("shopName") || "My Shop"}
+      />
     </main>
   );
 }

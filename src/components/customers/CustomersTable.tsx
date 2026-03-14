@@ -18,9 +18,13 @@ interface Customer {
   email?: string;
   gstin?: string;
   category?: string;
+  addressLine1?: string;
+  addressLine2?: string;
   city?: string;
   state?: string;
+  pincode?: string;
   openingBalance?: number;
+  notes?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -88,7 +92,7 @@ export default function CustomersTable() {
           category: debouncedCategory || "",
           page,
           pageSize,
-        }
+        },
       );
 
       setCustomers(result.customers);
@@ -134,15 +138,26 @@ export default function CustomersTable() {
     setIsModalOpen(true);
   };
 
-  const handleEdit = (c: Customer) => {
-    setEditCustomer(c);
-    setIsModalOpen(true);
+  const handleEdit = async (c: Customer) => {
+    try {
+      const res = await (window as any).electronAPI.getCustomer(c.id);
+      if (!res?.success || !res.customer) {
+        alert("Failed to load customer details");
+        return;
+      }
+      setEditCustomer(res.customer);
+      setIsModalOpen(true);
+    } catch (e) {
+      console.error(e);
+      alert("Failed to load customer details");
+    }
   };
 
   const handleDelete = async (id: string, name: string) => {
     if (!window.confirm(`Delete customer "${name}"?`)) return;
     try {
-      await (window as any).electronAPI.deleteCustomer(id);
+      const licenseId = localStorage.getItem("licenseId") || "demo-license";
+      await (window as any).electronAPI.deleteCustomer(id, licenseId);
       loadCustomers("refetch");
       refreshDistincts();
     } catch (e) {
@@ -150,7 +165,6 @@ export default function CustomersTable() {
       console.error(e);
     }
   };
-
   const handleModalSuccess = () => {
     loadCustomers("refetch");
     refreshDistincts();
@@ -369,7 +383,10 @@ export default function CustomersTable() {
       {isModalOpen && (
         <CustomerFormModal
           isOpen={isModalOpen}
-          onClose={() => setIsModalOpen(false)}
+          onClose={() => {
+            setIsModalOpen(false);
+            setEditCustomer(null);
+          }}
           onSuccess={handleModalSuccess}
           editCustomer={editCustomer}
         />

@@ -15,11 +15,11 @@ export default function SupplierPicker({
   const [openModal, setOpenModal] = useState(false);
 
   useEffect(() => {
-    const licenseId = localStorage.getItem("licenseId")!;
+    const licenseId = localStorage.getItem("licenseId") || "demo-license";
     (async () => {
       const { suppliers } = await (window as any).electronAPI.listSuppliers(
         licenseId,
-        { q, page: 1, pageSize: 20 }
+        { q, page: 1, pageSize: 20 },
       );
       setOpts(suppliers.map((s: any) => ({ id: s.id, name: s.name })));
     })();
@@ -69,7 +69,22 @@ export default function SupplierPicker({
         <SupplierFormModal
           isOpen={openModal}
           onClose={() => setOpenModal(false)}
-          onSuccess={() => {}}
+          onSuccess={async () => {
+            const licenseId =
+              localStorage.getItem("licenseId") || "demo-license";
+            const { suppliers } = await (
+              window as any
+            ).electronAPI.listSuppliers(licenseId, {
+              q: "",
+              page: 1,
+              pageSize: 50,
+            });
+            const mapped = suppliers.map((s: any) => ({
+              id: s.id,
+              name: s.name,
+            }));
+            setOpts(mapped);
+          }}
         />
       )}
     </div>

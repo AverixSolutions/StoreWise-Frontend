@@ -4,7 +4,6 @@
 import Header from "@/components/ui/Header";
 import { usePathname } from "next/navigation";
 import Sidebar from "@/components/ui/Sidebar";
-import SyncProvider from "@/components/SyncProvider";
 
 export default function DashboardLayout({
   children,
@@ -21,13 +20,12 @@ export default function DashboardLayout({
   ];
 
   const hideSidebar = HIDE_SIDEBAR_PREFIXES.some((p) =>
-    pathname?.startsWith(p)
+    pathname?.startsWith(p),
   );
   const isFullWidth = hideSidebar;
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
-      <SyncProvider />
       <Header />
       <div className="flex flex-1 overflow-hidden">
         {!hideSidebar && <Sidebar topOffset={headerHeight} />}

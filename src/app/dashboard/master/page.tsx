@@ -6,7 +6,6 @@ import {
   Package,
   Building2,
   Truck,
-  CreditCard,
   Settings,
   Percent,
   ArrowLeft,
@@ -15,13 +14,14 @@ import SuppliersTable from "@/components/suppliers/SuppliersTable";
 import CustomersTable from "@/components/customers/CustomersTable";
 import AccountMaster from "@/components/accounts/AccountMaster";
 import TaxSettings from "@/components/tax/TaxSettings";
+import ShopSettingsPanel from "@/components/master/ShopSettingsPanel";
 
 type MasterSection =
   | "dashboard"
   | "suppliers"
   | "customers"
   | "categories"
-  | "brands"
+  | "shopSettings"
   | "accounts"
   | "tax";
 
@@ -72,13 +72,13 @@ const masterSections = [
     count: 0,
   },
   {
-    id: "brands" as MasterSection,
-    title: "Brands",
-    description: "Manage product brands",
-    icon: CreditCard,
+    id: "shopSettings" as MasterSection,
+    title: "Shop Settings",
+    description: "Manage shop profile, logo, GST and print details",
+    icon: Building2,
     color: "bg-orange-500",
     hoverColor: "hover:bg-orange-600",
-    count: 0,
+    count: 1,
   },
 ];
 
@@ -130,8 +130,8 @@ export default function MasterPage() {
             section.id === "suppliers"
               ? supplierCount
               : section.id === "customers"
-              ? customerCount
-              : section.count;
+                ? customerCount
+                : section.count;
           return (
             <div
               key={section.id}
@@ -198,6 +198,8 @@ export default function MasterPage() {
         return <AccountMaster />;
       case "tax":
         return <TaxSettings />;
+      case "shopSettings":
+        return <ShopSettingsPanel />;
       case "categories":
         return (
           <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
@@ -207,18 +209,6 @@ export default function MasterPage() {
             </h3>
             <p className="text-gray-600">
               Category management feature coming soon...
-            </p>
-          </div>
-        );
-      case "brands":
-        return (
-          <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
-            <CreditCard className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              Brands Management
-            </h3>
-            <p className="text-gray-600">
-              Brand management feature coming soon...
             </p>
           </div>
         );

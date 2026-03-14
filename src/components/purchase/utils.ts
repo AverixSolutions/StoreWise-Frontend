@@ -10,7 +10,7 @@ export function toLocalInput(iso: string) {
     const d = new Date(iso);
     const pad = (n: number) => String(n).padStart(2, "0");
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(
-      d.getDate()
+      d.getDate(),
     )}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   } catch {
     return "";
@@ -71,6 +71,7 @@ export function createEmptyRow(lineNo: number): ItemRow {
     unitBilled: 0,
     overrideBatchPrices: false,
     forceNewBatch: false,
+    printBarcode: true,
   };
 }
 
@@ -126,7 +127,7 @@ export function calcRow(row: ItemRow): ItemRow {
 
 export function validateBill(
   header: HeaderForm,
-  itemsMapped: ReturnType<typeof mapItems>
+  itemsMapped: ReturnType<typeof mapItems>,
 ) {
   const errors: string[] = [];
 
@@ -155,7 +156,7 @@ export function mapItems(rows: ItemRow[]) {
     .filter((r) => r.productId)
     .map((r, i) => ({
       productId: r.productId,
-      barcode: r.barcode || r.code,
+      barcode: r.barcode || null,
       quantity: r.quantity,
       unit: r.unit,
       rate: r.rate,
@@ -166,7 +167,7 @@ export function mapItems(rows: ItemRow[]) {
         r.discountType === "PCT"
           ? round2(
               (r.totalCost || 0) *
-                (Math.max(0, Math.min(100, r.discount)) / 100)
+                (Math.max(0, Math.min(100, r.discount)) / 100),
             )
           : r.discount,
       discountType: r.discountType,
@@ -203,11 +204,11 @@ export function fromDateTime(date: string, time: string) {
   return new Date(`${date}T${t}`).toISOString();
 }
 
-export function validatePurchaseBill(header: HeaderForm, items: ItemRow[]) {
+export function validatePurchaseBill(header: HeaderForm, items: any[]) {
   const errs: string[] = [];
 
   const hasLine = items.some(
-    (r) => r.productId && (r.quantity ?? 0) > 0 && (r.rate ?? 0) >= 0
+    (r) => r.productId && (r.quantity ?? 0) > 0 && (r.rate ?? 0) >= 0,
   );
   if (!hasLine) errs.push("Add at least one item with quantity > 0.");
 
@@ -215,15 +216,17 @@ export function validatePurchaseBill(header: HeaderForm, items: ItemRow[]) {
     errs.push("Bill number is required.");
   }
 
-  if (!header.supplier) errs.push("Select a supplier.");
+  if (header.purchaseType === "CREDIT" && !header.supplier) {
+    errs.push("Select a supplier for CREDIT purchase.");
+  }
 
   return errs;
 }
 
-export function validateReturnBill(_header: HeaderForm, items: ItemRow[]) {
+export function validateReturnBill(_header: HeaderForm, items: any[]) {
   const errs: string[] = [];
   const hasLine = items.some(
-    (r) => r.productId && (r.quantity ?? 0) > 0 && (r.rate ?? 0) >= 0
+    (r) => r.productId && (r.quantity ?? 0) > 0 && (r.rate ?? 0) >= 0,
   );
   if (!hasLine) errs.push("Add at least one item with quantity > 0.");
 
@@ -235,9 +238,9 @@ export function rowsFromDbItems(dbItems: any[]): ItemRow[] {
   return dbItems.map((it: any, i: number) => ({
     lineNo: it.lineNo ?? i + 1,
     productId: it.productId,
-    code: "", // optional
+    code: it.productCode || "",
     barcode: it.barcode ?? "",
-    name: "", // you show just code/name after onSelectProduct; optional here
+    name: it.productName || "",
     unit: it.unit,
     rate: Number(it.rate) || 0,
     quantity: Number(it.quantity) || 0,
@@ -245,7 +248,7 @@ export function rowsFromDbItems(dbItems: any[]): ItemRow[] {
     taxPercent: it.taxPercent,
     discountType: it.discountType,
     discount: Number(it.discount) || 0,
-    profitPercent: it.profit ?? null, // or keep it as separate field if you used profitPercent
+    profitPercent: 0,
     salePrice: it.salePrice ?? null,
     profit: it.profit ?? null,
     totalCost: Number(it.totalCost) || 0,
@@ -257,13 +260,14 @@ export function rowsFromDbItems(dbItems: any[]): ItemRow[] {
     unitBilled: it.quantity
       ? Number(it.billedValue || 0) / Number(it.quantity || 1)
       : 0,
+    printBarcode: true,
   }));
 }
 
 // Normalize purchase header from DB to HeaderForm (purchase)
 export function headerFromPurchaseDb(
   p: any,
-  supplierOpt: Array<{ id: string; name: string }>
+  supplierOpt: Array<{ id: string; name: string }>,
 ): HeaderForm {
   const sup = p.supplierId
     ? supplierOpt.find((s) => s.id === p.supplierId) || {
@@ -287,7 +291,7 @@ export function headerFromPurchaseDb(
 // For returns, reuse HeaderForm but map date field from returnDate
 export function headerFromReturnDb(
   r: any,
-  supplierOpt: Array<{ id: string; name: string }>
+  supplierOpt: Array<{ id: string; name: string }>,
 ): HeaderForm {
   const sup = r.supplierId
     ? supplierOpt.find((s) => s.id === r.supplierId) || {

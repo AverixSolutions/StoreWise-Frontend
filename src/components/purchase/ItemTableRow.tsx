@@ -50,11 +50,12 @@ interface ItemTableRowProps {
   onGridKey: (
     e: React.KeyboardEvent<HTMLElement>,
     rowIndex: number,
-    col: any
+    col: any,
   ) => void;
   rowsLength: number;
   onAddRow?: () => void;
   onRequestBatchSelect?: (rowIndex: number) => void;
+  onBarcodeCommit?: (rowIndex: number) => void;
 }
 
 export default function ItemTableRow({
@@ -69,6 +70,7 @@ export default function ItemTableRow({
   rowsLength,
   onAddRow,
   onRequestBatchSelect,
+  onBarcodeCommit,
 }: ItemTableRowProps) {
   const taxOptions = [
     { value: "NT", label: "No Tax" },
@@ -143,27 +145,24 @@ export default function ItemTableRow({
       </td>
 
       {/* Barcode  */}
-      <td className="px-2.5 py-2 min-w-[110px]">
-        <div className="w-full">
+      <td className="px-2.5 py-2 min-w-[170px]">
+        <div className="flex items-center gap-2">
           <input
-            className={cellInput + " h-9"}
+            className={cellInput + " h-9 flex-1"}
             value={r.barcode || ""}
-            onChange={(e) => onUpdateRow(idx, { barcode: e.target.value })}
-            placeholder="Barcode"
+            onChange={(e) =>
+              onUpdateRow(idx, { barcode: e.target.value.trim() })
+            }
+            placeholder="Barcode (optional)"
             data-cell={`${idx}:barcode`}
             onFocus={(e) => {
               e.currentTarget.select();
-              console.log("Barcode focus row", idx, "row data", r);
-
-              if (onRequestBatchSelect && r.productId && !r.barcode) {
-                console.log("Triggering batch select for row", idx);
-                setTimeout(() => {
-                  onRequestBatchSelect(idx);
-                }, 50);
-              }
             }}
             onClick={(e) => {
               e.currentTarget.select();
+            }}
+            onBlur={() => {
+              if (onBarcodeCommit) onBarcodeCommit(idx);
             }}
             onKeyDown={(e) => {
               if (
@@ -172,14 +171,29 @@ export default function ItemTableRow({
                 r.productId
               ) {
                 e.preventDefault();
-                if (onRequestBatchSelect) {
-                  onRequestBatchSelect(idx);
-                }
+                if (onRequestBatchSelect) onRequestBatchSelect(idx);
+                return;
+              }
+              if (e.key === "Enter" || (e as any).key === "NumpadEnter") {
+                e.preventDefault();
+                if (onBarcodeCommit) onBarcodeCommit(idx);
+                onGridKey(e as any, idx, "barcode");
                 return;
               }
               onGridKey(e, idx, "barcode");
             }}
           />
+
+          <label className="flex items-center gap-1 text-[11px] whitespace-nowrap text-gray-600">
+            <input
+              type="checkbox"
+              checked={r.printBarcode !== false}
+              onChange={(e) =>
+                onUpdateRow(idx, { printBarcode: e.target.checked })
+              }
+            />
+            Print
+          </label>
         </div>
       </td>
 
@@ -395,7 +409,7 @@ export default function ItemTableRow({
                 if (e.key === "ArrowUp" || e.key === "ArrowDown") {
                   e.preventDefault();
                   const cur = Number(
-                    (e.currentTarget as HTMLInputElement).value || 0
+                    (e.currentTarget as HTMLInputElement).value || 0,
                   );
                   const step = r.discountType === "ABS" ? 1 : 0.01;
                   const next =

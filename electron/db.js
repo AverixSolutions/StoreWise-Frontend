@@ -1,16 +1,46 @@
 // electron/db.js
 const { app } = require("electron");
 const path = require("path");
+const fs = require("fs");
 const Database = require("better-sqlite3");
 
-const dbPath = path.join(app.getPath("userData"), "storewise.db");
+function ensureDir(dirPath) {
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
+  }
+}
+
+const appDataRoot = path.join(app.getPath("appData"), "StoreWise");
+const dataDir = path.join(appDataRoot, "data");
+const backupDir = path.join(appDataRoot, "backups");
+const dbPath = path.join(dataDir, "storewise.db");
+
+ensureDir(appDataRoot);
+ensureDir(dataDir);
+ensureDir(backupDir);
+
+console.log("StoreWise appDataRoot:", appDataRoot);
+console.log("StoreWise DB Path:", dbPath);
+console.log("StoreWise Backup Dir:", backupDir);
+
 const db = new Database(dbPath);
 
 db.pragma("busy_timeout = 5000");
 db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");
 
+function tableExists(table) {
+  const row = db
+    .prepare(
+      `SELECT name FROM sqlite_master WHERE type='table' AND name = ? LIMIT 1`,
+    )
+    .get(table);
+  return !!row;
+}
+
 function addColumnIfMissing(table, column, type) {
+  if (!tableExists(table)) return;
+
   const cols = db.prepare(`PRAGMA table_info(${table})`).all();
   if (!cols.some((c) => c.name === column)) {
     db.prepare(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`).run();
@@ -41,7 +71,7 @@ db.prepare(
     UNIQUE(licenseId, code),
     UNIQUE(licenseId, codeNumber)
   )
-`
+`,
 ).run();
 
 addColumnIfMissing("products", "deletedAt", "TEXT");
@@ -50,11 +80,11 @@ addColumnIfMissing("products", "barcode", "TEXT");
 // Product Index
 db.prepare(
   `CREATE INDEX IF NOT EXISTS idx_products_dirty 
-  ON products(licenseId, updatedAt, syncedAt, deletedAt)`
+  ON products(licenseId, updatedAt, syncedAt, deletedAt)`,
 ).run();
 db.prepare(
   `CREATE INDEX IF NOT EXISTS idx_products_isSynced 
-  ON products(isSynced)`
+  ON products(isSynced)`,
 ).run();
 
 // --- Batches (lots) ---------------------------------------------------------
@@ -79,40 +109,31 @@ db.prepare(
     deletedAt TEXT,
     FOREIGN KEY (productId) REFERENCES products(id)
   )
-`
+`,
 ).run();
 
 db.prepare(
   `CREATE INDEX IF NOT EXISTS idx_batches_identity 
-   ON product_batches(productId, batchNo, expiryDate, mfgDate, mrp, salePrice)`
+   ON product_batches(productId, batchNo, expiryDate, mfgDate, mrp, salePrice)`,
 ).run();
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_batches_prod ON product_batches(productId, deletedAt)`
+  `CREATE INDEX IF NOT EXISTS idx_batches_prod ON product_batches(productId, deletedAt)`,
 ).run();
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_batches_barcode ON product_batches(licenseId, barcode)`
+  `CREATE INDEX IF NOT EXISTS idx_batches_barcode
+   ON product_batches(licenseId, barcode)`,
 ).run();
 
 try {
   db.prepare(`DROP INDEX IF EXISTS idx_batches_barcode_unique`).run();
 } catch (_) {}
 
-addColumnIfMissing("purchase_items", "batchId", "TEXT");
-addColumnIfMissing("sale_items", "batchId", "TEXT");
-addColumnIfMissing("purchase_return_items", "batchId", "TEXT");
-addColumnIfMissing("sale_return_items", "batchId", "TEXT");
-
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_pi_batch ON purchase_items(batchId)`
-).run();
-db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_si_batch ON sale_items(batchId)`
-).run();
-db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_pri_batch ON purchase_return_items(batchId)`
-).run();
-db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_sri_batch ON sale_return_items(batchId)`
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_batches_barcode_unique_live
+   ON product_batches(licenseId, barcode)
+   WHERE barcode IS NOT NULL
+     AND barcode <> ''
+     AND COALESCE(deletedAt,'')=''`,
 ).run();
 
 // Purchase Table
@@ -129,7 +150,7 @@ db.prepare(
     isSynced INTEGER DEFAULT 0,
     syncedAt TEXT
   )
-`
+`,
 ).run();
 
 addColumnIfMissing("purchases", "slNo", "INTEGER");
@@ -146,20 +167,20 @@ addColumnIfMissing("purchases", "updatedAt", "TEXT");
 // Purchase Index
 db.prepare(
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_purchases_slno
-   ON purchases(licenseId, slNo)`
+   ON purchases(licenseId, slNo)`,
 ).run();
 
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_purchases_license_date ON purchases(licenseId, purchaseDate)`
+  `CREATE INDEX IF NOT EXISTS idx_purchases_license_date ON purchases(licenseId, purchaseDate)`,
 ).run();
 
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_purchases_synced ON purchases(isSynced)`
+  `CREATE INDEX IF NOT EXISTS idx_purchases_synced ON purchases(isSynced)`,
 ).run();
 
 db.prepare(
   `CREATE INDEX IF NOT EXISTS idx_purchases_dirty 
-  ON purchases(licenseId, createdAt, syncedAt, deletedAt)`
+  ON purchases(licenseId, createdAt, syncedAt, deletedAt)`,
 ).run();
 
 // --- Purchase Returns Table ---
@@ -187,28 +208,28 @@ db.prepare(
     syncedAt TEXT,
     deletedAt TEXT
   )
-`
+`,
 ).run();
 
 db.prepare(
   `
   CREATE UNIQUE INDEX IF NOT EXISTS idx_purchase_returns_slno
   ON purchase_returns(licenseId, slNo)
-`
+`,
 ).run();
 
 db.prepare(
   `
   CREATE INDEX IF NOT EXISTS idx_purchase_returns_license_date
   ON purchase_returns(licenseId, returnDate)
-`
+`,
 ).run();
 
 db.prepare(
   `
   CREATE INDEX IF NOT EXISTS idx_purchase_returns_supplier
   ON purchase_returns(licenseId, supplierId)
-`
+`,
 ).run();
 
 // --- Purchase Return Items Table ---
@@ -242,7 +263,7 @@ db.prepare(
     deletedAt TEXT,
     FOREIGN KEY (returnId) REFERENCES purchase_returns(id) ON DELETE CASCADE
   )
-`
+`,
 ).run();
 
 addColumnIfMissing("purchase_return_items", "effectiveUnitValue", "REAL");
@@ -254,7 +275,7 @@ db.prepare(
   `
   CREATE INDEX IF NOT EXISTS idx_purchase_return_items_return
   ON purchase_return_items(returnId, lineNo)
-`
+`,
 ).run();
 
 // --- Return sequence per license ---
@@ -264,7 +285,7 @@ db.prepare(
     licenseId TEXT PRIMARY KEY,
     lastSlNo INTEGER DEFAULT 0
   )
-`
+`,
 ).run();
 
 // Purchase Items Table
@@ -290,7 +311,7 @@ db.prepare(
     FOREIGN KEY (purchaseId) REFERENCES purchases(id) ON DELETE CASCADE,
     FOREIGN KEY (productId) REFERENCES products(id)
   )
-`
+`,
 ).run();
 
 addColumnIfMissing("purchase_items", "deletedAt", "TEXT");
@@ -307,14 +328,14 @@ addColumnIfMissing("purchase_items", "effectiveUnitValue", "REAL");
 
 // Purchase Items Index
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_purchase_items_synced ON purchase_items(isSynced)`
+  `CREATE INDEX IF NOT EXISTS idx_purchase_items_synced ON purchase_items(isSynced)`,
 ).run();
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_purchase_items_purchase ON purchase_items(purchaseId, lineNo)`
+  `CREATE INDEX IF NOT EXISTS idx_purchase_items_purchase ON purchase_items(purchaseId, lineNo)`,
 ).run();
 db.prepare(
   `CREATE INDEX IF NOT EXISTS idx_purchase_items_dirty 
-  ON purchase_items(purchaseId, updatedAt, syncedAt, deletedAt)`
+  ON purchase_items(purchaseId, updatedAt, syncedAt, deletedAt)`,
 ).run();
 
 // Code increment tracker for License
@@ -324,7 +345,7 @@ db.prepare(
     licenseId TEXT PRIMARY KEY,
     lastCodeNumber INTEGER DEFAULT 0
   )
-`
+`,
 ).run();
 
 // slno increment tracker for License
@@ -334,7 +355,7 @@ db.prepare(
     licenseId TEXT PRIMARY KEY,
     lastSlNo INTEGER DEFAULT 0
   )
-`
+`,
 ).run();
 
 db.prepare(
@@ -344,7 +365,7 @@ db.prepare(
     lastPulledAt TEXT,               
     lastPushedAt TEXT               
   )
-`
+`,
 ).run();
 
 // --- Suppliers ---
@@ -371,7 +392,7 @@ db.prepare(
     syncedAt TEXT,
     deletedAt TEXT
   )
-`
+`,
 ).run();
 
 addColumnIfMissing("suppliers", "code", "TEXT");
@@ -390,13 +411,13 @@ db.prepare(
   `
   CREATE UNIQUE INDEX IF NOT EXISTS idx_suppliers_code
   ON suppliers(licenseId, code)
-`
+`,
 ).run();
 db.prepare(
   `
   CREATE UNIQUE INDEX IF NOT EXISTS idx_suppliers_code_no
   ON suppliers(licenseId, codeNumber)
-`
+`,
 ).run();
 
 db.prepare(
@@ -405,19 +426,19 @@ db.prepare(
     licenseId TEXT PRIMARY KEY,
     lastCodeNumber INTEGER DEFAULT 0
   )
-`
+`,
 ).run();
 
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_suppliers_license ON suppliers(licenseId, name)`
+  `CREATE INDEX IF NOT EXISTS idx_suppliers_license ON suppliers(licenseId, name)`,
 ).run();
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_suppliers_synced ON suppliers(isSynced)`
+  `CREATE INDEX IF NOT EXISTS idx_suppliers_synced ON suppliers(isSynced)`,
 ).run();
 
 db.prepare(
   `CREATE INDEX IF NOT EXISTS idx_suppliers_dirty 
-   ON suppliers(licenseId, updatedAt, syncedAt, deletedAt)`
+   ON suppliers(licenseId, updatedAt, syncedAt, deletedAt)`,
 ).run();
 
 // --- Purchase Holds (drafts) ---
@@ -437,21 +458,21 @@ db.prepare(
     syncedAt TEXT,
     deletedAt TEXT
   )
-`
+`,
 ).run();
 
 db.prepare(
   `
   CREATE UNIQUE INDEX IF NOT EXISTS idx_purchase_holds_no
   ON purchase_holds(licenseId, holdNo)
-`
+`,
 ).run();
 
 db.prepare(
   `
   CREATE INDEX IF NOT EXISTS idx_purchase_holds_license
   ON purchase_holds(licenseId, createdAt)
-`
+`,
 ).run();
 
 // Per-license sequence for holds
@@ -461,7 +482,7 @@ db.prepare(
     licenseId TEXT PRIMARY KEY,
     lastHoldNo INTEGER DEFAULT 0
   )
-`
+`,
 ).run();
 
 // --- Purchase Return Holds (drafts) ---
@@ -481,21 +502,21 @@ db.prepare(
     syncedAt TEXT,
     deletedAt TEXT
   )
-`
+`,
 ).run();
 
 db.prepare(
   `
   CREATE UNIQUE INDEX IF NOT EXISTS idx_purchase_return_holds_no
   ON purchase_return_holds(licenseId, holdNo)
-`
+`,
 ).run();
 
 db.prepare(
   `
   CREATE INDEX IF NOT EXISTS idx_purchase_return_holds_license
   ON purchase_return_holds(licenseId, createdAt)
-`
+`,
 ).run();
 
 // Per-license sequence for return holds
@@ -505,7 +526,7 @@ db.prepare(
     licenseId TEXT PRIMARY KEY,
     lastHoldNo INTEGER DEFAULT 0
   )
-`
+`,
 ).run();
 
 // --- Supplier Ledger ---
@@ -529,23 +550,23 @@ db.prepare(
     deletedAt TEXT,
     FOREIGN KEY (supplierId) REFERENCES suppliers(id)
   )
-`
+`,
 ).run();
 
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_supl_tx_supplier ON supplier_transactions(licenseId, supplierId, date)`
+  `CREATE INDEX IF NOT EXISTS idx_supl_tx_supplier ON supplier_transactions(licenseId, supplierId, date)`,
 ).run();
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_supl_tx_synced ON supplier_transactions(isSynced)`
+  `CREATE INDEX IF NOT EXISTS idx_supl_tx_synced ON supplier_transactions(isSynced)`,
 ).run();
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_supl_tx_ref ON supplier_transactions(licenseId, kind, refId)`
+  `CREATE INDEX IF NOT EXISTS idx_supl_tx_ref ON supplier_transactions(licenseId, kind, refId)`,
 ).run();
 
 // --- Purchases: link supplier ---
 addColumnIfMissing("purchases", "supplierId", "TEXT");
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_purchases_supplier ON purchases(licenseId, supplierId)`
+  `CREATE INDEX IF NOT EXISTS idx_purchases_supplier ON purchases(licenseId, supplierId)`,
 ).run();
 
 // --- Cash Ledger ---
@@ -567,19 +588,19 @@ db.prepare(
     syncedAt TEXT,
     deletedAt TEXT
   )
-`
+`,
 ).run();
 
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_cash_tx_license_date ON cash_transactions(licenseId, date)`
+  `CREATE INDEX IF NOT EXISTS idx_cash_tx_license_date ON cash_transactions(licenseId, date)`,
 ).run();
 
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_cash_tx_synced ON cash_transactions(isSynced)`
+  `CREATE INDEX IF NOT EXISTS idx_cash_tx_synced ON cash_transactions(isSynced)`,
 ).run();
 
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_cash_tx_ref ON cash_transactions(licenseId, kind, refId)`
+  `CREATE INDEX IF NOT EXISTS idx_cash_tx_ref ON cash_transactions(licenseId, kind, refId)`,
 ).run();
 
 // --- Supplier Bill Settlements (bill-wise) ---
@@ -596,14 +617,14 @@ db.prepare(
     FOREIGN KEY (paymentTxId) REFERENCES supplier_transactions(id) ON DELETE CASCADE,
     FOREIGN KEY (purchaseId)  REFERENCES purchases(id) ON DELETE CASCADE
   )
-`
+`,
 ).run();
 
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_supl_settle_supplier ON supplier_bill_settlements(licenseId, supplierId)`
+  `CREATE INDEX IF NOT EXISTS idx_supl_settle_supplier ON supplier_bill_settlements(licenseId, supplierId)`,
 ).run();
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_supl_settle_purchase ON supplier_bill_settlements(licenseId, purchaseId)`
+  `CREATE INDEX IF NOT EXISTS idx_supl_settle_purchase ON supplier_bill_settlements(licenseId, purchaseId)`,
 ).run();
 
 // --- SALES TABLES ----------------------------------------------------------
@@ -633,7 +654,7 @@ db.prepare(
     syncedAt TEXT,
     deletedAt TEXT
     )
-`
+`,
 ).run();
 
 // Unique slno per license
@@ -641,21 +662,21 @@ db.prepare(
   `
 CREATE UNIQUE INDEX IF NOT EXISTS idx_sales_slno
 ON sales(licenseId, slNo)
-`
+`,
 ).run();
 
 // Helpful indexes
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_sales_license_date ON sales(licenseId, saleDate)`
+  `CREATE INDEX IF NOT EXISTS idx_sales_license_date ON sales(licenseId, saleDate)`,
 ).run();
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_sales_customer ON sales(licenseId, customerId)`
+  `CREATE INDEX IF NOT EXISTS idx_sales_customer ON sales(licenseId, customerId)`,
 ).run();
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_sales_synced ON sales(isSynced)`
+  `CREATE INDEX IF NOT EXISTS idx_sales_synced ON sales(isSynced)`,
 ).run();
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_sales_dirty ON sales(licenseId, createdAt, syncedAt, deletedAt)`
+  `CREATE INDEX IF NOT EXISTS idx_sales_dirty ON sales(licenseId, createdAt, syncedAt, deletedAt)`,
 ).run();
 
 // Sale items
@@ -692,17 +713,17 @@ db.prepare(
   FOREIGN KEY (saleId) REFERENCES sales(id) ON DELETE CASCADE,
   FOREIGN KEY (productId) REFERENCES products(id)
   )
-`
+`,
 ).run();
 
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_sale_items_sale ON sale_items(saleId, lineNo)`
+  `CREATE INDEX IF NOT EXISTS idx_sale_items_sale ON sale_items(saleId, lineNo)`,
 ).run();
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_sale_items_synced ON sale_items(isSynced)`
+  `CREATE INDEX IF NOT EXISTS idx_sale_items_synced ON sale_items(isSynced)`,
 ).run();
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_sale_items_dirty ON sale_items(saleId, updatedAt, syncedAt, deletedAt)`
+  `CREATE INDEX IF NOT EXISTS idx_sale_items_dirty ON sale_items(saleId, updatedAt, syncedAt, deletedAt)`,
 ).run();
 
 // Per-license sequence for sales
@@ -712,7 +733,7 @@ CREATE TABLE IF NOT EXISTS sale_sequence (
 licenseId TEXT PRIMARY KEY,
 lastSlNo INTEGER DEFAULT 0
 )
-`
+`,
 ).run();
 
 // --- Sales Holds (drafts)
@@ -732,14 +753,14 @@ db.prepare(
   syncedAt TEXT,
   deletedAt TEXT
 )
-`
+`,
 ).run();
 
 db.prepare(
-  `CREATE UNIQUE INDEX IF NOT EXISTS idx_sale_holds_no ON sale_holds(licenseId, holdNo)`
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_sale_holds_no ON sale_holds(licenseId, holdNo)`,
 ).run();
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_sale_holds_license ON sale_holds(licenseId, createdAt)`
+  `CREATE INDEX IF NOT EXISTS idx_sale_holds_license ON sale_holds(licenseId, createdAt)`,
 ).run();
 
 db.prepare(
@@ -748,7 +769,7 @@ CREATE TABLE IF NOT EXISTS sale_hold_sequence (
 licenseId TEXT PRIMARY KEY,
 lastHoldNo INTEGER DEFAULT 0
 )
-`
+`,
 ).run();
 
 // --- Sales Returns ---------------------------------------------------------
@@ -777,14 +798,14 @@ db.prepare(
   syncedAt TEXT,
   deletedAt TEXT
   )
-`
+`,
 ).run();
 
 db.prepare(
-  `CREATE UNIQUE INDEX IF NOT EXISTS idx_sale_returns_slno ON sale_returns(licenseId, slNo)`
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_sale_returns_slno ON sale_returns(licenseId, slNo)`,
 ).run();
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_sale_returns_license_date ON sale_returns(licenseId, returnDate)`
+  `CREATE INDEX IF NOT EXISTS idx_sale_returns_license_date ON sale_returns(licenseId, returnDate)`,
 ).run();
 
 // Items
@@ -822,11 +843,29 @@ db.prepare(
   overReturnReason TEXT,
   FOREIGN KEY (returnId) REFERENCES sale_returns(id) ON DELETE CASCADE
   )
-`
+`,
 ).run();
 
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_sale_return_items_return ON sale_return_items(returnId, lineNo)`
+  `CREATE INDEX IF NOT EXISTS idx_sale_return_items_return ON sale_return_items(returnId, lineNo)`,
+).run();
+
+addColumnIfMissing("purchase_items", "batchId", "TEXT");
+addColumnIfMissing("sale_items", "batchId", "TEXT");
+addColumnIfMissing("purchase_return_items", "batchId", "TEXT");
+addColumnIfMissing("sale_return_items", "batchId", "TEXT");
+
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_pi_batch ON purchase_items(batchId)`,
+).run();
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_si_batch ON sale_items(batchId)`,
+).run();
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_pri_batch ON purchase_return_items(batchId)`,
+).run();
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_sri_batch ON sale_return_items(batchId)`,
 ).run();
 
 // Per-license sequence for returns
@@ -836,7 +875,7 @@ CREATE TABLE IF NOT EXISTS sale_return_sequence (
   licenseId TEXT PRIMARY KEY,
   lastSlNo INTEGER DEFAULT 0
 )
-`
+`,
 ).run();
 
 // --- Customers (parallel to suppliers) ------------------------------------
@@ -863,26 +902,26 @@ db.prepare(
   syncedAt TEXT,
   deletedAt TEXT
   )
-`
+`,
 ).run();
 
 addColumnIfMissing("customers", "code", "TEXT");
 addColumnIfMissing("customers", "codeNumber", "INTEGER");
 
 db.prepare(
-  `CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_code ON customers(licenseId, code)`
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_code ON customers(licenseId, code)`,
 ).run();
 db.prepare(
-  `CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_code_no ON customers(licenseId, codeNumber)`
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_code_no ON customers(licenseId, codeNumber)`,
 ).run();
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_customers_license ON customers(licenseId, name)`
+  `CREATE INDEX IF NOT EXISTS idx_customers_license ON customers(licenseId, name)`,
 ).run();
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_customers_synced ON customers(isSynced)`
+  `CREATE INDEX IF NOT EXISTS idx_customers_synced ON customers(isSynced)`,
 ).run();
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_customers_dirty ON customers(licenseId, updatedAt, syncedAt, deletedAt)`
+  `CREATE INDEX IF NOT EXISTS idx_customers_dirty ON customers(licenseId, updatedAt, syncedAt, deletedAt)`,
 ).run();
 
 // Customer code sequence
@@ -892,7 +931,7 @@ db.prepare(
   licenseId TEXT PRIMARY KEY,
   lastCodeNumber INTEGER DEFAULT 0
   )
-`
+`,
 ).run();
 
 // Customer ledger (parallel to supplier_transactions)
@@ -916,14 +955,14 @@ db.prepare(
   deletedAt TEXT,
   FOREIGN KEY (customerId) REFERENCES customers(id)
   )
-`
+`,
 ).run();
 
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_cust_tx_customer ON customer_transactions(licenseId, customerId, date)`
+  `CREATE INDEX IF NOT EXISTS idx_cust_tx_customer ON customer_transactions(licenseId, customerId, date)`,
 ).run();
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_cust_tx_synced ON customer_transactions(isSynced)`
+  `CREATE INDEX IF NOT EXISTS idx_cust_tx_synced ON customer_transactions(isSynced)`,
 ).run();
 
 // ====== ACCOUNTING MASTER TABLES ======
@@ -939,14 +978,14 @@ db.prepare(
     isSystem INTEGER DEFAULT 1,
     FOREIGN KEY (parentId) REFERENCES account_groups(id)
   )
-`
+`,
 ).run();
 
 addColumnIfMissing("account_groups", "code", "TEXT");
 addColumnIfMissing("account_groups", "section", "TEXT"); // 'ASSET'|'LIABILITY'|'PL'|'TRADING'
 addColumnIfMissing("account_groups", "sortOrder", "INTEGER");
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_ag_section_sort ON account_groups(section, sortOrder)`
+  `CREATE INDEX IF NOT EXISTS idx_ag_section_sort ON account_groups(section, sortOrder)`,
 ).run();
 
 // Accounts
@@ -968,16 +1007,16 @@ db.prepare(
     UNIQUE (licenseId, name),
     FOREIGN KEY (groupId) REFERENCES account_groups(id)
   )
-`
+`,
 ).run();
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_accounts_license ON accounts(licenseId, name)`
+  `CREATE INDEX IF NOT EXISTS idx_accounts_license ON accounts(licenseId, name)`,
 ).run();
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_accounts_group ON accounts(groupId)`
+  `CREATE INDEX IF NOT EXISTS idx_accounts_group ON accounts(groupId)`,
 ).run();
 db.prepare(
-  `CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_license_code ON accounts(licenseId, code)`
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_license_code ON accounts(licenseId, code)`,
 ).run();
 
 // General Journal
@@ -993,13 +1032,13 @@ db.prepare(
     createdAt TEXT,
     postedBy TEXT
   )
-`
+`,
 ).run();
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_journal_entries_license_date ON journal_entries(licenseId, date)`
+  `CREATE INDEX IF NOT EXISTS idx_journal_entries_license_date ON journal_entries(licenseId, date)`,
 ).run();
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_journal_entries_ref ON journal_entries(licenseId, refType, refId)`
+  `CREATE INDEX IF NOT EXISTS idx_journal_entries_ref ON journal_entries(licenseId, refType, refId)`,
 ).run();
 
 // General Journal
@@ -1018,13 +1057,13 @@ db.prepare(
     FOREIGN KEY (accountId) REFERENCES accounts(id),
     CHECK ( (debit = 0 AND credit > 0) OR (credit = 0 AND debit > 0) )
   )
-`
+`,
 ).run();
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_journal_lines_entry ON journal_lines(entryId, lineNo)`
+  `CREATE INDEX IF NOT EXISTS idx_journal_lines_entry ON journal_lines(entryId, lineNo)`,
 ).run();
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_journal_lines_account ON journal_lines(accountId)`
+  `CREATE INDEX IF NOT EXISTS idx_journal_lines_account ON journal_lines(accountId)`,
 ).run();
 
 // posting rules
@@ -1037,7 +1076,7 @@ db.prepare(
     lineRole TEXT NOT NULL,       -- 'STOCK/COS','REVENUE','CASH/BANK','DEBTOR','CREDITOR','INPUT_TAX','OUTPUT_TAX','ROUNDING'
     accountSelector TEXT NOT NULL -- free-form selector (future use)
   )
-`
+`,
 ).run();
 
 // Opening balances & meta
@@ -1055,10 +1094,10 @@ db.prepare(
     UNIQUE(accountId, fyStart),
     FOREIGN KEY (accountId) REFERENCES accounts(id)
   )
-`
+`,
 ).run();
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_aob_account ON account_opening_balances(accountId, fyStart)`
+  `CREATE INDEX IF NOT EXISTS idx_aob_account ON account_opening_balances(accountId, fyStart)`,
 ).run();
 
 db.prepare(
@@ -1072,10 +1111,10 @@ db.prepare(
     updatedAt TEXT,
     FOREIGN KEY (accountId) REFERENCES accounts(id)
   )
-`
+`,
 ).run();
 db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_am_account ON account_meta(accountId, key)`
+  `CREATE INDEX IF NOT EXISTS idx_am_account ON account_meta(accountId, key)`,
 ).run();
 // --- TAX MASTER ------------------------------------------------------------
 
@@ -1093,7 +1132,7 @@ db.prepare(
     createdAt TEXT, updatedAt TEXT,
     UNIQUE(licenseId, code)
   )
-`
+`,
 ).run();
 
 db.prepare(
@@ -1106,7 +1145,7 @@ db.prepare(
     createdAt TEXT, updatedAt TEXT,
     FOREIGN KEY (categoryId) REFERENCES tax_categories(id) ON DELETE CASCADE
   )
-`
+`,
 ).run();
 
 db.prepare(
@@ -1144,7 +1183,7 @@ db.prepare(
     FOREIGN KEY (cessAccountId)       REFERENCES accounts(id),
     FOREIGN KEY (singleTaxAccountId)  REFERENCES accounts(id)
   )
-`
+`,
 ).run();
 
 db.prepare(
@@ -1157,7 +1196,7 @@ db.prepare(
     UNIQUE(licenseId, productTaxCode),
     FOREIGN KEY (categoryId) REFERENCES tax_categories(id)
   )
-`
+`,
 ).run();
 
 try {
@@ -1166,7 +1205,7 @@ try {
     UPDATE tax_category_defaults
     SET salesReturnAccountId    = COALESCE(salesReturnAccountId,    salesAccountId),
         purchaseReturnAccountId = COALESCE(purchaseReturnAccountId, purchaseAccountId)
-  `
+  `,
   ).run();
 } catch (_) {}
 
@@ -1177,12 +1216,12 @@ db.prepare(
     name TEXT PRIMARY KEY,
     ranAt TEXT
   )
-`
+`,
 ).run();
 
 const alreadyRan = db
   .prepare(
-    `SELECT 1 FROM _migrations WHERE name='seed_default_batches_v1' LIMIT 1`
+    `SELECT 1 FROM _migrations WHERE name='seed_default_batches_v1' LIMIT 1`,
   )
   .get();
 
@@ -1196,7 +1235,7 @@ if (!alreadyRan) {
     SELECT id, licenseId, barcode, salePrice, costPrice, stock
     FROM products
     WHERE COALESCE(deletedAt,'')=''
-  `
+  `,
     )
     .all();
 
@@ -1239,17 +1278,175 @@ if (!alreadyRan) {
         });
       }
 
-      // From this point on, product.stock should derive from batches.
-      // Set product.stock to 0 and let your UI/queries use SUM(batches.stock)
+      // During transition, keep products.stock aligned with seeded batch stock.
+      // Long term, products.stock should be treated as a derived cache from batches.
       updProductSet.run({ id: p.id, ts, stock: qty });
     }
 
     db.prepare(
-      `INSERT INTO _migrations(name, ranAt) VALUES('seed_default_batches_v1', @ts)`
+      `INSERT INTO _migrations(name, ranAt) VALUES('seed_default_batches_v1', @ts)`,
     ).run({ ts });
   });
 
   trx();
 }
+
+const barcodeNormRan = db
+  .prepare(
+    `SELECT 1 FROM _migrations WHERE name='normalize_barcodes_v1' LIMIT 1`,
+  )
+  .get();
+
+if (!barcodeNormRan) {
+  try {
+    const rows = db
+      .prepare(
+        `
+      SELECT id, codeNumber, barcode FROM products
+      WHERE COALESCE(deletedAt,'')=''
+    `,
+      )
+      .all();
+
+    const upd = db.prepare(
+      `UPDATE products SET barcode=?, updatedAt=? WHERE id=?`,
+    );
+    const now = new Date().toISOString();
+
+    db.transaction(() => {
+      for (const row of rows) {
+        const gen = String(Number(row.codeNumber || 0)).padStart(5, "0");
+        if (row.barcode !== gen) upd.run(gen, now, row.id);
+      }
+      db.prepare(
+        `INSERT INTO _migrations(name, ranAt) VALUES('normalize_barcodes_v1', ?)`,
+      ).run(now);
+    })();
+  } catch (e) {
+    console.error("barcode normalization failed", e);
+  }
+}
+
+// --- Global Barcode Sequence ---
+// One row per license. lastBarcodeNumber = highest barcode number ever reserved.
+// Each new unique barcode = String(++lastBarcodeNumber).padStart(5, "0")
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS barcode_sequence (
+    licenseId TEXT PRIMARY KEY,
+    lastBarcodeNumber INTEGER DEFAULT 0
+  )
+`,
+).run();
+
+// Migration: seed barcode_sequence from existing barcodes so we don't re-issue them
+const barcodeSeqRan = db
+  .prepare(
+    `SELECT 1 FROM _migrations WHERE name='seed_barcode_sequence_v2' LIMIT 1`,
+  )
+  .get();
+
+if (!barcodeSeqRan) {
+  try {
+    db.transaction(() => {
+      const licenses = db
+        .prepare(
+          `
+          SELECT licenseId FROM products
+          UNION
+          SELECT licenseId FROM product_batches
+          UNION
+          SELECT licenseId FROM code_sequence
+        `,
+        )
+        .all();
+
+      const maxBatchStmt = db.prepare(`
+        SELECT MAX(CAST(barcode AS INTEGER)) AS mx
+        FROM product_batches
+        WHERE licenseId=?
+          AND barcode IS NOT NULL
+          AND barcode <> ''
+          AND barcode GLOB '[0-9]*'
+          AND barcode NOT GLOB '*[^0-9]*'
+          AND COALESCE(deletedAt,'')=''
+      `);
+
+      const maxProductStmt = db.prepare(`
+        SELECT MAX(CAST(barcode AS INTEGER)) AS mx
+        FROM products
+        WHERE licenseId=?
+          AND barcode IS NOT NULL
+          AND barcode <> ''
+          AND barcode GLOB '[0-9]*'
+          AND barcode NOT GLOB '*[^0-9]*'
+          AND COALESCE(deletedAt,'')=''
+      `);
+
+      const maxCodeStmt = db.prepare(`
+        SELECT lastCodeNumber AS mx
+        FROM code_sequence
+        WHERE licenseId=?
+      `);
+
+      const upsertSeq = db.prepare(`
+        INSERT INTO barcode_sequence (licenseId, lastBarcodeNumber)
+        VALUES (?, ?)
+        ON CONFLICT(licenseId) DO UPDATE SET
+          lastBarcodeNumber = CASE
+            WHEN barcode_sequence.lastBarcodeNumber > excluded.lastBarcodeNumber
+              THEN barcode_sequence.lastBarcodeNumber
+            ELSE excluded.lastBarcodeNumber
+          END
+      `);
+
+      for (const { licenseId } of licenses) {
+        const maxFromBatches = Number(maxBatchStmt.get(licenseId)?.mx || 0);
+        const maxFromProducts = Number(maxProductStmt.get(licenseId)?.mx || 0);
+        const maxFromCodeSeq = Number(maxCodeStmt.get(licenseId)?.mx || 0);
+
+        const maxForLicense = Math.max(
+          maxFromBatches,
+          maxFromProducts,
+          maxFromCodeSeq,
+        );
+
+        upsertSeq.run(licenseId, maxForLicense);
+      }
+
+      db.prepare(
+        `INSERT INTO _migrations(name, ranAt) VALUES('seed_barcode_sequence_v2', ?)`,
+      ).run(new Date().toISOString());
+
+      console.log(
+        `[db] barcode_sequence seeded per license. licenses=${licenses.length}`,
+      );
+    })();
+  } catch (e) {
+    console.error("[db] seed_barcode_sequence_v2 failed:", e);
+  }
+}
+
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS shop_settings (
+    licenseId TEXT PRIMARY KEY,
+    shopName TEXT NOT NULL,
+    logoDataUrl TEXT,
+    addressLine1 TEXT,
+    addressLine2 TEXT,
+    city TEXT,
+    state TEXT,
+    pincode TEXT,
+    mobile TEXT,
+    email TEXT,
+    gstin TEXT,
+    footerNote TEXT,
+    authorizedSignatory TEXT,
+    createdAt TEXT,
+    updatedAt TEXT
+  )
+`,
+).run();
 
 module.exports = db;

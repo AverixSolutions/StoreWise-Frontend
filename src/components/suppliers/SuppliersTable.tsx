@@ -111,7 +111,7 @@ export default function SuppliersTable() {
           category: debouncedCategory || "",
           page,
           pageSize,
-        }
+        },
       );
 
       setSuppliers(result.suppliers);
@@ -442,7 +442,7 @@ function SupplierBalance({ supplierId }: { supplierId: string }) {
   useEffect(() => {
     const loadBalance = async () => {
       try {
-        const licenseId = localStorage.getItem("licenseId")!;
+        const licenseId = localStorage.getItem("licenseId") || "demo-license";
         const { balance: bal } = await (
           window as any
         ).electronAPI.getSupplierSummary(licenseId, supplierId);

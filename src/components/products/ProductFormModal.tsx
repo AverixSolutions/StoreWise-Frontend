@@ -1,7 +1,9 @@
 // src/components/products/ProductFormModal.tsx
+
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import { Plus, Trash2, Tag, Zap } from "lucide-react";
 import Dropdown from "@/components/ui/Dropdown";
 
 interface Product {
@@ -17,6 +19,14 @@ interface Product {
   costPrice: number;
   salePrice?: number;
   stock: number;
+}
+
+interface BarcodeEntry {
+  id: string; // temp client id
+  barcode: string; // the actual barcode string
+  isGenerated: boolean; // was auto-generated from sequence
+  saved: boolean; // committed to DB (edit mode)
+  batchId?: string; // DB batch id if saved
 }
 
 interface ProductFormModalProps {
@@ -35,7 +45,6 @@ export default function ProductFormModal({
   const [code, setCode] = useState<string>("00001");
   const [name, setName] = useState("");
   const [brand, setBrand] = useState("");
-  const [barcode, setBarcode] = useState("");
   const [category, setCategory] = useState("");
   const [unit, setUnit] = useState("NOS");
   const [tax, setTax] = useState("P5");
@@ -43,9 +52,18 @@ export default function ProductFormModal({
   const [costPrice, setCostPrice] = useState("");
   const [salePrice, setSalePrice] = useState("");
 
+  // Barcode management
+  const [barcodeEntries, setBarcodeEntries] = useState<BarcodeEntry[]>([]);
+  const [customBarcodeInput, setCustomBarcodeInput] = useState("");
+  const [barcodeError, setBarcodeError] = useState<string | null>(null);
+
+  const licenseId =
+    typeof window !== "undefined"
+      ? localStorage.getItem("licenseId") || "demo-license"
+      : "demo-license";
+
   const nameRef = useRef<HTMLInputElement>(null);
   const brandRef = useRef<HTMLInputElement>(null);
-  const barcodeRef = useRef<HTMLInputElement>(null);
   const unitRef = useRef<HTMLButtonElement>(null);
   const taxRef = useRef<HTMLButtonElement>(null);
   const categoryRef = useRef<HTMLInputElement>(null);
@@ -56,19 +74,16 @@ export default function ProductFormModal({
   const IDX = {
     NAME: 0,
     BRAND: 1,
-    BARCODE: 2,
-    UNIT: 3,
-    TAX: 4,
-    CATEGORY: 5,
-    HSN: 6,
-    COST: 7,
-    SALE: 8,
+    UNIT: 2,
+    TAX: 3,
+    CATEGORY: 4,
+    HSN: 5,
+    COST: 6,
+    SALE: 7,
   } as const;
-
   const inputRefs = [
     nameRef,
     brandRef,
-    barcodeRef,
     unitRef,
     taxRef,
     categoryRef,
@@ -77,10 +92,7 @@ export default function ProductFormModal({
     saleRef,
   ];
 
-  const handleKeyDown = (
-    e: React.KeyboardEvent<HTMLElement>,
-    index: number
-  ) => {
+  function handleKeyDown(e: React.KeyboardEvent<HTMLElement>, index: number) {
     if (e.key === "Enter") {
       e.preventDefault();
       if (e.shiftKey) {
@@ -89,64 +101,131 @@ export default function ProductFormModal({
         if (index < inputRefs.length - 1) {
           inputRefs[index + 1].current?.focus();
         } else {
-          (document.activeElement as HTMLElement).blur();
           const form = (e.currentTarget as HTMLElement).closest(
-            "form"
+            "form",
           ) as HTMLFormElement | null;
           form?.requestSubmit();
         }
       }
     }
-  };
+  }
 
   useEffect(() => {
-    if (isOpen) {
-      requestAnimationFrame(() => {
-        nameRef.current?.focus();
-      });
-    }
+    if (isOpen) requestAnimationFrame(() => nameRef.current?.focus());
   }, [isOpen]);
 
   useEffect(() => {
-    if (isOpen) {
-      if (editProduct) {
-        // Edit mode
-        setCode(editProduct.code);
-        setName(editProduct.name);
-        setBrand(editProduct.brand || "");
-        setBarcode((editProduct as any).barcode || "");
-        setCategory(editProduct.category || "");
-        setUnit(editProduct.unit);
-        setTax(editProduct.tax);
-        setHsn(editProduct.hsn || "");
-        setCostPrice(editProduct.costPrice.toString());
-        setSalePrice(editProduct.salePrice?.toString() || "");
-      } else {
-        // Create mode
-        const licenseId = localStorage.getItem("licenseId") || "demo-license";
-        window.electronAPI.getNextCode(licenseId).then((nextCode: string) => {
-          setCode(nextCode);
-        });
-        resetForm();
-      }
+    if (!isOpen) return;
+    if (editProduct) {
+      setCode(editProduct.code);
+      setName(editProduct.name);
+      setBrand(editProduct.brand || "");
+      setCategory(editProduct.category || "");
+      setUnit(editProduct.unit);
+      setTax(editProduct.tax);
+      setHsn(editProduct.hsn || "");
+      setCostPrice(editProduct.costPrice.toString());
+      setSalePrice(editProduct.salePrice?.toString() || "");
+      // Load existing barcodes from DB
+      loadExistingBarcodes(editProduct.id);
+    } else {
+      resetForm();
+      window.electronAPI.getNextCode(licenseId).then((nextCode: string) => {
+        setCode(nextCode);
+      });
     }
   }, [isOpen, editProduct]);
 
-  const resetForm = () => {
+  async function loadExistingBarcodes(productId: string) {
+    const res = await (window as any).electronAPI.listBarcodesForProduct(
+      licenseId,
+      productId,
+    );
+    if (res?.success) {
+      const entries: BarcodeEntry[] = (res.rows || []).map((b: any) => ({
+        id: b.id,
+        barcode: b.barcode || "",
+        isGenerated: /^\d{5}$/.test(b.barcode || ""),
+        saved: true,
+        batchId: b.id,
+      }));
+      setBarcodeEntries(entries);
+    }
+  }
+
+  function resetForm() {
     setName("");
     setBrand("");
-    setBarcode("");
     setCategory("");
     setUnit("NOS");
     setTax("P5");
     setHsn("");
     setCostPrice("");
     setSalePrice("");
-  };
+    setBarcodeEntries([]);
+    setCustomBarcodeInput("");
+    setBarcodeError(null);
+  }
+
+  // Add a system-generated barcode (reserves from global sequence)
+  async function addGeneratedBarcode() {
+    setBarcodeError(null);
+    const res = await (window as any).electronAPI.reserveBarcodes(licenseId, 1);
+    if (!res?.success) {
+      setBarcodeError("Failed to generate barcode");
+      return;
+    }
+    const barcode = res.barcodes[0];
+    setBarcodeEntries((prev) => [
+      ...prev,
+      { id: `temp-${Date.now()}`, barcode, isGenerated: true, saved: false },
+    ]);
+  }
+
+  // Add a custom barcode
+  function addCustomBarcode() {
+    const bc = customBarcodeInput.trim();
+    if (!bc) {
+      setBarcodeError("Enter a barcode value");
+      return;
+    }
+    if (barcodeEntries.some((e) => e.barcode === bc)) {
+      setBarcodeError("Barcode already in the list");
+      return;
+    }
+    setBarcodeError(null);
+    setBarcodeEntries((prev) => [
+      ...prev,
+      {
+        id: `temp-${Date.now()}`,
+        barcode: bc,
+        isGenerated: false,
+        saved: false,
+      },
+    ]);
+    setCustomBarcodeInput("");
+  }
+
+  // Remove a barcode entry (soft delete from DB if saved, else just remove from list)
+  async function removeBarcode(entry: BarcodeEntry) {
+    if (entry.saved && entry.batchId) {
+      const ok = confirm(
+        `Remove barcode ${entry.barcode}? Stock will also be removed.`,
+      );
+      if (!ok) return;
+      const res = await (window as any).electronAPI.deleteBarcode(
+        entry.batchId,
+      );
+      if (!res?.success) {
+        alert("Failed to delete barcode");
+        return;
+      }
+    }
+    setBarcodeEntries((prev) => prev.filter((e) => e.id !== entry.id));
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const licenseId = localStorage.getItem("licenseId") || "demo-license";
 
     try {
       const productData = {
@@ -156,7 +235,6 @@ export default function ProductFormModal({
         name,
         brand: brand || null,
         category: category || null,
-        barcode: barcode || null,
         unit,
         tax,
         hsn: hsn || null,
@@ -164,26 +242,43 @@ export default function ProductFormModal({
         salePrice: salePrice ? parseFloat(salePrice) : null,
       };
 
+      let productId = "";
+
       if (editProduct) {
         await window.electronAPI.updateProduct(editProduct.id, productData);
-        alert("✅ Product updated successfully!");
+        productId = editProduct.id;
       } else {
-        await window.electronAPI.createProduct(productData);
-        alert("✅ Product created successfully!");
+        const result = await window.electronAPI.createProduct(productData);
+        productId = result?.productId || "";
+
+        if (!productId) {
+          const p = await window.electronAPI.getProductByCode(licenseId, code);
+          productId = p?.id || "";
+        }
       }
 
+      // Save all unsaved barcode entries
+      if (productId) {
+        for (const entry of barcodeEntries) {
+          if (!entry.saved && entry.barcode) {
+            await (window as any).electronAPI.createBarcodeForProduct({
+              licenseId,
+              productId,
+              barcode: entry.barcode,
+              useGenerated: false, // already have the barcode string
+              costPrice: costPrice ? parseFloat(costPrice) : null,
+              salePrice: salePrice ? parseFloat(salePrice) : null,
+            });
+          }
+        }
+      }
+
+      alert(`✅ Product ${editProduct ? "updated" : "created"} successfully!`);
       onSuccess();
       onClose();
-    } catch (error) {
-      alert(
-        `❌ Failed to ${
-          editProduct ? "update" : "create"
-        } product. Please try again.`
-      );
-      console.error(
-        `Error ${editProduct ? "updating" : "creating"} product:`,
-        error
-      );
+    } catch (error: any) {
+      alert(`❌ ${error?.message || "Failed to save product."}`);
+      console.error("ProductFormModal error:", error);
     }
   };
 
@@ -194,7 +289,6 @@ export default function ProductFormModal({
     { value: "P18", label: "GST 18%" },
     { value: "P28", label: "GST 28%" },
   ];
-
   const unitOptions = [
     { value: "NOS", label: "Numbers (NOS)" },
     { value: "KG", label: "Kilograms (KG)" },
@@ -210,15 +304,16 @@ export default function ProductFormModal({
       role="dialog"
       aria-modal="true"
     >
-      <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0 transition-opacity bg-white/5 backdrop-blur-xs">
-        <div className="inline-block w-full max-w-2xl my-8 overflow-hidden text-left align-middle transition-all transform bg-white shadow-xl rounded-xl">
+      <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:p-0 bg-black/40 backdrop-blur-sm">
+        <div className="inline-block w-full max-w-2xl my-8 overflow-hidden text-left align-middle transform bg-white shadow-xl rounded-xl">
+          {/* Header */}
           <div className="bg-gradient-to-r from-averix-red-dark to-averix-red-accent p-4">
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-lg font-semibold text-white">
                   {editProduct ? "Edit Item" : "Add New Item"}
                 </h2>
-                <p className="text-averix-white opacity-90 text-sm">
+                <p className="text-white opacity-90 text-sm">
                   {editProduct
                     ? "Update product information"
                     : "Create a new product in your inventory"}
@@ -226,9 +321,7 @@ export default function ProductFormModal({
               </div>
               <button
                 type="button"
-                onClick={() => {
-                  onClose();
-                }}
+                onClick={onClose}
                 className="text-white hover:text-gray-200 p-1"
               >
                 <svg
@@ -248,7 +341,10 @@ export default function ProductFormModal({
             </div>
           </div>
 
-          <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <form
+            onSubmit={handleSubmit}
+            className="p-6 space-y-4 max-h-[80vh] overflow-y-auto"
+          >
             {/* Item Code */}
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -279,7 +375,6 @@ export default function ProductFormModal({
                   className="w-full border-2 border-gray-200 rounded-lg p-2.5 focus:border-averix-red-dark focus:outline-none transition-colors"
                 />
               </div>
-
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Brand
@@ -294,26 +389,6 @@ export default function ProductFormModal({
                   className="w-full border-2 border-gray-200 rounded-lg p-2.5 focus:border-averix-red-dark focus:outline-none transition-colors"
                 />
               </div>
-            </div>
-
-            {/* Barcode */}
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Default Barcode (optional)
-              </label>
-              <p className="text-xs text-gray-500 mt-1 mb-2">
-                Tip: batch barcodes override this. Use this only if you don't
-                maintain batch barcodes.
-              </p>
-              <input
-                ref={barcodeRef}
-                type="text"
-                value={barcode}
-                onChange={(e) => setBarcode(e.target.value.trim())}
-                onKeyDown={(e) => handleKeyDown(e, IDX.BARCODE)}
-                placeholder="Scan or enter barcode"
-                className="w-full border-2 border-gray-200 rounded-lg p-2.5 focus:border-averix-red-dark focus:outline-none transition-colors font-mono"
-              />
             </div>
 
             {/* Unit and Tax */}
@@ -332,7 +407,6 @@ export default function ProductFormModal({
                   required
                 />
               </div>
-
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Tax Rate <span className="text-red-500">*</span>
@@ -365,7 +439,6 @@ export default function ProductFormModal({
                   className="w-full border-2 border-gray-200 rounded-lg p-2.5 focus:border-averix-red-dark focus:outline-none transition-colors"
                 />
               </div>
-
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                   HSN Code
@@ -406,7 +479,6 @@ export default function ProductFormModal({
                   />
                 </div>
               </div>
-
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Sale Price
@@ -430,13 +502,115 @@ export default function ProductFormModal({
               </div>
             </div>
 
-            {/* Submit Button */}
+            {/* ── BARCODE SECTION ── */}
+            <div className="border-2 border-dashed border-gray-200 rounded-xl p-4 space-y-3 bg-gray-50">
+              <div className="flex items-center gap-2">
+                <Tag className="w-4 h-4 text-averix-red-dark" />
+                <span className="text-sm font-semibold text-gray-800">
+                  Barcodes (Batches)
+                </span>
+                <span className="text-xs text-gray-500 ml-1">
+                  — optional, each barcode = a batch
+                </span>
+              </div>
+
+              {/* Existing + pending barcodes */}
+              {barcodeEntries.length > 0 && (
+                <div className="space-y-2">
+                  {barcodeEntries.map((entry) => (
+                    <div
+                      key={entry.id}
+                      className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2"
+                    >
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-semibold ${
+                          entry.isGenerated
+                            ? "bg-blue-100 text-blue-800"
+                            : "bg-purple-100 text-purple-800"
+                        }`}
+                      >
+                        {entry.barcode}
+                      </span>
+                      {entry.isGenerated && (
+                        <span className="text-xs text-gray-400 flex items-center gap-1">
+                          <Zap className="w-3 h-3" /> generated
+                        </span>
+                      )}
+                      {entry.saved && (
+                        <span className="text-xs text-green-600 ml-auto mr-1">
+                          saved
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => removeBarcode(entry)}
+                        className="ml-auto p-1 rounded hover:bg-red-50 text-red-500 hover:text-red-700 transition-colors"
+                        title="Remove barcode"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Add actions */}
+              <div className="flex gap-2 items-center flex-wrap">
+                {/* Generate next system barcode */}
+                <button
+                  type="button"
+                  onClick={addGeneratedBarcode}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-medium hover:bg-blue-700 transition-colors"
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                  Generate Barcode
+                </button>
+
+                {/* Custom barcode input */}
+                <div className="flex items-center gap-1 flex-1 min-w-[180px]">
+                  <input
+                    type="text"
+                    value={customBarcodeInput}
+                    onChange={(e) => {
+                      setCustomBarcodeInput(e.target.value);
+                      setBarcodeError(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        addCustomBarcode();
+                      }
+                    }}
+                    placeholder="Custom barcode (e.g. 90808909)"
+                    className="flex-1 h-8 px-2 border border-gray-300 rounded-lg text-xs focus:border-averix-red-dark focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={addCustomBarcode}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-gray-700 text-white text-xs hover:bg-gray-800 transition-colors"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Add
+                  </button>
+                </div>
+              </div>
+
+              {barcodeError && (
+                <p className="text-xs text-red-600">{barcodeError}</p>
+              )}
+
+              {barcodeEntries.length === 0 && (
+                <p className="text-xs text-gray-400 italic">
+                  No barcodes added yet. A default will be auto-assigned on
+                  first purchase.
+                </p>
+              )}
+            </div>
+
+            {/* Submit */}
             <div className="flex gap-3 pt-4 border-t border-gray-200">
               <button
                 type="button"
-                onClick={() => {
-                  onClose();
-                }}
+                onClick={onClose}
                 className="flex-1 bg-gray-200 text-gray-800 font-semibold py-3 px-6 rounded-lg hover:bg-gray-300 transition-colors"
               >
                 Cancel

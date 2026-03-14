@@ -14,7 +14,7 @@ function getNextSaleSlNo(licenseId) {
     INSERT INTO sale_sequence (licenseId, lastSlNo)
     VALUES (?, ?)
     ON CONFLICT(licenseId) DO UPDATE SET lastSlNo = excluded.lastSlNo
-  `
+  `,
   ).run(licenseId, next);
   return next;
 }
@@ -28,7 +28,7 @@ function getNextSaleHoldNo(licenseId) {
     INSERT INTO sale_hold_sequence (licenseId, lastHoldNo)
     VALUES (?, ?)
     ON CONFLICT(licenseId) DO UPDATE SET lastHoldNo = excluded.lastHoldNo
-  `
+  `,
   ).run(licenseId, next);
   return next;
 }
@@ -36,12 +36,47 @@ function getItemsForSale(saleId) {
   return db
     .prepare(
       `
-    SELECT productId, quantity, isFree
+    SELECT productId, quantity, isFree, batchId
     FROM sale_items
     WHERE saleId = ? AND COALESCE(deletedAt,'') = ''
-  `
+  `,
     )
     .all(saleId);
+}
+function rebuildProductStock(productId) {
+  const row = db
+    .prepare(
+      `
+      SELECT COALESCE(SUM(stock),0) AS qty
+      FROM product_batches
+      WHERE productId=? AND COALESCE(deletedAt,'')=''
+    `,
+    )
+    .get(productId);
+
+  const now = new Date().toISOString();
+
+  db.prepare(
+    `
+    UPDATE products
+    SET stock=?, updatedAt=?, isSynced=0, syncedAt=NULL
+    WHERE id=?
+  `,
+  ).run(Number(row?.qty || 0), now, productId);
+}
+
+function bumpBatchAndProductStock({ batchId, productId, deltaQty }) {
+  const now = new Date().toISOString();
+
+  db.prepare(
+    `
+    UPDATE product_batches
+    SET stock = COALESCE(stock,0) + ?, updatedAt = ?
+    WHERE id = ?
+  `,
+  ).run(Number(deltaQty || 0), now, batchId);
+
+  rebuildProductStock(productId);
 }
 
 // ========== register ==========
@@ -75,7 +110,7 @@ function registerSaleHandlers() {
     }
     if (q && q.trim()) {
       where.push(
-        `(COALESCE(billNo,'') LIKE @q OR COALESCE(customerName,'') LIKE @q)`
+        `(COALESCE(billNo,'') LIKE @q OR COALESCE(customerName,'') LIKE @q)`,
       );
       params.q = `%${q.trim()}%`;
     }
@@ -91,7 +126,7 @@ function registerSaleHandlers() {
       ${base}
       ORDER BY datetime(saleDate) DESC, slNo DESC
       LIMIT @limit OFFSET @offset
-    `
+    `,
       )
       .all({ ...params, limit: pageSize, offset: (page - 1) * pageSize });
 
@@ -105,20 +140,29 @@ function registerSaleHandlers() {
     const items = db
       .prepare(
         `
-      SELECT * FROM sale_items WHERE saleId = ? ORDER BY COALESCE(lineNo,0), createdAt
-    `
+      SELECT si.*, p.name as productName, p.code as productCode
+      FROM sale_items si
+      LEFT JOIN products p ON p.id = si.productId
+      WHERE si.saleId = ?
+      ORDER BY COALESCE(si.lineNo,0), si.createdAt
+    `,
       )
       .all(id);
     return { success: true, sale: s, items };
   });
+
   ipcMain.handle("sale:getFull", (evt, id) => {
     const s = db.prepare(`SELECT * FROM sales WHERE id = ?`).get(id);
     if (!s) return { success: false, error: "Not found" };
     const items = db
       .prepare(
         `
-      SELECT * FROM sale_items WHERE saleId = ? ORDER BY COALESCE(lineNo,0), createdAt
-    `
+      SELECT si.*, p.name as productName, p.code as productCode
+      FROM sale_items si
+      LEFT JOIN products p ON p.id = si.productId
+      WHERE si.saleId = ?
+      ORDER BY COALESCE(si.lineNo,0), si.createdAt
+    `,
       )
       .all(id);
     return { success: true, sale: s, items };
@@ -153,8 +197,8 @@ function registerSaleHandlers() {
         id, saleId, productId, barcode, quantity, unit, rate, mrp,
         taxPercent, taxAmount, discount, discountType, salePrice, profit,
         totalCost, billedValue, effectiveUnitValue, batchNo, mfgDate, expiryDate,
-        lineNo, isFree, createdAt, updatedAt, isSynced
-      ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+        lineNo, isFree, batchId, createdAt, updatedAt, isSynced
+      ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
     `);
 
     const trx = db.transaction((header, items) => {
@@ -175,7 +219,7 @@ function registerSaleHandlers() {
         header.discount || 0,
         header.saleType === "CASH" ? "CASH" : "CREDIT",
         now,
-        now
+        now,
       );
 
       items.forEach((it, idx) => {
@@ -211,6 +255,34 @@ function registerSaleHandlers() {
 
         totalAmount += billedValue;
 
+        // Resolve batchId
+        let batchId = null;
+        if (it.batchNo || it.barcode || it.mfgDate || it.expiryDate) {
+          const batch = db
+            .prepare(
+              `
+              SELECT id FROM product_batches
+              WHERE licenseId = ?
+                AND productId = ?
+                AND COALESCE(deletedAt,'') = ''
+                AND COALESCE(batchNo,'') = COALESCE(?, '')
+                AND COALESCE(barcode,'') = COALESCE(?, '')
+                AND COALESCE(mfgDate,'') = COALESCE(?, '')
+                AND COALESCE(expiryDate,'') = COALESCE(?, '')
+              LIMIT 1
+            `,
+            )
+            .get(
+              header.licenseId,
+              it.productId,
+              it.batchNo || null,
+              it.barcode || null,
+              it.mfgDate || null,
+              it.expiryDate || null,
+            );
+          batchId = batch?.id || null;
+        }
+
         insItem.run(
           uuidv4(),
           newId,
@@ -234,21 +306,47 @@ function registerSaleHandlers() {
           it.expiryDate || null,
           it.lineNo || idx + 1,
           it.isFree ? 1 : 0,
+          batchId,
           now,
-          now
+          now,
         );
 
         if (!it.isFree && qty > 0) {
-          db.prepare(
-            `UPDATE products SET stock = COALESCE(stock,0) - ? WHERE id=?`
-          ).run(qty, it.productId);
+          if (batchId) {
+            const batchRow = db
+              .prepare(`SELECT stock FROM product_batches WHERE id=?`)
+              .get(batchId);
+
+            if (!batchRow) {
+              throw new Error(`Batch not found for product ${it.productId}`);
+            }
+
+            if (Number(batchRow.stock || 0) < qty) {
+              throw new Error(
+                `Insufficient batch stock for product ${it.productId}. Available: ${Number(
+                  batchRow.stock || 0,
+                )}, Required: ${qty}`,
+              );
+            }
+            bumpBatchAndProductStock({
+              batchId,
+              productId: it.productId,
+              deltaQty: -qty,
+            });
+          } else {
+            db.prepare(
+              `UPDATE products
+   SET stock = COALESCE(stock,0) - ?, updatedAt = ?, isSynced = 0, syncedAt = NULL
+   WHERE id=?`,
+            ).run(qty, now, it.productId);
+          }
         }
       });
 
       db.prepare(`UPDATE sales SET totalAmount=?, discount=? WHERE id=?`).run(
         totalAmount,
         header.discount || 0,
-        newId
+        newId,
       );
 
       // Customer ledger (CREDIT -> receivable increases)
@@ -259,7 +357,7 @@ function registerSaleHandlers() {
           INSERT INTO customer_transactions
           (id, licenseId, customerId, kind, refId, refNo, date, amount, sign, notes, createdAt, updatedAt, isSynced)
           VALUES(?, ?, ?, 'SALE', ?, ?, ?, ?, 1, 'Sale', ?, ?, 0)
-        `
+        `,
         ).run(
           uuidv4(),
           header.licenseId,
@@ -269,7 +367,7 @@ function registerSaleHandlers() {
           header.saleDate || now,
           grand,
           now,
-          now
+          now,
         );
       }
     });
@@ -292,16 +390,26 @@ function registerSaleHandlers() {
       const oldItems = getItemsForSale(id);
       for (const it of oldItems) {
         if (!it.isFree) {
-          db.prepare(
-            `UPDATE products SET stock = COALESCE(stock,0) + ? WHERE id=?`
-          ).run(it.quantity, it.productId);
+          if (it.batchId) {
+            bumpBatchAndProductStock({
+              batchId: it.batchId,
+              productId: it.productId,
+              deltaQty: Number(it.quantity || 0),
+            });
+          } else {
+            db.prepare(
+              `UPDATE products
+   SET stock = COALESCE(stock,0) + ?, updatedAt = ?, isSynced = 0, syncedAt = NULL
+   WHERE id=?`,
+            ).run(it.quantity, now, it.productId);
+          }
         }
       }
 
       // Compute totals
       const totalAmount = items.reduce(
         (s, it) => s + Number(it.billedValue || 0),
-        0
+        0,
       );
       const grand = Math.max(0, totalAmount - Number(header.discount || 0));
 
@@ -315,7 +423,7 @@ function registerSaleHandlers() {
           totalAmount=@totalAmount, saleType=@saleType,
           updatedAt=@now, isSynced=0
         WHERE id=@id
-      `
+      `,
       ).run({
         id,
         billNo: header.billNo || null,
@@ -335,22 +443,52 @@ function registerSaleHandlers() {
       // Replace items
       db.prepare(`DELETE FROM sale_items WHERE saleId = ?`).run(id);
       const insItem = db.prepare(`
-        INSERT INTO sale_items(
-          id, saleId, productId, quantity, unit, rate, taxPercent, taxAmount,
-          discount, discountType, salePrice, profit, totalCost, billedValue,
-          barcode, mrp, batchNo, mfgDate, expiryDate, lineNo, isFree,
-          effectiveUnitValue, createdAt, updatedAt, isSynced, syncedAt
-        ) VALUES (
-          lower(hex(randomblob(16))), @saleId, @productId, @quantity, @unit, @rate, @taxPercent, @taxAmount,
-          @discount, @discountType, @salePrice, @profit, @totalCost, @billedValue,
-          @barcode, @mrp, @batchNo, @mfgDate, @expiryDate, @lineNo, @isFree,
-          @effectiveUnitValue, @now, @now, 0, NULL
-        )
-      `);
+  INSERT INTO sale_items(
+    id, saleId, productId, quantity, unit, rate, taxPercent, taxAmount,
+    discount, discountType, salePrice, profit, totalCost, billedValue,
+    barcode, mrp, batchNo, mfgDate, expiryDate, lineNo, isFree,
+    batchId, effectiveUnitValue, createdAt, updatedAt, isSynced, syncedAt
+  ) VALUES (
+    lower(hex(randomblob(16))), @saleId, @productId, @quantity, @unit, @rate, @taxPercent, @taxAmount,
+    @discount, @discountType, @salePrice, @profit, @totalCost, @billedValue,
+    @barcode, @mrp, @batchNo, @mfgDate, @expiryDate, @lineNo, @isFree,
+    @batchId, @effectiveUnitValue, @now, @now, 0, NULL
+  )
+`);
 
       items.forEach((it, idx) => {
         const qty = Number(it.quantity || 0);
         const effUnit = qty > 0 ? Number(it.billedValue || 0) / qty : 0;
+
+        let batchId = null;
+
+        if (it.batchNo || it.barcode || it.mfgDate || it.expiryDate) {
+          const batch = db
+            .prepare(
+              `
+        SELECT id
+        FROM product_batches
+        WHERE licenseId = ?
+          AND productId = ?
+          AND COALESCE(deletedAt,'') = ''
+          AND COALESCE(batchNo,'') = COALESCE(?, '')
+          AND COALESCE(barcode,'') = COALESCE(?, '')
+          AND COALESCE(mfgDate,'') = COALESCE(?, '')
+          AND COALESCE(expiryDate,'') = COALESCE(?, '')
+        LIMIT 1
+      `,
+            )
+            .get(
+              header.licenseId,
+              it.productId,
+              it.batchNo || null,
+              it.barcode || null,
+              it.mfgDate || null,
+              it.expiryDate || null,
+            );
+
+          batchId = batch?.id || null;
+        }
 
         insItem.run({
           saleId: id,
@@ -373,14 +511,40 @@ function registerSaleHandlers() {
           expiryDate: it.expiryDate ?? null,
           lineNo: it.lineNo ?? idx + 1,
           isFree: it.isFree ? 1 : 0,
+          batchId,
           effectiveUnitValue: effUnit,
           now,
         });
 
         if (!it.isFree && qty > 0) {
-          db.prepare(
-            `UPDATE products SET stock = COALESCE(stock,0) - ? WHERE id=?`
-          ).run(qty, it.productId);
+          if (batchId) {
+            const batchRow = db
+              .prepare(`SELECT stock FROM product_batches WHERE id=?`)
+              .get(batchId);
+
+            if (!batchRow) {
+              throw new Error(`Batch not found for product ${it.productId}`);
+            }
+
+            if (Number(batchRow.stock || 0) < qty) {
+              throw new Error(
+                `Insufficient batch stock for product ${it.productId}. Available: ${Number(
+                  batchRow.stock || 0,
+                )}, Required: ${qty}`,
+              );
+            }
+            bumpBatchAndProductStock({
+              batchId,
+              productId: it.productId,
+              deltaQty: -qty,
+            });
+          } else {
+            db.prepare(
+              `UPDATE products
+         SET stock = COALESCE(stock,0) - ?, updatedAt = ?, isSynced = 0, syncedAt = NULL
+         WHERE id=?`,
+            ).run(qty, now, it.productId);
+          }
         }
       });
 
@@ -389,7 +553,7 @@ function registerSaleHandlers() {
         `
         DELETE FROM customer_transactions
         WHERE licenseId=@licenseId AND kind='SALE' AND refId=@refId
-      `
+      `,
       ).run({ licenseId: header.licenseId, refId: id });
 
       if (header.saleType !== "CASH" && header.customerId) {
@@ -398,7 +562,7 @@ function registerSaleHandlers() {
           INSERT INTO customer_transactions
           (id, licenseId, customerId, kind, refId, refNo, date, amount, sign, notes, createdAt, updatedAt, isSynced)
           VALUES (lower(hex(randomblob(16))), ?, ?, 'SALE', ?, ?, ?, ?, 1, 'Sale', ?, ?, 0)
-        `
+        `,
         ).run(
           header.licenseId,
           header.customerId,
@@ -407,7 +571,7 @@ function registerSaleHandlers() {
           header.saleDate || now,
           grand,
           now,
-          now
+          now,
         );
       }
     });
@@ -427,21 +591,42 @@ function registerSaleHandlers() {
       const items = getItemsForSale(id);
       for (const it of items) {
         if (!it.isFree) {
-          db.prepare(
-            `UPDATE products SET stock = COALESCE(stock,0) + ? WHERE id=?`
-          ).run(it.quantity, it.productId);
+          if (it.batchId) {
+            bumpBatchAndProductStock({
+              batchId: it.batchId,
+              productId: it.productId,
+              deltaQty: Number(it.quantity || 0),
+            });
+          } else {
+            db.prepare(
+              `UPDATE products
+   SET stock = COALESCE(stock,0) + ?, updatedAt = ?, isSynced = 0, syncedAt = NULL
+   WHERE id=?`,
+            ).run(it.quantity, now, it.productId);
+          }
         }
       }
+
+      const saleRow = db
+        .prepare(`SELECT licenseId FROM sales WHERE id=?`)
+        .get(id);
       db.prepare(`UPDATE sales SET deletedAt=?, isSynced=0 WHERE id=?`).run(
         now,
-        id
+        id,
       );
       db.prepare(
-        `UPDATE sale_items SET deletedAt=?, isSynced=0 WHERE saleId=?`
+        `UPDATE sale_items SET deletedAt=?, isSynced=0 WHERE saleId=?`,
       ).run(now, id);
-      db.prepare(
-        `DELETE FROM customer_transactions WHERE kind='SALE' AND refId=?`
-      ).run(id);
+
+      if (saleRow?.licenseId) {
+        db.prepare(
+          `DELETE FROM customer_transactions WHERE licenseId=? AND kind='SALE' AND refId=?`,
+        ).run(saleRow.licenseId, id);
+      } else {
+        db.prepare(
+          `DELETE FROM customer_transactions WHERE kind='SALE' AND refId=?`,
+        ).run(id);
+      }
     });
     try {
       trx();
@@ -456,7 +641,7 @@ function registerSaleHandlers() {
     const ts = serverSyncedAt || new Date().toISOString();
     const trx = db.transaction((ids) => {
       const stmt = db.prepare(
-        `UPDATE sales SET isSynced=1, syncedAt=? WHERE id=?`
+        `UPDATE sales SET isSynced=1, syncedAt=? WHERE id=?`,
       );
       ids.forEach((id) => stmt.run(ts, id));
     });
@@ -470,7 +655,7 @@ function registerSaleHandlers() {
     if (payload.id) {
       const ex = db
         .prepare(
-          `SELECT title, headerJson, rowsJson FROM sale_holds WHERE id=? AND deletedAt IS NULL`
+          `SELECT title, headerJson, rowsJson FROM sale_holds WHERE id=? AND deletedAt IS NULL`,
         )
         .get(payload.id);
       if (!ex) return { success: false, error: "NOT_FOUND" };
@@ -482,7 +667,7 @@ function registerSaleHandlers() {
       const newRows =
         payload.rows !== undefined ? JSON.stringify(payload.rows) : ex.rowsJson;
       db.prepare(
-        `UPDATE sale_holds SET title=?, headerJson=?, rowsJson=?, updatedAt=? WHERE id=?`
+        `UPDATE sale_holds SET title=?, headerJson=?, rowsJson=?, updatedAt=? WHERE id=?`,
       ).run(newTitle || null, newHdr, newRows, now, payload.id);
       return { success: true, id: payload.id, updated: true };
     }
@@ -492,7 +677,7 @@ function registerSaleHandlers() {
       `
       INSERT INTO sale_holds(id, licenseId, userId, holdNo, title, headerJson, rowsJson, createdAt, updatedAt, isSynced)
       VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
-    `
+    `,
     ).run(
       id,
       payload.licenseId,
@@ -502,7 +687,7 @@ function registerSaleHandlers() {
       JSON.stringify(payload.header || {}),
       JSON.stringify(payload.rows || []),
       now,
-      now
+      now,
     );
     return { success: true, id, holdNo };
   });
@@ -518,18 +703,18 @@ function registerSaleHandlers() {
       WHERE licenseId=? AND deletedAt IS NULL
       ORDER BY updatedAt DESC
       LIMIT ? OFFSET ?
-    `
+    `,
         )
         .all(licenseId, pageSize, offset);
       const total = db
         .prepare(
           `
       SELECT COUNT(*) as count FROM sale_holds WHERE licenseId=? AND deletedAt IS NULL
-    `
+    `,
         )
         .get(licenseId).count;
       return { holds: rows, total };
-    }
+    },
   );
   ipcMain.handle("sale-hold:get", (evt, id) => {
     const row = db

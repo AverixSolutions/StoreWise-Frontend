@@ -80,7 +80,7 @@ export function mapItems(rows: ItemRow[]) {
         r.discountType === "PCT"
           ? round2(
               (r.totalCost || 0) *
-                (Math.max(0, Math.min(100, r.discount)) / 100)
+                (Math.max(0, Math.min(100, r.discount)) / 100),
             )
           : r.discount,
       discountType: r.discountType,
@@ -96,10 +96,10 @@ export function mapItems(rows: ItemRow[]) {
     }));
 }
 
-export function validateSaleBill(header: HeaderForm, items: ItemRow[]) {
+export function validateSaleBill(header: HeaderForm, items: any[]) {
   const errs: string[] = [];
   const hasLine = items.some(
-    (r) => r.productId && (r.quantity ?? 0) > 0 && (r.rate ?? 0) >= 0
+    (r) => r.productId && (r.quantity ?? 0) > 0 && (r.rate ?? 0) >= 0,
   );
   if (!hasLine) errs.push("Add at least one item with quantity > 0.");
   if (header.saleType === "CREDIT" && !header.customer)
@@ -117,5 +117,5 @@ export const toLocalTime = (iso?: string) => {
 };
 export const fromDateTime = (date: string, time: string) =>
   new Date(
-    `${date || new Date().toISOString().slice(0, 10)}T${time || "00:00"}`
+    `${date || new Date().toISOString().slice(0, 10)}T${time || "00:00"}`,
   ).toISOString();

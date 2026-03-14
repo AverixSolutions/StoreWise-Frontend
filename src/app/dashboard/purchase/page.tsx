@@ -27,12 +27,14 @@ import {
   headerFromPurchaseDb,
   rowsFromDbItems,
 } from "@/components/purchase/utils";
+import BarcodePrintModal from "@/components/barcodes/BarcodePrintModal";
+import { printPurchaseBill } from "@/lib/print/printPurchaseBill";
 
 type BatchDecision = "OVERRIDE" | "NEW";
 
 function normalizeHeaderFromHold(
   saved: Partial<HeaderForm>,
-  suppliers: Array<{ id: string; name: string }>
+  suppliers: Array<{ id: string; name: string }>,
 ): HeaderForm {
   const defaults: HeaderForm = {
     billNo: "",
@@ -61,8 +63,8 @@ function normalizeHeaderFromHold(
     saved?.purchaseType === "CREDIT" && !supplier
       ? "CASH"
       : saved?.purchaseType === "CASH" || saved?.purchaseType === "CREDIT"
-      ? saved.purchaseType
-      : "CREDIT";
+        ? saved.purchaseType
+        : "CREDIT";
 
   return {
     ...defaults,
@@ -103,17 +105,49 @@ function makeSnapshot(header: HeaderForm, rows: ItemRow[]) {
   });
 }
 
+function isNumericBarcode(value?: string | null) {
+  return !!value && /^\d+$/.test(String(value).trim());
+}
+
+function getNextPreviewBarcode(
+  dbPeekBarcode: string,
+  rows: ItemRow[],
+  excludeRowIndex?: number,
+) {
+  const dbNum = Number(dbPeekBarcode || 0);
+
+  const localMax = rows.reduce((max, row, idx) => {
+    if (excludeRowIndex !== undefined && idx === excludeRowIndex) return max;
+
+    const bc = String(row.barcode || "").trim();
+    if (!isNumericBarcode(bc)) return max;
+
+    const num = Number(bc);
+
+    if (num > dbNum + 1000) return max;
+
+    return Math.max(max, num);
+  }, 0);
+
+  const next = Math.max(dbNum, localMax + 1);
+  return String(next).padStart(5, "0");
+}
+
 export default function PurchasePage() {
   const router = useRouter();
 
   const initialSnapshot = useRef<string | null>(null);
+  const [barcodePrintOpen, setBarcodePrintOpen] = useState(false);
 
   const licenseId =
-    typeof window !== "undefined" ? localStorage.getItem("licenseId")! : "";
+    typeof window !== "undefined"
+      ? localStorage.getItem("licenseId") || "demo-license"
+      : "demo-license";
+
   const userId =
     typeof window !== "undefined"
-      ? localStorage.getItem("userName") || "U1"
-      : "U1";
+      ? localStorage.getItem("userName") || "admin"
+      : "admin";
 
   const [products, setProducts] = useState<Product[]>([]);
   const [suppliers, setSuppliers] = useState<
@@ -123,7 +157,7 @@ export default function PurchasePage() {
   const [nextEntryNo, setNextEntryNo] = useState<number | null>(null);
 
   const [editingPurchaseId, setEditingPurchaseId] = useState<string | null>(
-    null
+    null,
   );
 
   const [header, setHeader] = useState<HeaderForm>({
@@ -143,6 +177,7 @@ export default function PurchasePage() {
     productId: string;
     batches: BatchInfo[];
     productName?: string;
+    nextBarcode: string;
   } | null>(null);
 
   const [batchDecisions, setBatchDecisions] = useState<
@@ -174,7 +209,41 @@ export default function PurchasePage() {
   } | null>(null);
 
   const [batchConfirmOpen, setBatchConfirmOpen] = useState(false);
-  const [savingAfterBatchConfirm, setSavingAfterBatchConfirm] = useState(false);
+
+  function getBarcodePrintItemsFromRows() {
+    return rows
+      .filter(
+        (r: ItemRow) =>
+          r.productId &&
+          r.printBarcode !== false &&
+          String(r.barcode || "").trim(),
+      )
+      .map((r: ItemRow) => ({
+        code: String(r.barcode || "").trim(),
+        name: r.name || "",
+        salePrice:
+          typeof r.salePrice === "number" && !Number.isNaN(r.salePrice)
+            ? r.salePrice
+            : null,
+        mrp: typeof r.mrp === "number" && !Number.isNaN(r.mrp) ? r.mrp : null,
+        copies: Math.max(1, Number(r.quantity || 1)),
+      }));
+  }
+
+  function handleOpenBarcodePrint() {
+    const items = getBarcodePrintItemsFromRows();
+
+    if (!items.length) {
+      setValidationMsgs([
+        "No printable barcodes found.",
+        "Add/select products and make sure barcode exists in purchase rows.",
+      ]);
+      setValidationOpen(true);
+      return;
+    }
+
+    setBarcodePrintOpen(true);
+  }
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -183,9 +252,7 @@ export default function PurchasePage() {
     if (!id) return;
 
     handleOpenPurchaseFromReport(id);
-
     sessionStorage.removeItem(key);
-    setIsDirty(true);
   }, []);
 
   useEffect(() => {
@@ -199,7 +266,7 @@ export default function PurchasePage() {
 
     (async () => {
       const res = await (window as any).electronAPI.getNextPurchaseSlNo(
-        licenseId
+        licenseId,
       );
       setNextEntryNo(res?.nextSlNo ?? 1);
     })();
@@ -218,7 +285,7 @@ export default function PurchasePage() {
   const loadSuppliers = async () => {
     const { suppliers: sups } = await (window as any).electronAPI.listSuppliers(
       licenseId,
-      { q: "", page: 1, pageSize: 100 }
+      { q: "", page: 1, pageSize: 100 },
     );
     setSuppliers(sups.map((s: any) => ({ id: s.id, name: s.name })));
   };
@@ -226,8 +293,25 @@ export default function PurchasePage() {
   const handleSelectProduct = async (rowIndex: number, productId: string) => {
     const product = await (window as any).electronAPI.getProduct(productId);
     if (!product) return;
-    console.log("Selected product", productId, product);
 
+    let nextBarcode = "";
+    try {
+      const peekRes = await (window as any).electronAPI.peekNextBarcode(
+        licenseId,
+      );
+      nextBarcode = getNextPreviewBarcode(
+        peekRes?.barcode || "00000",
+        rows,
+        rowIndex,
+      );
+    } catch (e) {
+      console.error("Failed to peek next barcode", e);
+      nextBarcode = getNextPreviewBarcode("00000", rows, rowIndex);
+    }
+
+    if (!nextBarcode) {
+      nextBarcode = getNextPreviewBarcode("00000", rows, rowIndex);
+    }
     setRows((prev) =>
       prev.map((r, i) =>
         i !== rowIndex
@@ -239,15 +323,12 @@ export default function PurchasePage() {
               name: product.name,
               unit: product.unit,
               taxPercent: product.tax,
-              barcode:
-                product.barcode && String(product.barcode).trim().length > 0
-                  ? product.barcode
-                  : product.code || "",
+              barcode: nextBarcode || "00001",
               rate: Number(product.costPrice) || 0,
               batchNo: "",
               mfgDate: null,
               expiryDate: null,
-
+              forceNewBatch: true,
               mrp:
                 product.mrp != null && !Number.isNaN(Number(product.mrp))
                   ? Number(product.mrp)
@@ -257,108 +338,94 @@ export default function PurchasePage() {
                 !Number.isNaN(Number(product.salePrice))
                   ? Number(product.salePrice)
                   : 0,
-            }
-      )
+            },
+      ),
     );
 
-    setTimeout(() => {
-      const el = document.querySelector<HTMLInputElement>(
-        `[data-cell="${rowIndex}:barcode"]`
-      );
-      if (el) {
-        el.focus();
-        el.select();
-      }
-    }, 0);
+    try {
+      const batchesRes = await (
+        window as any
+      ).electronAPI.listBarcodesForProduct(licenseId, productId);
 
-    setTimeout(() => {
-      handleRequestBatchSelect(rowIndex, productId);
-    }, 10);
+      const batches: BatchInfo[] = (batchesRes?.rows || []).map((b: any) => ({
+        id: b.id,
+        barcode: b.barcode,
+        batchNo: b.batchNo,
+        mfgDate: b.mfgDate,
+        expiryDate: b.expiryDate,
+        mrp: b.mrp,
+        salePrice: b.salePrice,
+        stock: b.stock,
+      }));
+
+      if (batches.length > 0) {
+        const productName = product.name;
+        setBatchPicker({
+          rowIndex,
+          productId,
+          batches,
+          productName,
+          nextBarcode,
+        });
+      }
+
+      setTimeout(() => {
+        const el = document.querySelector<HTMLInputElement>(
+          `[data-cell="${rowIndex}:barcode"]`,
+        );
+        if (el) {
+          el.focus();
+          el.select();
+        }
+      }, 0);
+    } catch (e) {
+      console.error("Failed to load product barcodes", e);
+
+      setTimeout(() => {
+        const el = document.querySelector<HTMLInputElement>(
+          `[data-cell="${rowIndex}:barcode"]`,
+        );
+        if (el) {
+          el.focus();
+          el.select();
+        }
+      }, 0);
+    }
   };
 
   const handleRequestBatchSelect = async (
     rowIndex: number,
-    explicitProductId?: string
+    explicitProductId?: string,
   ) => {
     const row = rows[rowIndex];
     const productId = explicitProductId || row?.productId;
-
-    console.log("handleRequestBatchSelect called for row", rowIndex, {
-      row,
-      productId,
-    });
-
     if (!productId) return;
 
     try {
-      const res = await (window as any).electronAPI.listBatchesForProduct(
-        productId
+      const [batchesRes, peekRes] = await Promise.all([
+        (window as any).electronAPI.listBarcodesForProduct(
+          licenseId,
+          productId,
+        ),
+        (window as any).electronAPI.peekNextBarcode(licenseId),
+      ]);
+
+      const batches: BatchInfo[] = (batchesRes?.rows || []).map((b: any) => ({
+        id: b.id,
+        barcode: b.barcode,
+        batchNo: b.batchNo,
+        mfgDate: b.mfgDate,
+        expiryDate: b.expiryDate,
+        mrp: b.mrp,
+        salePrice: b.salePrice,
+        stock: b.stock,
+      }));
+
+      const nextBarcode = getNextPreviewBarcode(
+        peekRes?.barcode || "00000",
+        rows,
+        rowIndex,
       );
-
-      console.log("BATCH RES for product", productId, res);
-
-      let batches: BatchInfo[] = [];
-      if (Array.isArray(res)) {
-        batches = res as BatchInfo[];
-      } else if (Array.isArray(res?.batches)) {
-        batches = res.batches as BatchInfo[];
-      } else if (Array.isArray(res?.rows)) {
-        batches = res.rows as BatchInfo[];
-      }
-
-      if (batches.length === 0) {
-        setTimeout(() => {
-          const el = document.querySelector<HTMLInputElement>(
-            `[data-cell="${rowIndex}:barcode"]`
-          );
-          if (el) {
-            el.focus();
-            el.select();
-          }
-        }, 0);
-        return;
-      }
-
-      if (batches.length === 1) {
-        const b = batches[0];
-        setRows((prev) =>
-          prev.map((r, i) =>
-            i !== rowIndex
-              ? r
-              : {
-                  ...r,
-                  barcode: b.barcode || r.barcode,
-                  batchNo: b.batchNo ?? r.batchNo,
-                  mfgDate: b.mfgDate ?? r.mfgDate,
-                  expiryDate: b.expiryDate ?? r.expiryDate,
-                  mrp:
-                    typeof r.mrp === "number" && r.mrp > 0
-                      ? r.mrp
-                      : b.mrp != null
-                      ? Number(b.mrp)
-                      : r.mrp,
-                  salePrice:
-                    typeof r.salePrice === "number" && r.salePrice > 0
-                      ? r.salePrice
-                      : b.salePrice != null
-                      ? Number(b.salePrice)
-                      : r.salePrice,
-                }
-          )
-        );
-
-        setTimeout(() => {
-          const el = document.querySelector<HTMLInputElement>(
-            `[data-cell="${rowIndex}:barcode"]`
-          );
-          if (el) {
-            el.focus();
-            el.select();
-          }
-        }, 50);
-
-        return;
-      }
 
       const productName =
         products.find((p) => p.id === productId)?.name || row?.name;
@@ -368,12 +435,154 @@ export default function PurchasePage() {
         productId,
         batches,
         productName,
+        nextBarcode,
       });
     } catch (e) {
-      console.error("Failed to load product batches", e);
+      console.error("Failed to load product barcodes", e);
     }
   };
 
+  async function handleBarcodeCommit(rowIndex: number) {
+    const row = rows[rowIndex];
+    if (!row?.productId) return;
+
+    const typedBarcode = String(row.barcode || "").trim();
+    if (!typedBarcode) return;
+
+    try {
+      const existingProduct = await (
+        window as any
+      ).electronAPI.getProductByBarcode(licenseId, typedBarcode);
+
+      if (
+        existingProduct &&
+        existingProduct.id &&
+        existingProduct.id !== row.productId
+      ) {
+        setValidationMsgs([
+          `Barcode "${typedBarcode}" already belongs to another product.`,
+          "Use a different barcode or clear it.",
+        ]);
+        setValidationOpen(true);
+
+        setRows((prev) =>
+          prev.map((r, i) =>
+            i !== rowIndex
+              ? r
+              : {
+                  ...r,
+                  barcode: "",
+                },
+          ),
+        );
+        return;
+      }
+
+      const res = await (window as any).electronAPI.listBarcodesForProduct(
+        licenseId,
+        row.productId,
+      );
+
+      const batches: BatchInfo[] = (res?.rows || []).map((b: any) => ({
+        id: b.id,
+        barcode: b.barcode,
+        batchNo: b.batchNo,
+        mfgDate: b.mfgDate,
+        expiryDate: b.expiryDate,
+        mrp: b.mrp,
+        salePrice: b.salePrice,
+        stock: b.stock,
+      }));
+
+      if (!batches.length) {
+        setRows((prev) =>
+          prev.map((r, i) =>
+            i !== rowIndex
+              ? r
+              : {
+                  ...r,
+                  barcode: typedBarcode,
+                  forceNewBatch: true,
+                },
+          ),
+        );
+        return;
+      }
+
+      const exactMatches = batches.filter(
+        (b) => String(b.barcode || "").trim() === typedBarcode,
+      );
+
+      if (exactMatches.length === 1) {
+        const b = exactMatches[0];
+
+        setRows((prev) =>
+          prev.map((r, i) =>
+            i !== rowIndex
+              ? r
+              : {
+                  ...r,
+                  barcode: typedBarcode,
+                  batchNo: b.batchNo ?? r.batchNo,
+                  mfgDate: b.mfgDate ?? r.mfgDate,
+                  expiryDate: b.expiryDate ?? r.expiryDate,
+                  forceNewBatch: false,
+                  mrp:
+                    typeof r.mrp === "number" && r.mrp > 0
+                      ? r.mrp
+                      : b.mrp != null
+                        ? Number(b.mrp)
+                        : r.mrp,
+                  salePrice:
+                    typeof r.salePrice === "number" && r.salePrice > 0
+                      ? r.salePrice
+                      : b.salePrice != null
+                        ? Number(b.salePrice)
+                        : r.salePrice,
+                },
+          ),
+        );
+
+        return;
+      }
+
+      if (exactMatches.length > 1) {
+        const productName =
+          products.find((p) => p.id === row.productId)?.name || row.name;
+
+        const peekRes = await (window as any).electronAPI.peekNextBarcode(
+          licenseId,
+        );
+
+        setBatchPicker({
+          rowIndex,
+          productId: row.productId,
+          batches: exactMatches,
+          productName,
+          nextBarcode: getNextPreviewBarcode(
+            peekRes?.barcode || "00000",
+            rows,
+            rowIndex,
+          ),
+        });
+        return;
+      }
+
+      setRows((prev) =>
+        prev.map((r, i) =>
+          i !== rowIndex
+            ? r
+            : {
+                ...r,
+                barcode: typedBarcode,
+                forceNewBatch: true,
+              },
+        ),
+      );
+    } catch (e) {
+      console.error("handleBarcodeCommit failed", e);
+    }
+  }
   useEffect(() => {
     setRows((prev) => prev.map(calcRow));
   }, [
@@ -386,17 +595,17 @@ export default function PurchasePage() {
         d: r.discount,
         profitPercent: r.profitPercent,
         lineType: r.lineType,
-      }))
+      })),
     ),
   ]);
 
   const subTotal = useMemo(
     () => rows.reduce((s, r) => s + (r.billedValue || 0), 0),
-    [rows]
+    [rows],
   );
   const grandTotal = useMemo(
     () => Math.max(0, subTotal - (header.discount || 0)),
-    [subTotal, header.discount]
+    [subTotal, header.discount],
   );
 
   const addRow = () =>
@@ -405,7 +614,7 @@ export default function PurchasePage() {
     setRows((prev) =>
       prev
         .filter((_, i) => i !== index)
-        .map((r, i) => ({ ...r, lineNo: i + 1 }))
+        .map((r, i) => ({ ...r, lineNo: i + 1 })),
     );
 
   const priceUpdateSettings = {
@@ -464,7 +673,7 @@ export default function PurchasePage() {
 
     if (barcode) {
       lines.push(
-        `Barcode "${barcode}" is already used for another product.${rowHint}`
+        `Barcode "${barcode}" is already used for another product.${rowHint}`,
       );
     } else {
       lines.push("A barcode you entered is already used for another product.");
@@ -485,10 +694,14 @@ export default function PurchasePage() {
     const res = await (window as any).electronAPI.getPurchaseHold(holdId);
     if (res?.success && res.hold) {
       const normalized = normalizeHeaderFromHold(res.hold.header, suppliers);
+      const nextRows = res.hold.rows;
+
       setHeader(normalized);
-      setRows(res.hold.rows);
+      setRows(nextRows);
       setShowHolds(false);
-      setIsDirty(true);
+
+      initialSnapshot.current = makeSnapshot(normalized, nextRows);
+      setIsDirty(false);
     }
   }
 
@@ -508,11 +721,13 @@ export default function PurchasePage() {
     setEditingPurchaseId(purchaseId);
     setEditingSlNo(purchase.slNo ?? null);
     setShowReports(false);
-    setIsDirty(true);
+
+    initialSnapshot.current = makeSnapshot(hdr, mappedRows);
+    setIsDirty(false);
   }
 
   async function checkBatchConflicts(
-    items: ReturnType<typeof mapItems>
+    items: ReturnType<typeof mapItems>,
   ): Promise<
     {
       rowIndex: number;
@@ -602,8 +817,8 @@ export default function PurchasePage() {
 
         setBatchDecisions(
           Object.fromEntries(
-            conflicts.map((c) => [c.rowIndex, "OVERRIDE" as BatchDecision])
-          )
+            conflicts.map((c) => [c.rowIndex, "OVERRIDE" as BatchDecision]),
+          ),
         );
 
         setBatchConfirmOpen(true);
@@ -657,8 +872,8 @@ export default function PurchasePage() {
     // === CREATE NEW PURCHASE FLOW ===
     const purchase = {
       billNo: header.billNo || null,
-      supplierId: header.supplier!.id,
-      supplierName: header.supplier!.name,
+      supplierId: header.supplier?.id || null,
+      supplierName: header.supplier?.name || null,
       department: header.department || null,
       debitAccount: header.debitAccount || null,
       natureOfEntry: header.natureOfEntry || null,
@@ -673,7 +888,7 @@ export default function PurchasePage() {
     try {
       const res = await (window as any).electronAPI.createPurchase(
         purchase,
-        items
+        items,
       );
 
       if (!res?.success) {
@@ -684,14 +899,23 @@ export default function PurchasePage() {
         return false;
       }
 
-      alert(`✅ Saved! SlNo: ${res.slNo}, Total: ${res.totalAmount}`);
-
       try {
         const peek = await (window as any).electronAPI.getNextPurchaseSlNo(
-          licenseId
+          licenseId,
         );
         setNextEntryNo(peek?.nextSlNo ?? null);
       } catch {}
+
+      const shouldPrint = confirm(
+        `✅ Saved! SlNo: ${res.slNo}, Total: ${res.totalAmount}\n\nPrint bill now?`,
+      );
+      if (shouldPrint && res.purchaseId) {
+        try {
+          await printPurchaseBill(res.purchaseId);
+        } catch (e: any) {
+          alert("Print failed: " + String(e?.message || e));
+        }
+      }
 
       if (priceUpdateSettings.updatePricesAfterSave) {
         const priceUpdates = rowsToUse
@@ -700,7 +924,7 @@ export default function PurchasePage() {
               r.productId &&
               (priceUpdateSettings.updateCostFromPurchase ||
                 (typeof r.salePrice === "number" && r.salePrice > 0) ||
-                (r.profitPercent ?? 0) > 0)
+                (r.profitPercent ?? 0) > 0),
           )
           .map((r) => {
             let sale = r.salePrice ?? 0;
@@ -713,7 +937,7 @@ export default function PurchasePage() {
               const perUnitTax = r.rate * (taxPct / 100);
               const basePerUnit = r.rate + perUnitTax;
               sale = round2(
-                basePerUnit * (1 + (Number(r.profitPercent) || 0) / 100)
+                basePerUnit * (1 + (Number(r.profitPercent) || 0) / 100),
               );
             } else if (typeof r.salePrice === "number") {
               sale = round2(r.salePrice);
@@ -734,7 +958,7 @@ export default function PurchasePage() {
         if (priceUpdates.length > 0) {
           try {
             await (window as any).electronAPI.bulkUpdateProductPrices(
-              priceUpdates
+              priceUpdates,
             );
           } catch (e) {
             console.error("Failed to update product fields:", e);
@@ -821,7 +1045,7 @@ export default function PurchasePage() {
 
   function updateRow(index: number, patch: Partial<ItemRow>) {
     setRows((prev) =>
-      prev.map((r, i) => (i === index ? { ...r, ...patch } : r))
+      prev.map((r, i) => (i === index ? { ...r, ...patch } : r)),
     );
   }
 
@@ -839,7 +1063,28 @@ export default function PurchasePage() {
       <PurchaseNavigation onNavigate={tryNavigate} title="Purchase" />
 
       <div className="flex-1 min-h-0 overflow-hidden p-0">
-        <div className="grid h-full grid-cols-[300px_1fr]">
+        {editingPurchaseId && (
+          <div className="px-4 py-2 border-b bg-white flex items-center gap-3">
+            <span className="text-sm text-gray-500">Editing saved bill</span>
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  const res = await printPurchaseBill(editingPurchaseId);
+                  if (!res?.success) alert(res?.error || "Print failed");
+                } catch (e: any) {
+                  alert("Print failed: " + String(e?.message || e));
+                }
+              }}
+              className="px-3 py-1.5 rounded bg-slate-800 text-white text-sm"
+            >
+              Print Bill
+            </button>
+          </div>
+        )}
+        <div
+          className={`grid grid-cols-[300px_1fr] ${editingPurchaseId ? "h-[calc(100%-41px)]" : "h-full"}`}
+        >
           <BillDetailsSection
             header={header}
             setHeader={setHeader}
@@ -851,8 +1096,8 @@ export default function PurchasePage() {
             onCancel={handleCancel}
             entryNo={
               editingPurchaseId
-                ? editingSlNo ?? undefined
-                : nextEntryNo ?? undefined
+                ? (editingSlNo ?? undefined)
+                : (nextEntryNo ?? undefined)
             }
             requireSupplier={header.purchaseType === "CREDIT"}
             isEditing={Boolean(editingPurchaseId)}
@@ -873,6 +1118,8 @@ export default function PurchasePage() {
             onShowReports={() => setShowReports(true)}
             showHoldControls={!editingPurchaseId}
             onRequestBatchSelect={handleRequestBatchSelect}
+            onBarcodeCommit={handleBarcodeCommit}
+            onPrintBarcodes={handleOpenBarcodePrint}
           />
         </div>
       </div>
@@ -1071,7 +1318,7 @@ export default function PurchasePage() {
                     if (!batchConflicts) return;
 
                     const indices = new Set(
-                      batchConflicts.rows.map((c) => c.rowIndex)
+                      batchConflicts.rows.map((c) => c.rowIndex),
                     );
 
                     const patchedRows = rows.map((r, idx) => {
@@ -1118,6 +1365,7 @@ export default function PurchasePage() {
         onClose={() => setBatchPicker(null)}
         batches={batchPicker?.batches || []}
         productName={batchPicker?.productName}
+        nextBarcode={batchPicker?.nextBarcode || ""}
         onSelect={(batch) => {
           if (!batchPicker) return;
 
@@ -1127,7 +1375,7 @@ export default function PurchasePage() {
             setBatchPicker(null);
             setTimeout(() => {
               const el = document.querySelector<HTMLInputElement>(
-                `[data-cell="${rowIndex}:barcode"]`
+                `[data-cell="${rowIndex}:barcode"]`,
               );
               if (el) {
                 el.focus();
@@ -1147,27 +1395,56 @@ export default function PurchasePage() {
                     batchNo: batch.batchNo ?? r.batchNo,
                     mfgDate: batch.mfgDate ?? r.mfgDate,
                     expiryDate: batch.expiryDate ?? r.expiryDate,
+                    forceNewBatch: false,
                     mrp:
                       typeof r.mrp === "number" && r.mrp > 0
                         ? r.mrp
                         : batch.mrp != null
-                        ? Number(batch.mrp)
-                        : r.mrp,
+                          ? Number(batch.mrp)
+                          : r.mrp,
                     salePrice:
                       typeof r.salePrice === "number" && r.salePrice > 0
                         ? r.salePrice
                         : batch.salePrice != null
-                        ? Number(batch.salePrice)
-                        : r.salePrice,
-                  }
-            )
+                          ? Number(batch.salePrice)
+                          : r.salePrice,
+                  },
+            ),
           );
 
           setBatchPicker(null);
 
           setTimeout(() => {
             const el = document.querySelector<HTMLInputElement>(
-              `[data-cell="${rowIndex}:barcode"]`
+              `[data-cell="${rowIndex}:barcode"]`,
+            );
+            if (el) {
+              el.focus();
+              el.select();
+            }
+          }, 0);
+        }}
+        onAddNewBatch={(barcode: string) => {
+          if (!batchPicker) return;
+          const rowIndex = batchPicker.rowIndex;
+
+          setRows((prev) =>
+            prev.map((r, i) =>
+              i !== rowIndex
+                ? r
+                : {
+                    ...r,
+                    barcode,
+                    forceNewBatch: true,
+                  },
+            ),
+          );
+
+          setBatchPicker(null);
+
+          setTimeout(() => {
+            const el = document.querySelector<HTMLInputElement>(
+              `[data-cell="${rowIndex}:barcode"]`,
             );
             if (el) {
               el.focus();
@@ -1190,6 +1467,14 @@ export default function PurchasePage() {
         onCancel={() => {
           setCancelConfirmOpen(false);
         }}
+      />
+
+      {/* Barcode print model */}
+      <BarcodePrintModal
+        isOpen={barcodePrintOpen}
+        onClose={() => setBarcodePrintOpen(false)}
+        items={getBarcodePrintItemsFromRows()}
+        defaultShopName={localStorage.getItem("shopName") || "My Shop"}
       />
 
       {/* Leave page confirm modal */}

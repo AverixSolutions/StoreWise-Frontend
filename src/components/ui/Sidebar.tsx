@@ -1,4 +1,6 @@
+// src/components/ui/Sidebar.tsx
 "use client";
+
 import { useRouter, usePathname } from "next/navigation";
 import {
   LayoutDashboard,
@@ -7,10 +9,11 @@ import {
   BarChart2,
   Settings,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 interface Tab {
   name: string;
-  icon: any;
+  icon: LucideIcon;
   path: string;
 }
 

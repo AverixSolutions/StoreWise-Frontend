@@ -8,6 +8,17 @@ export interface Customer {
   name: string;
 }
 
+export interface BatchInfo {
+  id: string;
+  barcode?: string | null;
+  batchNo?: string | null;
+  mfgDate?: string | null;
+  expiryDate?: string | null;
+  mrp?: number | null;
+  salePrice?: number | null;
+  stock?: number | null;
+}
+
 export interface ItemRow {
   lineNo: number;
   productId: string;

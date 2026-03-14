@@ -12,6 +12,9 @@ function sum(a) {
   return a.reduce((s, n) => s + (Number(n) || 0), 0);
 }
 
+function makeProductBarcode(codeNumber) {
+  return String(Number(codeNumber || 0)).padStart(5, "0");
+}
 // what defines one "batch identity" in your app (tune as you like)
 const BATCH_ID_COLS = [
   "barcode",
@@ -48,7 +51,7 @@ function findOrCreateBatch(payload) {
   const { where, params } = buildBatchIdentityWhere("b", payload);
   const existing = db
     .prepare(
-      `SELECT * FROM product_batches b WHERE ${where.join(" AND ")} LIMIT 1`
+      `SELECT * FROM product_batches b WHERE ${where.join(" AND ")} LIMIT 1`,
     )
     .get(params);
 
@@ -63,7 +66,7 @@ function findOrCreateBatch(payload) {
       batchNo, mfgDate, expiryDate, receivedAt, stock, createdAt, updatedAt
     ) VALUES (@id, @licenseId, @productId, @barcode, @mrp, @salePrice, @costPrice,
               @batchNo, @mfgDate, @expiryDate, @receivedAt, @stock, @ts, @ts)
-  `
+  `,
   ).run({
     id,
     licenseId: payload.licenseId,
@@ -90,7 +93,7 @@ function rebuildProductStock(productId) {
       SELECT COALESCE(SUM(stock),0) AS qty
       FROM product_batches
       WHERE productId=? AND COALESCE(deletedAt,'')=''
-    `
+    `,
     )
     .get(productId);
 
@@ -102,7 +105,7 @@ function rebuildProductStock(productId) {
     UPDATE products
     SET stock=?, updatedAt=?, isSynced=0, syncedAt=NULL
     WHERE id=?
-  `
+  `,
   ).run(qty, ts, productId);
 
   return qty;
@@ -116,7 +119,7 @@ function bumpBatchAndProductStock({ batchId, productId, deltaQty }) {
     UPDATE product_batches
     SET stock = COALESCE(stock,0) + @delta, updatedAt=@ts
     WHERE id=@batchId
-  `
+  `,
   ).run({ delta: Number(deltaQty || 0), ts, batchId });
 
   rebuildProductStock(productId);
@@ -135,12 +138,13 @@ function registerProductHandlers() {
   ipcMain.handle("create-product", (event, product) => {
     const newId = product.id || uuidv4();
     const now = new Date().toISOString();
+    const barcode = makeProductBarcode(product.codeNumber);
     db.prepare(
       `
       INSERT INTO products 
         (id, licenseId, code, codeNumber, name, brand, category, unit, tax, hsn, costPrice, salePrice, stock, barcode, createdAt, updatedAt) 
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `
+    `,
     ).run(
       newId,
       product.licenseId,
@@ -155,9 +159,9 @@ function registerProductHandlers() {
       product.costPrice,
       product.salePrice,
       0,
-      product.barcode || null,
+      barcode,
       now,
-      now
+      now,
     );
 
     db.prepare(
@@ -165,10 +169,10 @@ function registerProductHandlers() {
       INSERT INTO code_sequence (licenseId, lastCodeNumber)
       VALUES (?, ?)
       ON CONFLICT(licenseId) DO UPDATE SET lastCodeNumber = excluded.lastCodeNumber
-    `
+    `,
     ).run(product.licenseId, product.codeNumber);
 
-    return { success: true };
+    return { success: true, productId: newId };
   });
 
   ipcMain.handle(
@@ -190,18 +194,18 @@ function registerProductHandlers() {
       GROUP BY p.id
       ORDER BY p.codeNumber ASC
       LIMIT ? OFFSET ?
-      `
+      `,
         )
         .all(licenseId, pageSize, offset);
 
       const total = db
         .prepare(
-          `SELECT COUNT(*) AS count FROM products WHERE licenseId = ? AND COALESCE(deletedAt,'') = ''`
+          `SELECT COUNT(*) AS count FROM products WHERE licenseId = ? AND COALESCE(deletedAt,'') = ''`,
         )
         .get(licenseId).count;
 
       return { products, total };
-    }
+    },
   );
   ipcMain.handle(
     "get-filtered-products",
@@ -234,20 +238,20 @@ function registerProductHandlers() {
       GROUP BY p.id
       ORDER BY p.codeNumber ASC
       LIMIT ? OFFSET ?
-      `
+      `,
         )
         .all(...params, pageSize, offset);
 
       const total = db
         .prepare(
           `SELECT COUNT(*) AS count FROM products p WHERE ${where.join(
-            " AND "
-          )}`
+            " AND ",
+          )}`,
         )
         .get(...params).count;
 
       return { products: rows, total };
-    }
+    },
   );
 
   ipcMain.handle("update-product", (event, productId, product) => {
@@ -258,11 +262,11 @@ function registerProductHandlers() {
         `
       UPDATE products 
       SET name = ?, brand = ?, category = ?, unit = ?, tax = ?, hsn = ?, 
-          costPrice = ?, salePrice = ?, updatedAt = ?, barcode = ?,
+          costPrice = ?, salePrice = ?, updatedAt = ?,
           isSynced = 0,
           syncedAt = NULL
       WHERE id = ?
-    `
+    `,
       )
       .run(
         product.name,
@@ -274,8 +278,7 @@ function registerProductHandlers() {
         product.costPrice,
         product.salePrice,
         now,
-        product.barcode || null,
-        productId
+        productId,
       );
 
     if (result.changes === 0) {
@@ -287,18 +290,32 @@ function registerProductHandlers() {
 
   ipcMain.handle("delete-product", (event, productId) => {
     const now = new Date().toISOString();
-    const result = db
-      .prepare(
-        `
-      UPDATE products
-      SET deletedAt = ?, updatedAt = ?, isSynced = 0, syncedAt = NULL WHERE id = ?
-      `
-      )
-      .run(now, now, productId);
 
-    if (result.changes === 0) {
-      throw new Error("Product not found");
-    }
+    const trx = db.transaction(() => {
+      const productResult = db
+        .prepare(
+          `
+        UPDATE products
+        SET deletedAt = ?, updatedAt = ?, isSynced = 0, syncedAt = NULL
+        WHERE id = ?
+        `,
+        )
+        .run(now, now, productId);
+
+      if (productResult.changes === 0) {
+        throw new Error("Product not found");
+      }
+
+      db.prepare(
+        `
+      UPDATE product_batches
+      SET deletedAt = ?, updatedAt = ?
+      WHERE productId = ? AND COALESCE(deletedAt,'') = ''
+      `,
+      ).run(now, now, productId);
+    });
+
+    trx();
 
     return { success: true };
   });
@@ -326,7 +343,7 @@ function registerProductHandlers() {
       )
     ORDER BY updatedAt ASC, id ASC
     LIMIT ?
-  `
+  `,
       )
       .all(licenseId, limit);
   });
@@ -362,7 +379,7 @@ function registerProductHandlers() {
       WHERE b.licenseId=? AND COALESCE(b.deletedAt,'')='' AND b.barcode=?
         AND p.licenseId=? AND COALESCE(p.deletedAt,'')=''
       LIMIT 1
-    `
+    `,
       )
       .get(licenseId, barcode, licenseId);
 
@@ -375,7 +392,7 @@ function registerProductHandlers() {
       SELECT * FROM products 
       WHERE licenseId=? AND barcode=? AND deletedAt IS NULL
       LIMIT 1
-    `
+    `,
       )
       .get(licenseId, barcode);
   });
@@ -384,7 +401,7 @@ function registerProductHandlers() {
     if (!code) return null;
     return db
       .prepare(
-        "SELECT * FROM products WHERE licenseId = ? AND code = ? AND deletedAt IS NULL"
+        "SELECT * FROM products WHERE licenseId = ? AND code = ? AND deletedAt IS NULL",
       )
       .get(licenseId, code);
   });
@@ -436,7 +453,7 @@ function registerProductHandlers() {
             u.salePrice,
             u.unit,
             now,
-            u.productId
+            u.productId,
           );
         } else if (hasCost && hasSale) {
           updateCostSale.run(u.costPrice, u.salePrice, now, u.productId);
@@ -468,15 +485,15 @@ function registerProductHandlers() {
       FROM product_batches
       WHERE productId=? ${includeDeleted ? "" : "AND COALESCE(deletedAt,'')=''"}
       ORDER BY date(expiryDate) IS NULL, expiryDate, datetime(receivedAt)
-    `
+    `,
         )
         .all(productId);
 
       const totalStock = sum(
-        rows.filter((r) => !r.deletedAt).map((r) => r.stock || 0)
+        rows.filter((r) => !r.deletedAt).map((r) => r.stock || 0),
       );
       return { success: true, rows, totalStock };
-    }
+    },
   );
 
   ipcMain.handle("product.batch:save", (e, payload) => {
@@ -507,7 +524,7 @@ function registerProductHandlers() {
           receivedAt=COALESCE(@receivedAt, receivedAt),
           updatedAt=@ts
       WHERE id=@id
-    `
+    `,
     ).run({
       id: batch.id,
       costPrice: payload.costPrice ?? null,
@@ -539,7 +556,7 @@ function registerProductHandlers() {
     if (!b) return { success: false, error: "NOT_FOUND" };
 
     db.prepare(
-      `UPDATE product_batches SET deletedAt=?, updatedAt=? WHERE id=?`
+      `UPDATE product_batches SET deletedAt=?, updatedAt=? WHERE id=?`,
     ).run(ts, ts, batchId);
 
     rebuildProductStock(b.productId);
@@ -563,7 +580,7 @@ function registerProductHandlers() {
     (e, payload) => {
       bumpBatchAndProductStock(payload);
       return { success: true };
-    }
+    },
   );
 
   // ===== OPTIONAL: Rich product fetch with batches =====
@@ -579,7 +596,7 @@ function registerProductHandlers() {
       FROM product_batches
       WHERE productId=? AND COALESCE(deletedAt,'')=''
       ORDER BY date(expiryDate) IS NULL, expiryDate, datetime(receivedAt)
-    `
+    `,
       )
       .all(productId);
 
