@@ -12,10 +12,7 @@ function sum(a) {
   return a.reduce((s, n) => s + (Number(n) || 0), 0);
 }
 
-function makeProductBarcode(codeNumber) {
-  return String(Number(codeNumber || 0)).padStart(5, "0");
-}
-// what defines one "batch identity" in your app (tune as you like)
+// what defines one "batch identity" in your app
 const BATCH_ID_COLS = [
   "barcode",
   "mrp",
@@ -138,11 +135,15 @@ function registerProductHandlers() {
   ipcMain.handle("create-product", (event, product) => {
     const newId = product.id || uuidv4();
     const now = new Date().toISOString();
-    const barcode = makeProductBarcode(product.codeNumber);
+
     db.prepare(
       `
       INSERT INTO products 
-        (id, licenseId, code, codeNumber, name, brand, category, unit, tax, hsn, costPrice, salePrice, stock, barcode, createdAt, updatedAt) 
+        (
+          id, licenseId, code, codeNumber, name, brand, category,
+          unit, tax, hsn, costPrice, salePrice, stock, barcode,
+          createdAt, updatedAt
+        ) 
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     ).run(
@@ -159,7 +160,7 @@ function registerProductHandlers() {
       product.costPrice,
       product.salePrice,
       0,
-      barcode,
+      null, // IMPORTANT: product itself does NOT auto-own a barcode
       now,
       now,
     );
@@ -367,17 +368,26 @@ function registerProductHandlers() {
   ipcMain.handle("get-product-by-barcode", (event, licenseId, barcode) => {
     if (!barcode) return null;
 
-    // 1) Try batch barcode first
+    // 1) real batch barcode first
     const row = db
       .prepare(
         `
       SELECT p.*, 
-             b.id AS batchId, b.mrp AS batchMrp, b.salePrice AS batchSalePrice,
-             b.costPrice AS batchCostPrice, b.batchNo, b.mfgDate, b.expiryDate, b.stock AS batchStock
+             b.id AS batchId,
+             b.mrp AS batchMrp,
+             b.salePrice AS batchSalePrice,
+             b.costPrice AS batchCostPrice,
+             b.batchNo,
+             b.mfgDate,
+             b.expiryDate,
+             b.stock AS batchStock
       FROM product_batches b
       JOIN products p ON p.id = b.productId
-      WHERE b.licenseId=? AND COALESCE(b.deletedAt,'')='' AND b.barcode=?
-        AND p.licenseId=? AND COALESCE(p.deletedAt,'')=''
+      WHERE b.licenseId=?
+        AND COALESCE(b.deletedAt,'')=''
+        AND b.barcode=?
+        AND p.licenseId=?
+        AND COALESCE(p.deletedAt,'')=''
       LIMIT 1
     `,
       )
@@ -385,12 +395,17 @@ function registerProductHandlers() {
 
     if (row) return row;
 
-    // 2) Fallback to product-level barcode
+    // 2) legacy compatibility only
     return db
       .prepare(
         `
-      SELECT * FROM products 
-      WHERE licenseId=? AND barcode=? AND deletedAt IS NULL
+      SELECT *
+      FROM products
+      WHERE licenseId=?
+        AND barcode=?
+        AND COALESCE(deletedAt,'')=''
+        AND barcode IS NOT NULL
+        AND barcode <> ''
       LIMIT 1
     `,
       )

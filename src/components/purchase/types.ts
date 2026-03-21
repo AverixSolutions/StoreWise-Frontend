@@ -35,14 +35,23 @@ export interface ItemRow {
   profit?: number | null;
   totalCost?: number | null;
   billedValue?: number | null;
+
+  batchId?: string | null;
   batchNo?: string | null;
+  purchaseBatchNo?: string | null;
   mfgDate?: string | null;
   expiryDate?: string | null;
+
   lineType?: LineType;
   unitBilled?: number;
+
   overrideBatchPrices?: boolean;
   forceNewBatch?: boolean;
   printBarcode?: boolean;
+
+  appliedQuantity?: number;
+  overReturnQuantity?: number;
+  overReturnReason?: string | null;
 }
 
 export interface HeaderForm {
@@ -61,6 +70,7 @@ export interface BatchInfo {
   id: string;
   barcode?: string | null;
   batchNo?: string | null;
+  purchaseBatchNo?: string | null;
   mfgDate?: string | null;
   expiryDate?: string | null;
   mrp?: number | null;

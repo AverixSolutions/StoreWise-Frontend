@@ -50,8 +50,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("product.batch:delete", { batchId }),
   rebuildProductStock: (productId) =>
     ipcRenderer.invoke("product:rebuild-stock", productId),
-  resolveProductBatch: (payload) =>
-    ipcRenderer.invoke("product.batch:resolve", payload),
 
   // Optional richer fetch
   getProductWithBatches: (productId) =>
@@ -235,6 +233,27 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("shop-settings:get", licenseId),
   saveShopSettings: (payload) =>
     ipcRenderer.invoke("shop-settings:save", payload),
+
+  // Label printing
+  listLabelPrinters: (licenseId) =>
+    ipcRenderer.invoke("label:printer:list", { licenseId }),
+
+  saveLabelPrinter: (payload) =>
+    ipcRenderer.invoke("label:printer:save", payload),
+
+  listLabelTemplates: (licenseId) =>
+    ipcRenderer.invoke("label:template:list", { licenseId }),
+
+  getLabelTemplate: (licenseId, templateId) =>
+    ipcRenderer.invoke("label:template:get", { licenseId, templateId }),
+
+  saveLabelTemplate: (payload) =>
+    ipcRenderer.invoke("label:template:save", payload),
+
+  printLabelsNative: (payload) => ipcRenderer.invoke("label:print", payload),
+
+  listLabelJobs: (licenseId, limit) =>
+    ipcRenderer.invoke("label:job:list", { licenseId, limit }),
 
   // Clears local DB
   wipeLocalData: () => ipcRenderer.invoke("wipe-local-data"),

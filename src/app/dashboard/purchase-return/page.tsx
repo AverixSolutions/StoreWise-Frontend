@@ -1,6 +1,6 @@
 // src/app/dashboard/purchase-return/page.tsx
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import PurchaseNavigation from "@/components/purchase/PurchaseNavigation";
 import BillDetailsSection from "@/components/purchase/BillDetailsSection";
@@ -19,10 +19,65 @@ import {
   calcRow,
   validateReturnBill,
   mapItems,
+  rowsFromDbItems,
+  headerFromReturnDb,
 } from "@/components/purchase/utils";
 import ValidationModal from "@/components/ui/ValidationModal";
 import PurchaseReturnReportsModal from "@/components/purchase-return/PurchaseReturnReportsModal";
 import BatchSelectModal from "@/components/purchase/BatchSelectModal";
+
+function makeSnapshot(header: HeaderForm, rows: ItemRow[]) {
+  return JSON.stringify({
+    header,
+    rows: rows.map((r) => ({
+      productId: r.productId,
+      batchId: r.batchId,
+      barcode: r.barcode,
+      unit: r.unit,
+      rate: r.rate,
+      quantity: r.quantity,
+      mrp: r.mrp,
+      taxPercent: r.taxPercent,
+      discountType: r.discountType,
+      discount: r.discount,
+      salePrice: r.salePrice,
+      batchNo: r.batchNo,
+      purchaseBatchNo: r.purchaseBatchNo,
+      mfgDate: r.mfgDate,
+      expiryDate: r.expiryDate,
+      lineType: r.lineType,
+    })),
+  });
+}
+
+function isNumericBarcode(value?: string | null) {
+  return !!value && /^\d+$/.test(String(value).trim());
+}
+
+function getNextPreviewBarcode(
+  dbPeekBarcode: string,
+  rows: ItemRow[],
+  excludeRowIndex?: number,
+) {
+  const dbNum = Number(dbPeekBarcode || 0);
+
+  const localMax = rows.reduce((max, row, idx) => {
+    if (excludeRowIndex !== undefined && idx === excludeRowIndex) return max;
+
+    const bc = String(row.barcode || "").trim();
+    if (!isNumericBarcode(bc)) return max;
+
+    const num = Number(bc);
+
+    // ignore obvious garbage jumps
+    if (num > dbNum + 1000) return max;
+
+    return Math.max(max, num);
+  }, 0);
+
+  const next = Math.max(dbNum, localMax + 1);
+  return String(next).padStart(5, "0");
+}
 
 export default function PurchaseReturnPage() {
   const router = useRouter();
@@ -35,12 +90,11 @@ export default function PurchaseReturnPage() {
       : "U1";
 
   const [products, setProducts] = useState<Product[]>([]);
-  const [suppliers, setSuppliers] = useState<
-    Array<{ id: string; name: string }>
-  >([]);
+  const [suppliers, setSuppliers] = useState<{ id: string; name: string }[]>(
+    [],
+  );
   const [nextEntryNo, setNextEntryNo] = useState<number | null>(null);
 
-  // ✅ CHANGE 1: Added editing state
   const [editingReturnId, setEditingReturnId] = useState<string | null>(null);
   const [editingSlNo, setEditingSlNo] = useState<number | null>(null);
 
@@ -58,6 +112,8 @@ export default function PurchaseReturnPage() {
 
   const [rows, setRows] = useState<ItemRow[]>([createEmptyRow(1)]);
   const [isDirty, setIsDirty] = useState(false);
+  const initialSnapshot = useRef<string | null>(null);
+
   const [showHolds, setShowHolds] = useState(false);
   const [showTitlePrompt, setShowTitlePrompt] = useState(false);
   const [defaultHoldTitle, setDefaultHoldTitle] = useState<string>("");
@@ -121,20 +177,29 @@ export default function PurchaseReturnPage() {
   }, [header.supplier]);
 
   const handleSelectProduct = async (rowIndex: number, productId: string) => {
-    const product = await (window as any).electronAPI.getProduct(productId);
-    if (!product) return;
+    try {
+      const [product, peekRes, batchesRes] = await Promise.all([
+        (window as any).electronAPI.getProduct(productId),
+        (window as any).electronAPI.peekNextBarcode(licenseId),
+        (window as any).electronAPI.listBarcodesForProduct(
+          licenseId,
+          productId,
+        ),
+      ]);
 
-    const batchesRes = await (window as any).electronAPI.listBarcodesForProduct(
-      licenseId,
-      productId,
-    );
+      if (!product) return;
 
-    const liveBatches = (batchesRes?.rows || [])
-      .filter((b: any) => Number(b.stock || 0) > 0)
-      .map((b: any) => ({
+      const nextBarcode = getNextPreviewBarcode(
+        peekRes?.barcode || "00000",
+        rows,
+        rowIndex,
+      );
+
+      const batches: BatchInfo[] = (batchesRes?.rows || []).map((b: any) => ({
         id: b.id,
         barcode: b.barcode,
         batchNo: b.batchNo,
+        purchaseBatchNo: b.purchaseBatchNo,
         mfgDate: b.mfgDate,
         expiryDate: b.expiryDate,
         mrp: b.mrp,
@@ -143,77 +208,131 @@ export default function PurchaseReturnPage() {
         stock: b.stock,
       }));
 
-    const basePatch = {
-      productId,
-      code: product.code,
-      name: product.name,
-      unit: product.unit,
-      taxPercent: product.tax,
-      barcode: "",
-      batchNo: "",
-      mfgDate: null,
-      expiryDate: null,
-      mrp: null,
-      rate: Number(product.costPrice) || 0,
-      salePrice:
-        product.salePrice != null && !Number.isNaN(Number(product.salePrice))
-          ? Number(product.salePrice)
-          : 0,
-    };
-
-    if (liveBatches.length === 1) {
-      const b = liveBatches[0];
+      // First: fill base product details only
       setRows((prev) =>
         prev.map((r, i) =>
           i !== rowIndex
             ? r
             : {
                 ...r,
-                ...basePatch,
-                barcode: b.barcode || "",
-                batchNo: b.batchNo ?? null,
-                mfgDate: b.mfgDate ?? null,
-                expiryDate: b.expiryDate ?? null,
-                mrp: b.mrp ?? null,
-                rate:
-                  b.costPrice != null && !Number.isNaN(Number(b.costPrice))
-                    ? Number(b.costPrice)
-                    : Number(product.costPrice) || 0,
+                productId,
+                code: product.code,
+                name: product.name,
+                unit: product.unit,
+                taxPercent: product.tax,
+                rate: Number(product.costPrice) || 0,
+                mrp:
+                  product.mrp != null && !Number.isNaN(Number(product.mrp))
+                    ? Number(product.mrp)
+                    : null,
                 salePrice:
-                  b.salePrice != null && !Number.isNaN(Number(b.salePrice))
-                    ? Number(b.salePrice)
-                    : Number(product.salePrice) || 0,
+                  product.salePrice != null &&
+                  !Number.isNaN(Number(product.salePrice))
+                    ? Number(product.salePrice)
+                    : 0,
+
+                // reset batch-related fields first
+                batchId: null,
+                barcode: "",
+                batchNo: "",
+                purchaseBatchNo: "",
+                mfgDate: null,
+                expiryDate: null,
+                forceNewBatch: false,
               },
         ),
       );
-      return;
-    }
 
-    if (liveBatches.length > 1) {
-      setRows((prev) =>
-        prev.map((r, i) => (i !== rowIndex ? r : { ...r, ...basePatch })),
-      );
+      // Case 1: no existing barcode/batch -> prefill next live barcode
+      if (batches.length === 0) {
+        setRows((prev) =>
+          prev.map((r, i) =>
+            i !== rowIndex
+              ? r
+              : {
+                  ...r,
+                  barcode: nextBarcode,
+                  forceNewBatch: true,
+                },
+          ),
+        );
+
+        setTimeout(() => {
+          const el = document.querySelector<HTMLInputElement>(
+            `[data-cell="${rowIndex}:barcode"]`,
+          );
+          if (el) {
+            el.focus();
+            el.select();
+          }
+        }, 0);
+
+        return;
+      }
+
+      // Case 2: exactly one existing batch -> auto-pick it
+      if (batches.length === 1) {
+        const b = batches[0];
+
+        setRows((prev) =>
+          prev.map((r, i) =>
+            i !== rowIndex
+              ? r
+              : {
+                  ...r,
+                  batchId: b.id,
+                  barcode: b.barcode || "",
+                  batchNo: b.batchNo ?? "",
+                  purchaseBatchNo: b.purchaseBatchNo ?? "",
+                  mfgDate: b.mfgDate ?? null,
+                  expiryDate: b.expiryDate ?? null,
+                  forceNewBatch: false,
+                  mrp:
+                    b.mrp != null && !Number.isNaN(Number(b.mrp))
+                      ? Number(b.mrp)
+                      : r.mrp,
+                  salePrice:
+                    b.salePrice != null && !Number.isNaN(Number(b.salePrice))
+                      ? Number(b.salePrice)
+                      : r.salePrice,
+                },
+          ),
+        );
+
+        setTimeout(() => {
+          const el = document.querySelector<HTMLInputElement>(
+            `[data-cell="${rowIndex}:barcode"]`,
+          );
+          if (el) {
+            el.focus();
+            el.select();
+          }
+        }, 0);
+
+        return;
+      }
+
+      // Case 3: multiple existing batches -> let user choose
       setBatchPicker({
         rowIndex,
         productId,
-        batches: liveBatches,
+        batches,
         productName: product.name,
-        nextBarcode: "",
+        nextBarcode,
       });
-      return;
-    }
 
-    setRows((prev) =>
-      prev.map((r, i) =>
-        i !== rowIndex
-          ? r
-          : {
-              ...r,
-              ...basePatch,
-              barcode: product.barcode || product.code || "",
-            },
-      ),
-    );
+      setTimeout(() => {
+        const el = document.querySelector<HTMLInputElement>(
+          `[data-cell="${rowIndex}:barcode"]`,
+        );
+        if (el) {
+          el.focus();
+          el.select();
+        }
+      }, 0);
+    } catch (e) {
+      console.error("Failed to select product / load batches", e);
+    }
   };
 
   const handleRequestBatchSelect = async (
@@ -235,6 +354,7 @@ export default function PurchaseReturnPage() {
           id: b.id,
           barcode: b.barcode,
           batchNo: b.batchNo,
+          purchaseBatchNo: b.purchaseBatchNo || b.batchNo,
           mfgDate: b.mfgDate,
           expiryDate: b.expiryDate,
           mrp: b.mrp,
@@ -260,13 +380,16 @@ export default function PurchaseReturnPage() {
     }
   };
 
-  // ✅ CHANGE 2: handleOpenPurchaseReturnFromReport loader function
   async function handleOpenPurchaseReturnFromReport(returnId: string) {
-    if (suppliers.length === 0) {
+    let supplierOptions = suppliers;
+
+    if (supplierOptions.length === 0) {
       const { suppliers: sups } = await (
         window as any
       ).electronAPI.listSuppliers(licenseId, { q: "", page: 1, pageSize: 100 });
-      setSuppliers(sups.map((s: any) => ({ id: s.id, name: s.name })));
+
+      supplierOptions = sups.map((s: any) => ({ id: s.id, name: s.name }));
+      setSuppliers(supplierOptions);
     }
 
     const res = await (window as any).electronAPI.getPurchaseReturnFull(
@@ -282,57 +405,16 @@ export default function PurchaseReturnPage() {
     const ret = res.purchaseReturn;
     const items = res.items || [];
 
-    const supplier = ret.supplierId
-      ? suppliers.find((s) => s.id === ret.supplierId) || {
-          id: ret.supplierId,
-          name: ret.supplierName || "",
-        }
-      : null;
-
-    const nextHeader: HeaderForm = {
-      billNo: ret.billNo || "",
-      supplier,
-      department: ret.department || "",
-      debitAccount: ret.debitAccount || "",
-      natureOfEntry: ret.natureOfEntry || "",
-      purchaseDate: ret.returnDate || new Date().toISOString(),
-      entryTime: ret.entryTime || ret.returnDate || new Date().toISOString(),
-      discount: Number(ret.discount || 0),
-      purchaseType: ret.purchaseType === "CREDIT" ? "CREDIT" : "CASH",
-    };
-
-    const nextRows: ItemRow[] = items.map((it: any, i: number) => ({
-      lineNo: it.lineNo ?? i + 1,
-      productId: it.productId,
-      code: "",
-      barcode: it.barcode ?? "",
-      name: "",
-      unit: it.unit,
-      rate: Number(it.rate) || 0,
-      quantity: Number(it.quantity) || 0,
-      mrp: it.mrp ?? null,
-      taxPercent: it.taxPercent,
-      discountType: it.discountType || "ABS",
-      discount: Number(it.discount) || 0,
-      profitPercent: 0,
-      salePrice: it.salePrice ?? null,
-      profit: it.profit ?? null,
-      totalCost: Number(it.totalCost) || 0,
-      billedValue: Number(it.billedValue || 0),
-      batchNo: it.batchNo ?? null,
-      mfgDate: it.mfgDate ?? null,
-      expiryDate: it.expiryDate ?? null,
-      lineType: "VALUED",
-      unitBilled: it.quantity
-        ? Number(it.billedValue || 0) / Number(it.quantity || 1)
-        : 0,
-    }));
+    const nextHeader = headerFromReturnDb(ret, supplierOptions);
+    const nextRows = rowsFromDbItems(items);
 
     setHeader(nextHeader);
     setRows(nextRows);
     setEditingReturnId(returnId);
     setEditingSlNo(ret.slNo ?? null);
     setShowReports(false);
+
+    initialSnapshot.current = makeSnapshot(nextHeader, nextRows);
     setIsDirty(false);
   }
 
@@ -391,37 +473,66 @@ export default function PurchaseReturnPage() {
   const handleSave = async () => {
     const items = mapItems(rows);
     const errs = validateReturnBill(header, items);
+
     if (errs.length) {
       setValidationMsgs(errs);
       setValidationOpen(true);
       return false;
     }
 
-    const payload = {
-      header: {
-        returnDate: header.purchaseDate,
-        entryTime: header.entryTime,
-        billNo: header.billNo || null,
-        supplierId: header.supplier?.id || null,
-        supplierName: header.supplier?.name || null,
-        department: header.department || null,
-        debitAccount: header.debitAccount || null,
-        natureOfEntry: header.natureOfEntry || null,
-        discount: header.discount || 0,
-        licenseId,
-        userId,
-        purchaseType: header.purchaseType,
-      },
-      items,
-    };
+    const payload = editingReturnId
+      ? {
+          id: editingReturnId,
+          header: {
+            returnDate: header.purchaseDate,
+            entryTime: header.entryTime,
+            billNo: header.billNo || null,
+            supplierId: header.supplier?.id || null,
+            supplierName: header.supplier?.name || null,
+            department: header.department || null,
+            debitAccount: header.debitAccount || null,
+            natureOfEntry: header.natureOfEntry || null,
+            discount: header.discount || 0,
+            licenseId,
+            userId,
+            purchaseType: header.purchaseType,
+          },
+          items,
+        }
+      : {
+          header: {
+            returnDate: header.purchaseDate,
+            entryTime: header.entryTime,
+            billNo: header.billNo || null,
+            supplierId: header.supplier?.id || null,
+            supplierName: header.supplier?.name || null,
+            department: header.department || null,
+            debitAccount: header.debitAccount || null,
+            natureOfEntry: header.natureOfEntry || null,
+            discount: header.discount || 0,
+            licenseId,
+            userId,
+            purchaseType: header.purchaseType,
+          },
+          items,
+        };
 
     try {
-      const res = await (window as any).electronAPI.createPurchaseReturn(
-        payload,
-      );
+      const res = editingReturnId
+        ? await (window as any).electronAPI.updatePurchaseReturn(payload)
+        : await (window as any).electronAPI.createPurchaseReturn(payload);
 
       if (res?.success) {
-        alert(`✅ Return Saved! SlNo: ${res.slNo}, Total: ${res.totalAmount}`);
+        alert(
+          `✅ Return ${editingReturnId ? "updated" : "saved"}! ${!editingReturnId ? `SlNo: ${res.slNo}, ` : ""}Total: ${(res.totalAmount ?? grandTotal).toFixed(2)}`,
+        );
+
+        if (!editingReturnId) {
+          setEditingReturnId(res.returnId || null);
+          setEditingSlNo(res.slNo ?? null);
+          initialSnapshot.current = makeSnapshot(header, rows);
+          setIsDirty(false);
+        }
 
         try {
           const peek = await (
@@ -430,7 +541,10 @@ export default function PurchaseReturnPage() {
           setNextEntryNo(peek?.nextSlNo ?? null);
         } catch {}
 
-        resetAll();
+        if (editingReturnId) {
+          resetAll();
+        }
+
         return true;
       }
 
@@ -451,9 +565,8 @@ export default function PurchaseReturnPage() {
     setLeaveOpen(true);
   };
 
-  // ✅ CHANGE 5: resetAll now clears editing state too
   function resetAll() {
-    setHeader({
+    const freshHeader: HeaderForm = {
       billNo: "",
       supplier: null,
       department: "",
@@ -463,10 +576,16 @@ export default function PurchaseReturnPage() {
       entryTime: new Date().toISOString(),
       discount: 0,
       purchaseType: "CASH",
-    });
-    setRows([createEmptyRow(1)]);
+    };
+
+    const freshRows = [createEmptyRow(1)];
+
+    setHeader(freshHeader);
+    setRows(freshRows);
     setEditingReturnId(null);
     setEditingSlNo(null);
+
+    initialSnapshot.current = makeSnapshot(freshHeader, freshRows);
     setIsDirty(false);
   }
 
@@ -508,28 +627,16 @@ export default function PurchaseReturnPage() {
   }
 
   useEffect(() => {
-    setIsDirty(true);
-  }, [
-    JSON.stringify(header),
-    JSON.stringify(
-      rows.map((r) => ({
-        productId: r.productId,
-        unit: r.unit,
-        rate: r.rate,
-        quantity: r.quantity,
-        mrp: r.mrp,
-        taxPercent: r.taxPercent,
-        discountType: r.discountType,
-        discount: r.discount,
-        profitPercent: r.profitPercent,
-        salePrice: r.salePrice,
-        batchNo: r.batchNo,
-        mfgDate: r.mfgDate,
-        expiryDate: r.expiryDate,
-        lineType: r.lineType,
-      })),
-    ),
-  ]);
+    const snap = makeSnapshot(header, rows);
+
+    if (initialSnapshot.current === null) {
+      initialSnapshot.current = snap;
+      setIsDirty(false);
+      return;
+    }
+
+    setIsDirty(initialSnapshot.current !== snap);
+  }, [header, rows]);
 
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
@@ -557,7 +664,22 @@ export default function PurchaseReturnPage() {
       <PurchaseNavigation onNavigate={tryNavigate} title="Purchase Return" />
 
       <div className="flex-1 min-h-0 overflow-hidden p-0">
-        <div className="grid h-full grid-cols-[300px_1fr]">
+        {editingReturnId && (
+          <div className="px-4 py-2 border-b bg-white flex items-center gap-3">
+            <span className="text-sm text-gray-500">Saved return open</span>
+
+            <button
+              type="button"
+              onClick={() => resetAll()}
+              className="px-3 py-1.5 rounded border border-gray-300 bg-white text-sm"
+            >
+              New Return
+            </button>
+          </div>
+        )}
+        <div
+          className={`grid ${editingReturnId ? "h-[calc(100%-41px)]" : "h-full"} grid-cols-[300px_1fr]`}
+        >
           <BillDetailsSection
             header={header}
             setHeader={setHeader}
@@ -567,7 +689,6 @@ export default function PurchaseReturnPage() {
             grandTotal={grandTotal}
             onSave={handleSave}
             onCancel={handleCancel}
-            // ✅ CHANGE 4: Show editing slNo when viewing a saved return
             entryNo={
               editingReturnId
                 ? (editingSlNo ?? undefined)
@@ -604,7 +725,6 @@ export default function PurchaseReturnPage() {
           onClose={() => setShowReports(false)}
           licenseId={licenseId}
           suppliers={suppliers}
-          // ✅ CHANGE 3: Wire up real loader instead of console.log
           onOpenPurchaseReturn={handleOpenPurchaseReturnFromReport}
         />
       )}
@@ -638,8 +758,11 @@ export default function PurchaseReturnPage() {
                 ? r
                 : {
                     ...r,
+                    batchId: batch.id,
                     barcode: batch.barcode || "",
                     batchNo: batch.batchNo ?? null,
+                    purchaseBatchNo:
+                      batch.purchaseBatchNo ?? batch.batchNo ?? null,
                     mfgDate: batch.mfgDate ?? null,
                     expiryDate: batch.expiryDate ?? null,
                     mrp: batch.mrp ?? null,

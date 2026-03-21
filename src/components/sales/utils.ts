@@ -1,5 +1,5 @@
 // src/components/sales/utils.ts
-import { HeaderForm, ItemRow } from "./type";
+import { HeaderForm, ItemRow } from "./types";
 
 export const round2 = (n: number) =>
   Math.round((n + Number.EPSILON) * 100) / 100;
@@ -20,7 +20,9 @@ export function createEmptyRow(lineNo: number): ItemRow {
     discount: 0,
     salePrice: 0,
     profitPercent: 0,
+    batchId: null,
     batchNo: "",
+    purchaseBatchNo: "",
     mfgDate: null,
     expiryDate: null,
     lineType: "VALUED",
@@ -38,6 +40,7 @@ export function calcRow(row: ItemRow): ItemRow {
   if (row.lineType === "FREE") {
     return { ...row, billedValue: 0, totalCost: 0, profit: 0, unitBilled: 0 };
   }
+
   const qty = Math.max(0, Number(row.quantity) || 0);
   const rate = Math.max(0, Number(row.rate) || 0);
   const taxPct = taxPercentToNumber(row.taxPercent);
@@ -69,7 +72,8 @@ export function mapItems(rows: ItemRow[]) {
     .filter((r) => r.productId)
     .map((r, i) => ({
       productId: r.productId,
-      barcode: r.barcode || r.code,
+      batchId: r.batchId || null,
+      barcode: r.barcode || r.code || null,
       quantity: r.quantity,
       unit: r.unit,
       rate: r.rate,
@@ -89,6 +93,7 @@ export function mapItems(rows: ItemRow[]) {
       totalCost: r.totalCost || 0,
       billedValue: r.billedValue || 0,
       batchNo: r.batchNo || null,
+      purchaseBatchNo: r.purchaseBatchNo || null,
       mfgDate: r.mfgDate || null,
       expiryDate: r.expiryDate || null,
       isFree: r.lineType === "FREE" ? 1 : 0,
@@ -102,19 +107,22 @@ export function validateSaleBill(header: HeaderForm, items: any[]) {
     (r) => r.productId && (r.quantity ?? 0) > 0 && (r.rate ?? 0) >= 0,
   );
   if (!hasLine) errs.push("Add at least one item with quantity > 0.");
-  if (header.saleType === "CREDIT" && !header.customer)
+  if (header.saleType === "CREDIT" && !header.customer) {
     errs.push("Select a customer for CREDIT sales.");
+  }
   return errs;
 }
 
 export const toLocalDate = (iso?: string) =>
   iso ? new Date(iso).toISOString().slice(0, 10) : "";
+
 export const toLocalTime = (iso?: string) => {
   if (!iso) return "";
   const d = new Date(iso);
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
+
 export const fromDateTime = (date: string, time: string) =>
   new Date(
     `${date || new Date().toISOString().slice(0, 10)}T${time || "00:00"}`,

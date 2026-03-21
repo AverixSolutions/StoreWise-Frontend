@@ -26,15 +26,6 @@ interface ProductsTableProps {
   onEdit: (product: Product) => void;
   onDelete: (id: string) => void;
   onManageBatches: (product: Product) => void;
-  onPrintBarcodes: (
-    items: {
-      code: string;
-      name?: string;
-      salePrice?: number | null;
-      mrp?: number | null;
-      copies?: number;
-    }[],
-  ) => void;
   refreshTrigger: number;
   nameFilter?: string;
   categoryFilter?: string;
@@ -45,7 +36,6 @@ export default function ProductsTable({
   onEdit,
   onDelete,
   onManageBatches,
-  onPrintBarcodes,
   refreshTrigger,
   nameFilter = "",
   categoryFilter = "",
@@ -102,50 +92,6 @@ export default function ProductsTable({
         alert("Failed to delete product");
         console.error("Error deleting product:", error);
       }
-    }
-  };
-
-  const handlePrintBarcode = async (product: Product) => {
-    const licenseId = localStorage.getItem("licenseId") || "demo-license";
-
-    try {
-      const res = await window.electronAPI.listBarcodesForProduct(
-        licenseId,
-        product.id,
-      );
-
-      const rows = res?.rows || [];
-
-      if (!rows.length) {
-        alert("No saved batch barcodes found for this product");
-        return;
-      }
-
-      const items = rows
-        .filter((b: any) => String(b.barcode || "").trim())
-        .map((b: any) => ({
-          code: String(b.barcode || "").trim(),
-          name: product.name,
-          salePrice:
-            b.salePrice != null && !Number.isNaN(Number(b.salePrice))
-              ? Number(b.salePrice)
-              : (product.salePrice ?? null),
-          mrp:
-            b.mrp != null && !Number.isNaN(Number(b.mrp))
-              ? Number(b.mrp)
-              : null,
-          copies: 1,
-        }));
-
-      if (!items.length) {
-        alert("No printable barcodes found for this product");
-        return;
-      }
-
-      onPrintBarcodes(items);
-    } catch (error: any) {
-      alert("Failed to load barcodes: " + String(error?.message || error));
-      console.error("Barcode load error:", error);
     }
   };
 
@@ -269,14 +215,6 @@ export default function ProductsTable({
                       title="Manage Batches"
                     >
                       <Layers className="w-4 h-4" />
-                    </button>
-
-                    <button
-                      onClick={() => handlePrintBarcode(product)}
-                      className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-slate-50 text-slate-700 hover:bg-slate-100 hover:scale-105 transition-all duration-200"
-                      title="Print Barcode"
-                    >
-                      <Printer className="w-4 h-4" />
                     </button>
 
                     <button

@@ -27,6 +27,10 @@ const STORAGE_KEYS = {
   licenseName: "licenseName",
 };
 
+function hasStorage() {
+  return typeof window !== "undefined" && typeof localStorage !== "undefined";
+}
+
 export async function login(
   userId: string,
   password: string,
@@ -44,12 +48,14 @@ export async function login(
     throw new Error("Invalid credentials");
   }
 
-  localStorage.setItem(STORAGE_KEYS.token, "offline-session");
-  localStorage.setItem(STORAGE_KEYS.sessionId, "offline-session");
-  localStorage.setItem(STORAGE_KEYS.role, DEFAULT_USER.role);
-  localStorage.setItem(STORAGE_KEYS.userName, DEFAULT_USER.userId);
-  localStorage.setItem(STORAGE_KEYS.licenseId, DEFAULT_USER.licenseId);
-  localStorage.setItem(STORAGE_KEYS.licenseName, DEFAULT_USER.licenseName);
+  if (hasStorage()) {
+    localStorage.setItem(STORAGE_KEYS.token, "offline-session");
+    localStorage.setItem(STORAGE_KEYS.sessionId, "offline-session");
+    localStorage.setItem(STORAGE_KEYS.role, DEFAULT_USER.role);
+    localStorage.setItem(STORAGE_KEYS.userName, DEFAULT_USER.userId);
+    localStorage.setItem(STORAGE_KEYS.licenseId, DEFAULT_USER.licenseId);
+    localStorage.setItem(STORAGE_KEYS.licenseName, DEFAULT_USER.licenseName);
+  }
 
   return {
     id: DEFAULT_USER.id,
@@ -61,6 +67,8 @@ export async function login(
 }
 
 export async function logout() {
+  if (!hasStorage()) return;
+
   localStorage.removeItem(STORAGE_KEYS.token);
   localStorage.removeItem(STORAGE_KEYS.sessionId);
   localStorage.removeItem(STORAGE_KEYS.role);
@@ -70,6 +78,17 @@ export async function logout() {
 }
 
 export function getCurrentUser() {
+  if (!hasStorage()) {
+    return {
+      token: null,
+      sessionId: null,
+      role: "ADMIN",
+      licenseName: "StoreWise Offline",
+      userName: "admin",
+      licenseId: "demo-license",
+    };
+  }
+
   return {
     token: localStorage.getItem(STORAGE_KEYS.token),
     sessionId: localStorage.getItem(STORAGE_KEYS.sessionId),

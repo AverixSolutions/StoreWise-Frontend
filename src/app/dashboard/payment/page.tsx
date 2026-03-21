@@ -21,10 +21,8 @@ type PaymentRow = {
 };
 
 export default function PaymentPage() {
-  const licenseId =
-    typeof window !== "undefined"
-      ? localStorage.getItem("licenseId") || "demo-license"
-      : "demo-license";
+  const [licenseId, setLicenseId] = useState("demo-license");
+  const [isClient, setIsClient] = useState(false);
 
   const [suppliers, setSuppliers] = useState<SupplierOpt[]>([]);
   const [selected, setSelected] = useState<SupplierOpt | null>(null);
@@ -39,7 +37,7 @@ export default function PaymentPage() {
   const pageSize = 50;
   const pages = useMemo(
     () => Math.max(1, Math.ceil(total / pageSize)),
-    [total]
+    [total],
   );
 
   const [loading, setLoading] = useState(true);
@@ -47,8 +45,16 @@ export default function PaymentPage() {
   // modal
   const [open, setOpen] = useState(false);
 
+  useEffect(() => {
+    setIsClient(true);
+    const savedLicenseId = localStorage.getItem("licenseId") || "demo-license";
+    setLicenseId(savedLicenseId);
+  }, []);
+
   // load suppliers (for dropdown)
   useEffect(() => {
+    if (!isClient) return;
+
     (async () => {
       const res = await (window as any).electronAPI.listSuppliers(licenseId, {
         page: 1,
@@ -60,9 +66,11 @@ export default function PaymentPage() {
       })) as SupplierOpt[];
       setSuppliers(opts);
     })();
-  }, [licenseId]);
+  }, [licenseId, isClient]);
 
   async function loadPayments() {
+    if (!isClient) return;
+
     setLoading(true);
     try {
       const res = await (window as any).electronAPI.listPayments({
@@ -84,9 +92,14 @@ export default function PaymentPage() {
   }
 
   useEffect(() => {
+    if (!isClient) return;
     loadPayments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [licenseId, selected?.id, q, dateFrom, dateTo, page]);
+  }, [isClient, licenseId, selected?.id, q, dateFrom, dateTo, page]);
+
+  if (!isClient) {
+    return null;
+  }
 
   return (
     <div className="space-y-6">
@@ -230,7 +243,6 @@ export default function PaymentPage() {
                         </span>
                       </td>
 
-                      {/* Type */}
                       <td className="px-6 py-4">
                         {(r.bills?.length || 0) > 0 ||
                         Number(r.allocated || 0) > 0 ? (
@@ -257,7 +269,6 @@ export default function PaymentPage() {
           )}
         </div>
 
-        {/* Pagination */}
         <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between bg-gray-50/50">
           <div className="text-sm text-gray-600 font-medium">
             Page {page} of {pages}
@@ -281,7 +292,6 @@ export default function PaymentPage() {
         </div>
       </div>
 
-      {/* Record Payment modal */}
       {open && selected && (
         <SupplierLedgerModal
           isOpen={open}

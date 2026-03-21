@@ -6,8 +6,7 @@ import ProductsTable from "@/components/products/ProductsTable";
 import ProductFormModal from "@/components/products/ProductFormModal";
 import ProductBatchesDrawer from "@/components/products/ProductBatchesDrawer";
 import SearchableDropdown from "@/components/ui/SearchableDropdown";
-import BarcodePrintModal from "@/components/barcodes/BarcodePrintModal";
-import { BarcodePrintItem } from "@/lib/barcode/barcodeTemplates";
+import BarcodePrintCenterButton from "@/components/barcodes/BarcodePrintCenterButton";
 
 interface Product {
   id: string;
@@ -25,6 +24,10 @@ interface Product {
 }
 
 export default function ItemsPage() {
+  const [isClient, setIsClient] = useState(false);
+  const [licenseId, setLicenseId] = useState("demo-license");
+  const [shopName, setShopName] = useState("My Shop");
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -35,12 +38,6 @@ export default function ItemsPage() {
   const [categories, setCategories] = useState<string[]>([]);
   const [products, setProducts] = useState<string[]>([]);
 
-  const [barcodePrintOpen, setBarcodePrintOpen] = useState(false);
-  const [barcodePrintItems, setBarcodePrintItems] = useState<
-    BarcodePrintItem[]
-  >([]);
-
-  // Batch drawer state
   const [batchOpen, setBatchOpen] = useState(false);
   const [batchProductId, setBatchProductId] = useState<string | null>(null);
   const [batchProductName, setBatchProductName] = useState<string | undefined>(
@@ -48,23 +45,32 @@ export default function ItemsPage() {
   );
 
   useEffect(() => {
-    const licenseId = localStorage.getItem("licenseId") || "demo-license";
+    setIsClient(true);
+
+    if (typeof window !== "undefined") {
+      setLicenseId(localStorage.getItem("licenseId") || "demo-license");
+      setShopName(localStorage.getItem("shopName") || "My Shop");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isClient) return;
 
     window.electronAPI
       .getProducts(licenseId, { page: 1, pageSize: 1000 })
-      .then((result) => {
-        setProducts(result.products.map((p) => p.name));
+      .then((result: any) => {
+        setProducts(result.products.map((p: any) => p.name));
         setCategories(
           Array.from(
             new Set(
               result.products
-                .map((p) => p.category)
-                .filter((c): c is string => !!c),
+                .map((p: any) => p.category)
+                .filter((c: string | undefined): c is string => !!c),
             ),
           ),
         );
       });
-  }, [refreshTrigger]);
+  }, [refreshTrigger, licenseId, isClient]);
 
   const handleAddProduct = () => {
     setEditProduct(null);
@@ -76,7 +82,7 @@ export default function ItemsPage() {
     setIsModalOpen(true);
   };
 
-  const handleDeleteProduct = (id: string) => {
+  const handleDeleteProduct = (_id: string) => {
     setRefreshTrigger((prev) => prev + 1);
   };
 
@@ -95,17 +101,9 @@ export default function ItemsPage() {
     setBatchOpen(true);
   };
 
-  const handleOpenBarcodePrint = (items: BarcodePrintItem[]) => {
-    if (!items.length) {
-      alert("No printable barcode items found.");
-      return;
-    }
-
-    setBarcodePrintItems(items);
-    setBarcodePrintOpen(true);
-  };
-
   useEffect(() => {
+    if (!isClient) return;
+
     const handleShortcut = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "n") {
         e.preventDefault();
@@ -121,12 +119,13 @@ export default function ItemsPage() {
     return () => {
       window.removeEventListener("keydown", handleShortcut);
     };
-  }, []);
+  }, [isClient]);
+
+  if (!isClient) return null;
 
   return (
     <main className="min-h-screen bg-gray-50 py-6">
       <div className="max-w-7xl mx-auto px-6">
-        {/* Page Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">
@@ -134,28 +133,37 @@ export default function ItemsPage() {
             </h1>
             <p className="text-gray-600 mt-1">Manage your inventory products</p>
           </div>
-          <button
-            onClick={handleAddProduct}
-            className="bg-gradient-to-r from-averix-red-dark to-averix-red-accent text-white font-semibold py-2.5 px-6 rounded-lg hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-200 flex items-center cursor-pointer"
-          >
-            <svg
-              className="w-5 h-5 mr-2"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
+
+          <div className="flex items-center gap-3">
+            <BarcodePrintCenterButton
+              licenseId={licenseId}
+              defaultShopName={shopName}
+              buttonText="Print Barcodes"
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            />
+
+            <button
+              onClick={handleAddProduct}
+              className="bg-gradient-to-r from-averix-red-dark to-averix-red-accent text-white font-semibold py-2.5 px-6 rounded-lg hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-200 flex items-center cursor-pointer"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 6v6m0 0v6m0-6h6m-6 0H6"
-              />
-            </svg>
-            Add Product
-          </button>
+              <svg
+                className="w-5 h-5 mr-2"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 6v6m0 0v6m0-6h6m-6 0H6"
+                />
+              </svg>
+              Add Product
+            </button>
+          </div>
         </div>
 
-        {/* Filters */}
         <div className="flex gap-4 mb-6">
           <SearchableDropdown
             value={nameFilter}
@@ -184,19 +192,16 @@ export default function ItemsPage() {
           )}
         </div>
 
-        {/* Table */}
         <ProductsTable
           onAdd={handleAddProduct}
           onEdit={handleEditProduct}
           onDelete={handleDeleteProduct}
           onManageBatches={(p) => openBatches(p.id, p.name)}
-          onPrintBarcodes={handleOpenBarcodePrint}
           refreshTrigger={refreshTrigger}
           nameFilter={nameFilter}
           categoryFilter={categoryFilter}
         />
 
-        {/* Product Form Modal */}
         <ProductFormModal
           isOpen={isModalOpen}
           onClose={handleModalClose}
@@ -204,28 +209,19 @@ export default function ItemsPage() {
           editProduct={editProduct}
         />
 
-        {/* Batch Management Drawer */}
         <ProductBatchesDrawer
           open={batchOpen}
           onClose={() => {
             setBatchOpen(false);
             setBatchProductId(null);
             setBatchProductName(undefined);
-            // Refresh products to reflect new totals
             setRefreshTrigger((x) => x + 1);
           }}
           productId={batchProductId}
           productName={batchProductName}
-          licenseId={localStorage.getItem("licenseId") || "demo-license"}
+          licenseId={licenseId}
         />
       </div>
-
-      <BarcodePrintModal
-        isOpen={barcodePrintOpen}
-        onClose={() => setBarcodePrintOpen(false)}
-        items={barcodePrintItems}
-        defaultShopName={localStorage.getItem("shopName") || "My Shop"}
-      />
     </main>
   );
 }

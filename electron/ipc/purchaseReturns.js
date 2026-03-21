@@ -3,6 +3,10 @@ const { v4: uuidv4 } = require("uuid");
 const { ipcMain } = require("electron");
 const db = require("../db");
 
+function nowISO() {
+  return new Date().toISOString();
+}
+
 function getNextReturnSlNo(licenseId) {
   const seq = db
     .prepare(
@@ -40,33 +44,320 @@ function getNextReturnHoldNo(licenseId) {
 function rebuildProductStock(productId) {
   const row = db
     .prepare(
-      `SELECT COALESCE(SUM(stock),0) AS qty
-       FROM product_batches
-       WHERE productId=? AND COALESCE(deletedAt,'')=''`,
+      `
+      SELECT COALESCE(SUM(stock),0) AS qty
+      FROM product_batches
+      WHERE productId=? AND COALESCE(deletedAt,'')=''
+    `,
     )
     .get(productId);
-  const now = new Date().toISOString();
+
+  const now = nowISO();
+
   db.prepare(
-    `UPDATE products SET stock=?, updatedAt=?, isSynced=0, syncedAt=NULL WHERE id=?`,
+    `
+    UPDATE products
+    SET stock=?, updatedAt=?, isSynced=0, syncedAt=NULL
+    WHERE id=?
+  `,
   ).run(Number(row?.qty || 0), now, productId);
 }
 
 function bumpBatchAndProductStock({ batchId, productId, deltaQty }) {
-  const now = new Date().toISOString();
+  const now = nowISO();
+
   db.prepare(
-    `UPDATE product_batches SET stock = COALESCE(stock,0) + ?, updatedAt = ? WHERE id = ?`,
+    `
+    UPDATE product_batches
+    SET stock = COALESCE(stock,0) + ?, updatedAt = ?
+    WHERE id = ?
+  `,
   ).run(Number(deltaQty || 0), now, batchId);
+
   rebuildProductStock(productId);
+}
+
+function bumpLegacyProductStock(productId, deltaQty) {
+  const now = nowISO();
+  db.prepare(
+    `
+    UPDATE products
+    SET stock = COALESCE(stock,0) + ?, updatedAt=?, isSynced=0, syncedAt=NULL
+    WHERE id=?
+  `,
+  ).run(Number(deltaQty || 0), now, productId);
+}
+
+function resolvePurchaseReturnBatch({ licenseId, item }) {
+  if (item?.batchId) {
+    const byId = db
+      .prepare(
+        `
+        SELECT id, productId, stock
+        FROM product_batches
+        WHERE id=? AND licenseId=? AND COALESCE(deletedAt,'')=''
+        LIMIT 1
+      `,
+      )
+      .get(item.batchId, licenseId);
+
+    if (byId) return byId;
+  }
+
+  if (
+    item?.productId &&
+    (item.batchNo || item.barcode || item.mfgDate || item.expiryDate)
+  ) {
+    const byIdentity = db
+      .prepare(
+        `
+        SELECT id, productId, stock
+        FROM product_batches
+        WHERE licenseId=?
+          AND productId=?
+          AND COALESCE(deletedAt,'')=''
+          AND COALESCE(batchNo,'') = COALESCE(?, '')
+          AND COALESCE(barcode,'') = COALESCE(?, '')
+          AND COALESCE(mfgDate,'') = COALESCE(?, '')
+          AND COALESCE(expiryDate,'') = COALESCE(?, '')
+        LIMIT 1
+      `,
+      )
+      .get(
+        licenseId,
+        item.productId,
+        item.batchNo || null,
+        item.barcode || null,
+        item.mfgDate || null,
+        item.expiryDate || null,
+      );
+
+    if (byIdentity) return byIdentity;
+  }
+
+  return null;
+}
+
+function computeReturnAmounts(item, appliedQty) {
+  const qty = Number(appliedQty || 0);
+  const rate = Number(item.rate || 0);
+
+  const taxPercentValue =
+    item.taxPercent === "NT"
+      ? 0
+      : parseInt(String(item.taxPercent).replace("P", "")) || 0;
+
+  const taxAmount = rate * qty * (taxPercentValue / 100);
+  const totalCost = rate * qty + taxAmount;
+
+  let salePrice = item.salePrice ?? null;
+  if (item.profitPercent) {
+    const unitCostWithTax = qty ? rate + taxAmount / qty : rate;
+    salePrice = unitCostWithTax * (1 + (Number(item.profitPercent) || 0) / 100);
+  }
+
+  const discountAbs =
+    item.discountType === "PCT"
+      ? totalCost *
+        (Math.max(0, Math.min(100, Number(item.discount || 0))) / 100)
+      : Number(item.discount || 0);
+
+  const billedValue = Math.max(0, totalCost - discountAbs);
+  const effectiveUnitValue = qty > 0 ? billedValue / qty : 0;
+
+  return {
+    taxAmount,
+    totalCost,
+    salePrice,
+    discountAbs,
+    billedValue,
+    effectiveUnitValue,
+  };
+}
+
+function deletePurchaseReturnLedgers(licenseId, refId) {
+  db.prepare(
+    `DELETE FROM supplier_transactions WHERE licenseId=? AND kind='RETURN' AND refId=?`,
+  ).run(licenseId, refId);
+
+  db.prepare(
+    `DELETE FROM cash_transactions WHERE licenseId=? AND kind='RECEIPT' AND refId=?`,
+  ).run(licenseId, refId);
+}
+
+function createPurchaseReturnLedgers({
+  header,
+  refId,
+  grandAmount,
+  txDate,
+  now,
+}) {
+  if (header.purchaseType === "CREDIT" && header.supplierId) {
+    db.prepare(
+      `
+      INSERT INTO supplier_transactions
+      (id, licenseId, supplierId, kind, refId, refNo, date, amount, sign, notes, createdAt, updatedAt, isSynced)
+      VALUES (?, ?, ?, 'RETURN', ?, ?, ?, ?, -1, ?, ?, ?, 0)
+    `,
+    ).run(
+      uuidv4(),
+      header.licenseId,
+      header.supplierId,
+      refId,
+      header.billNo || null,
+      txDate,
+      grandAmount,
+      "Purchase Return",
+      now,
+      now,
+    );
+  }
+
+  if (header.purchaseType === "CASH") {
+    db.prepare(
+      `
+      INSERT INTO cash_transactions
+      (id, licenseId, kind, refId, refNo, date, amount, sign, notes, createdAt, updatedAt, isSynced)
+      VALUES (?, ?, 'RECEIPT', ?, ?, ?, ?, 1, 'Purchase Return (Cash)', ?, ?, 0)
+    `,
+    ).run(
+      uuidv4(),
+      header.licenseId,
+      refId,
+      header.billNo || null,
+      txDate,
+      grandAmount,
+      now,
+      now,
+    );
+  }
+}
+
+function insertPurchaseReturnItems({
+  returnId,
+  header,
+  items,
+  insertItemStmt,
+  now,
+}) {
+  let totalAmount = 0;
+
+  for (let index = 0; index < items.length; index++) {
+    const item = items[index];
+    const qtyRequested = Number(item.quantity || 0);
+
+    const batch = resolvePurchaseReturnBatch({
+      licenseId: header.licenseId,
+      item,
+    });
+
+    let batchId = batch?.id || null;
+    let availableStock = 0;
+
+    if (batchId) {
+      availableStock = Math.max(0, Number(batch?.stock || 0));
+    } else {
+      const p = db
+        .prepare(`SELECT stock FROM products WHERE id=?`)
+        .get(item.productId);
+      availableStock = Math.max(0, Number(p?.stock || 0));
+    }
+
+    const appliedQty = Math.min(qtyRequested, availableStock);
+    const overQty = Math.max(0, qtyRequested - appliedQty);
+
+    const {
+      taxAmount,
+      totalCost,
+      salePrice,
+      discountAbs,
+      billedValue,
+      effectiveUnitValue,
+    } = computeReturnAmounts(item, appliedQty);
+
+    totalAmount += billedValue;
+
+    insertItemStmt.run(
+      uuidv4(),
+      returnId,
+      item.productId,
+      item.barcode || item.code || null,
+      qtyRequested,
+      item.unit,
+      Number(item.rate || 0),
+      item.mrp ?? null,
+      item.taxPercent,
+      taxAmount,
+      discountAbs,
+      item.discountType || "ABS",
+      salePrice,
+      item.profit ?? null,
+      totalCost,
+      billedValue,
+      effectiveUnitValue,
+      item.batchNo || null,
+      item.mfgDate || null,
+      item.expiryDate || null,
+      item.lineNo || index + 1,
+      batchId,
+      appliedQty,
+      overQty,
+      overQty > 0
+        ? item.overReturnReason || "Over return beyond available stock"
+        : null,
+      now,
+      now,
+    );
+
+    if (appliedQty > 0) {
+      if (batchId) {
+        bumpBatchAndProductStock({
+          batchId,
+          productId: item.productId,
+          deltaQty: -appliedQty,
+        });
+      } else {
+        bumpLegacyProductStock(item.productId, -appliedQty);
+      }
+    }
+  }
+
+  return totalAmount;
+}
+
+function reversePurchaseReturnItemsStock(returnId) {
+  const rows = db
+    .prepare(
+      `
+      SELECT productId, batchId, appliedQuantity, quantity
+      FROM purchase_return_items
+      WHERE returnId=? AND COALESCE(deletedAt,'')=''
+    `,
+    )
+    .all(returnId);
+
+  for (const it of rows) {
+    const qty = Number(it.appliedQuantity ?? it.quantity ?? 0);
+    if (qty <= 0) continue;
+
+    if (it.batchId) {
+      bumpBatchAndProductStock({
+        batchId: it.batchId,
+        productId: it.productId,
+        deltaQty: qty,
+      });
+    } else {
+      bumpLegacyProductStock(it.productId, qty);
+    }
+  }
 }
 
 function registerPurchaseReturnHandlers() {
   ipcMain.handle("purchase-return:create", (event, payload) => {
     const { header, items } = payload;
     const newId = uuidv4();
-    const now = new Date().toISOString();
+    const now = nowISO();
     const slNo = getNextReturnSlNo(header.licenseId);
-
-    let totalAmount = 0;
 
     const insertReturn = db.prepare(`
       INSERT INTO purchase_returns (
@@ -107,180 +398,139 @@ function registerPurchaseReturnHandlers() {
         now,
       );
 
-      items.forEach((item, index) => {
-        // Resolve batch
-        let batchId = null;
-        let availableStock = 0;
-
-        if (item.batchNo || item.barcode || item.mfgDate || item.expiryDate) {
-          const batch = db
-            .prepare(
-              `SELECT id, stock FROM product_batches
-         WHERE licenseId = ?
-           AND productId = ?
-           AND COALESCE(deletedAt,'') = ''
-           AND COALESCE(batchNo,'') = COALESCE(?, '')
-           AND COALESCE(barcode,'') = COALESCE(?, '')
-           AND COALESCE(mfgDate,'') = COALESCE(?, '')
-           AND COALESCE(expiryDate,'') = COALESCE(?, '')
-         LIMIT 1`,
-            )
-            .get(
-              header.licenseId,
-              item.productId,
-              item.batchNo || null,
-              item.barcode || null,
-              item.mfgDate || null,
-              item.expiryDate || null,
-            );
-          if (batch) {
-            batchId = batch.id;
-            availableStock = Math.max(0, batch.stock ?? 0);
-          }
-        }
-
-        // Fallback to product stock if no batch resolved
-        if (!batchId) {
-          const row = db
-            .prepare(`SELECT stock FROM products WHERE id = ?`)
-            .get(item.productId);
-          availableStock = Math.max(0, row?.stock ?? 0);
-        }
-
-        const appliedQty = Math.min(item.quantity, availableStock);
-        const overQty = Math.max(0, item.quantity - appliedQty);
-
-        const taxPercentValue =
-          item.taxPercent === "NT"
-            ? 0
-            : parseInt(String(item.taxPercent).replace("P", "")) || 0;
-
-        const taxAmount = item.rate * appliedQty * (taxPercentValue / 100);
-        const totalCost = item.rate * appliedQty + taxAmount;
-
-        let salePrice = item.salePrice;
-        if (item.profitPercent) {
-          const unitCostWithTax = appliedQty
-            ? item.rate + taxAmount / appliedQty
-            : item.rate;
-          salePrice = unitCostWithTax * (1 + item.profitPercent / 100);
-        }
-
-        const discountAbs =
-          item.discountType === "PCT"
-            ? totalCost * (Math.max(0, Math.min(100, item.discount)) / 100)
-            : item.discount || 0;
-
-        const billedValue = Math.max(0, totalCost - discountAbs);
-        const effectiveUnitValue =
-          appliedQty > 0 ? billedValue / appliedQty : 0;
-
-        totalAmount += billedValue;
-
-        // Single insert — no extra UPDATE needed
-        insertItem.run(
-          uuidv4(),
-          newId,
-          item.productId,
-          item.barcode || item.code || null,
-          item.quantity,
-          item.unit,
-          item.rate,
-          item.mrp || null,
-          item.taxPercent,
-          taxAmount,
-          discountAbs,
-          item.discountType || "ABS",
-          salePrice || null,
-          item.profit ?? null,
-          totalCost,
-          billedValue,
-          effectiveUnitValue,
-          item.batchNo || null,
-          item.mfgDate || null,
-          item.expiryDate || null,
-          item.lineNo || index + 1,
-          batchId,
-          appliedQty,
-          overQty,
-          overQty > 0
-            ? item.overReturnReason || "Over return beyond available stock"
-            : null,
-          now,
-          now,
-        );
-
-        // Deduct stock
-        if (appliedQty > 0) {
-          if (batchId) {
-            bumpBatchAndProductStock({
-              batchId,
-              productId: item.productId,
-              deltaQty: -appliedQty,
-            });
-          } else {
-            db.prepare(
-              `UPDATE products SET stock = COALESCE(stock,0) - ? WHERE id = ?`,
-            ).run(appliedQty, item.productId);
-          }
-        }
+      const totalAmount = insertPurchaseReturnItems({
+        returnId: newId,
+        header,
+        items,
+        insertItemStmt: insertItem,
+        now,
       });
 
       db.prepare(
-        `UPDATE purchase_returns SET totalAmount = ?, discount = ? WHERE id = ?`,
-      ).run(totalAmount, header.discount || 0, newId);
+        `UPDATE purchase_returns SET totalAmount=?, discount=?, updatedAt=? WHERE id=?`,
+      ).run(totalAmount, header.discount || 0, now, newId);
 
-      const grandAmount = Math.max(0, totalAmount - (header.discount || 0));
+      const grandAmount = Math.max(
+        0,
+        totalAmount - Number(header.discount || 0),
+      );
 
-      // CREDIT: supplier balance reduces
-      if (header.purchaseType === "CREDIT" && header.supplierId) {
-        db.prepare(
-          `
-          INSERT INTO supplier_transactions
-          (id, licenseId, supplierId, kind, refId, refNo, date, amount, sign, notes, createdAt, updatedAt, isSynced)
-          VALUES (?, ?, ?, 'RETURN', ?, ?, ?, ?, -1, ?, ?, ?, 0)
-        `,
-        ).run(
-          uuidv4(),
-          header.licenseId,
-          header.supplierId,
-          newId,
-          header.billNo || null,
-          header.returnDate || now,
-          grandAmount,
-          "Purchase Return",
-          now,
-          now,
-        );
-      }
+      createPurchaseReturnLedgers({
+        header,
+        refId: newId,
+        grandAmount,
+        txDate: header.returnDate || now,
+        now,
+      });
 
-      // CASH: record a cash-in (refund) in cash ledger
-      if (header.purchaseType === "CASH") {
-        db.prepare(
-          `
-          INSERT INTO cash_transactions
-          (id, licenseId, kind, refId, refNo, date, amount, sign, notes, createdAt, updatedAt, isSynced)
-          VALUES (?, ?, 'RECEIPT', ?, ?, ?, ?, +1, 'Purchase Return (Cash)', ?, ?, 0)
-        `,
-        ).run(
-          uuidv4(),
-          header.licenseId,
-          newId,
-          header.billNo || null,
-          header.returnDate || now,
-          grandAmount,
-          now,
-          now,
-        );
-      }
+      return totalAmount;
     });
 
-    trx({ header, items });
-
-    return { success: true, returnId: newId, slNo, totalAmount };
+    try {
+      const totalAmount = trx({ header, items });
+      return { success: true, returnId: newId, slNo, totalAmount };
+    } catch (e) {
+      return { success: false, error: String(e.message || e) };
+    }
   });
 
-  // List returns
+  ipcMain.handle("purchase-return:update", (event, payload) => {
+    const { id, header, items } = payload;
+    if (!id) return { success: false, error: "id required" };
+
+    const now = nowISO();
+
+    const insertItem = db.prepare(`
+      INSERT INTO purchase_return_items (
+        id, returnId, productId, barcode, quantity, unit, rate, mrp, taxPercent,
+        taxAmount, discount, discountType, salePrice, profit, totalCost, billedValue,
+        effectiveUnitValue, batchNo, mfgDate, expiryDate, lineNo,
+        batchId, appliedQuantity, overReturnQuantity, overReturnReason,
+        createdAt, updatedAt, isSynced
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+    `);
+
+    const trx = db.transaction(() => {
+      const existing = db
+        .prepare(`SELECT * FROM purchase_returns WHERE id=?`)
+        .get(id);
+
+      if (!existing) throw new Error("Purchase return not found");
+
+      reversePurchaseReturnItemsStock(id);
+      deletePurchaseReturnLedgers(existing.licenseId, id);
+
+      db.prepare(`DELETE FROM purchase_return_items WHERE returnId=?`).run(id);
+
+      db.prepare(
+        `
+        UPDATE purchase_returns SET
+          supplierId=@supplierId,
+          supplierName=@supplierName,
+          billNo=@billNo,
+          department=@department,
+          debitAccount=@debitAccount,
+          natureOfEntry=@natureOfEntry,
+          returnDate=@returnDate,
+          entryTime=@entryTime,
+          discount=@discount,
+          purchaseType=@purchaseType,
+          updatedAt=@updatedAt,
+          isSynced=0,
+          syncedAt=NULL
+        WHERE id=@id
+      `,
+      ).run({
+        id,
+        supplierId: header.supplierId || null,
+        supplierName: header.supplierName || null,
+        billNo: header.billNo || null,
+        department: header.department || null,
+        debitAccount: header.debitAccount || null,
+        natureOfEntry: header.natureOfEntry || null,
+        returnDate: header.returnDate || now,
+        entryTime: header.entryTime || now,
+        discount: Number(header.discount || 0),
+        purchaseType: header.purchaseType || "CREDIT",
+        updatedAt: now,
+      });
+
+      const totalAmount = insertPurchaseReturnItems({
+        returnId: id,
+        header: { ...header, licenseId: existing.licenseId },
+        items,
+        insertItemStmt: insertItem,
+        now,
+      });
+
+      db.prepare(
+        `UPDATE purchase_returns SET totalAmount=?, discount=?, updatedAt=? WHERE id=?`,
+      ).run(totalAmount, Number(header.discount || 0), now, id);
+
+      const grandAmount = Math.max(
+        0,
+        totalAmount - Number(header.discount || 0),
+      );
+
+      createPurchaseReturnLedgers({
+        header: { ...header, licenseId: existing.licenseId },
+        refId: id,
+        grandAmount,
+        txDate: header.returnDate || now,
+        now,
+      });
+
+      return totalAmount;
+    });
+
+    try {
+      const totalAmount = trx();
+      return { success: true, returnId: id, totalAmount };
+    } catch (e) {
+      return { success: false, error: String(e.message || e) };
+    }
+  });
+
   ipcMain.handle("purchase-return:list", (event, licenseId, filters = {}) => {
     const {
       q = "",
@@ -291,7 +541,7 @@ function registerPurchaseReturnHandlers() {
       pageSize = 10,
     } = filters;
 
-    const where = ["licenseId = @licenseId", "deletedAt IS NULL"];
+    const where = ["licenseId = @licenseId", "COALESCE(deletedAt,'') = ''"];
     const params = { licenseId };
 
     if (supplierId) {
@@ -318,7 +568,7 @@ function registerPurchaseReturnHandlers() {
 
     const rows = db
       .prepare(
-        `SELECT * ${base} ORDER BY slNo DESC LIMIT @limit OFFSET @offset`,
+        `SELECT * ${base} ORDER BY datetime(returnDate) DESC, slNo DESC LIMIT @limit OFFSET @offset`,
       )
       .all({ ...params, limit: pageSize, offset: (page - 1) * pageSize });
 
@@ -328,72 +578,62 @@ function registerPurchaseReturnHandlers() {
   ipcMain.handle("purchase-return:get", (event, id) => {
     const r = db.prepare(`SELECT * FROM purchase_returns WHERE id = ?`).get(id);
     if (!r) return { success: false, error: "Not found" };
+
     const items = db
       .prepare(
-        `SELECT * FROM purchase_return_items WHERE returnId = ? ORDER BY COALESCE(lineNo,0)`,
+        `
+        SELECT pri.*, p.name AS productName, p.code AS productCode
+        FROM purchase_return_items pri
+        LEFT JOIN products p ON p.id = pri.productId
+        WHERE pri.returnId = ?
+        ORDER BY COALESCE(pri.lineNo,0), pri.createdAt
+      `,
       )
       .all(id);
+
     return { success: true, purchaseReturn: r, items };
   });
 
   ipcMain.handle("purchase-return:getFull", (event, id) => {
     const r = db.prepare(`SELECT * FROM purchase_returns WHERE id = ?`).get(id);
     if (!r) return { success: false, error: "Not found" };
+
     const items = db
       .prepare(
-        `SELECT * FROM purchase_return_items WHERE returnId = ? ORDER BY COALESCE(lineNo,0)`,
+        `
+        SELECT pri.*, p.name AS productName, p.code AS productCode
+        FROM purchase_return_items pri
+        LEFT JOIN products p ON p.id = pri.productId
+        WHERE pri.returnId = ?
+        ORDER BY COALESCE(pri.lineNo,0), pri.createdAt
+      `,
       )
       .all(id);
+
     return { success: true, purchaseReturn: r, items };
   });
 
   ipcMain.handle("purchase-return:delete", (event, id) => {
-    const now = new Date().toISOString();
-    const trx = db.transaction(() => {
-      const items = db
-        .prepare(
-          `SELECT productId, batchId, appliedQuantity, quantity
-           FROM purchase_return_items
-           WHERE returnId = ? AND COALESCE(deletedAt,'') = ''`,
-        )
-        .all(id);
+    const now = nowISO();
 
-      for (const it of items) {
-        const qty = Number(it.appliedQuantity ?? it.quantity ?? 0);
-        if (qty > 0) {
-          if (it.batchId) {
-            bumpBatchAndProductStock({
-              batchId: it.batchId,
-              productId: it.productId,
-              deltaQty: qty, // restore stock on delete
-            });
-          } else {
-            db.prepare(
-              `UPDATE products SET stock = COALESCE(stock,0) + ? WHERE id = ?`,
-            ).run(qty, it.productId);
-          }
-        }
-      }
+    const trx = db.transaction(() => {
+      const existing = db
+        .prepare(`SELECT * FROM purchase_returns WHERE id=?`)
+        .get(id);
+
+      if (!existing) throw new Error("Purchase return not found");
+
+      reversePurchaseReturnItemsStock(id);
 
       db.prepare(
-        `UPDATE purchase_returns SET deletedAt=?, updatedAt=?, isSynced=0 WHERE id=?`,
+        `UPDATE purchase_returns SET deletedAt=?, updatedAt=?, isSynced=0, syncedAt=NULL WHERE id=?`,
       ).run(now, now, id);
+
       db.prepare(
         `UPDATE purchase_return_items SET deletedAt=?, updatedAt=?, isSynced=0 WHERE returnId=?`,
       ).run(now, now, id);
 
-      // Reverse supplier ledger entry
-      const ret = db
-        .prepare(`SELECT licenseId FROM purchase_returns WHERE id=?`)
-        .get(id);
-      if (ret) {
-        db.prepare(
-          `DELETE FROM supplier_transactions WHERE kind='RETURN' AND refId=?`,
-        ).run(id);
-        db.prepare(
-          `DELETE FROM cash_transactions WHERE kind='RECEIPT' AND refId=?`,
-        ).run(id);
-      }
+      deletePurchaseReturnLedgers(existing.licenseId, id);
     });
 
     try {
@@ -404,17 +644,16 @@ function registerPurchaseReturnHandlers() {
     }
   });
 
-  // Mark returns synced
   ipcMain.handle(
     "purchase-return:mark-synced",
     (event, ids, serverSyncedAt) => {
-      const ts = serverSyncedAt || new Date().toISOString();
+      const ts = serverSyncedAt || nowISO();
       const trx = db.transaction((ids) => {
         const stmt = db.prepare(`
-        UPDATE purchase_returns
-        SET isSynced = 1, syncedAt = ?
-        WHERE id = ?
-      `);
+          UPDATE purchase_returns
+          SET isSynced = 1, syncedAt = ?
+          WHERE id = ?
+        `);
         ids.forEach((id) => stmt.run(ts, id));
       });
       trx(ids);
@@ -422,7 +661,6 @@ function registerPurchaseReturnHandlers() {
     },
   );
 
-  // Peek next sl no
   ipcMain.handle("purchase-return:peek-next-slno", (event, licenseId) => {
     const seq = db
       .prepare(
@@ -432,9 +670,8 @@ function registerPurchaseReturnHandlers() {
     return { nextSlNo: seq ? seq.lastSlNo + 1 : 1 };
   });
 
-  // ---- RETURN HOLD: create/update ----
   ipcMain.handle("purchase-return-hold:save", (event, payload) => {
-    const now = new Date().toISOString();
+    const now = nowISO();
 
     if (payload.id) {
       const existing = db
@@ -491,7 +728,6 @@ function registerPurchaseReturnHandlers() {
     return { success: true, id, holdNo };
   });
 
-  // ---- RETURN HOLD: list ----
   ipcMain.handle(
     "purchase-return-hold:list",
     (event, licenseId, { page = 1, pageSize = 50 } = {}) => {
@@ -521,7 +757,6 @@ function registerPurchaseReturnHandlers() {
     },
   );
 
-  // ---- RETURN HOLD: get one ----
   ipcMain.handle("purchase-return-hold:get", (event, id) => {
     const row = db
       .prepare(
@@ -547,9 +782,8 @@ function registerPurchaseReturnHandlers() {
     };
   });
 
-  // ---- RETURN HOLD: delete ----
   ipcMain.handle("purchase-return-hold:delete", (event, id) => {
-    const now = new Date().toISOString();
+    const now = nowISO();
     db.prepare(
       `
       UPDATE purchase_return_holds SET deletedAt = ? WHERE id = ?
@@ -558,7 +792,6 @@ function registerPurchaseReturnHandlers() {
     return { success: true };
   });
 
-  // ---- RETURN HOLD: peek next no ----
   ipcMain.handle("purchase-return-hold:peek-next-no", (event, licenseId) => {
     const seq = db
       .prepare(

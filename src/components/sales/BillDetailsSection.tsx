@@ -11,7 +11,7 @@ import {
   Wallet,
   IndianRupee,
 } from "lucide-react";
-import { HeaderForm } from "./type";
+import { HeaderForm } from "./types";
 import SearchableDropdown from "@/components/ui/SearchableDropdown";
 import { toLocalDate, toLocalTime, fromDateTime } from "./utils";
 
@@ -130,6 +130,7 @@ export default function BillDetailsSection({
           </div>
         </div>
 
+        {/* FIXED: Both Sale Date and Entry Date now expose date + time */}
         <div className="grid grid-cols-2 gap-3 min-w-0">
           <div className="min-w-0">
             <label className={labelCls}>
@@ -172,6 +173,16 @@ export default function BillDetailsSection({
                 onChange={(e) => {
                   const d = e.target.value;
                   const t = toLocalTime(header.entryTime);
+                  setHeader((s) => ({ ...s, entryTime: fromDateTime(d, t) }));
+                }}
+              />
+              <input
+                className={inputBase + " text-xs px-2 w-[90px]"}
+                type="time"
+                value={toLocalTime(header.entryTime)}
+                onChange={(e) => {
+                  const t = e.target.value;
+                  const d = toLocalDate(header.entryTime);
                   setHeader((s) => ({ ...s, entryTime: fromDateTime(d, t) }));
                 }}
               />

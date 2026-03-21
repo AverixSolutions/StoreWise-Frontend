@@ -61,7 +61,9 @@ export function createEmptyRow(lineNo: number): ItemRow {
     discount: 0,
     salePrice: 0,
     profitPercent: 0,
+    batchId: null,
     batchNo: "",
+    purchaseBatchNo: "",
     mfgDate: null,
     expiryDate: null,
     lineType: "VALUED",
@@ -69,9 +71,10 @@ export function createEmptyRow(lineNo: number): ItemRow {
     profit: 0,
     totalCost: 0,
     unitBilled: 0,
-    overrideBatchPrices: false,
-    forceNewBatch: false,
     printBarcode: true,
+    appliedQuantity: 0,
+    overReturnQuantity: 0,
+    overReturnReason: null,
   };
 }
 
@@ -156,6 +159,7 @@ export function mapItems(rows: ItemRow[]) {
     .filter((r) => r.productId)
     .map((r, i) => ({
       productId: r.productId,
+      batchId: r.batchId || null,
       barcode: r.barcode || null,
       quantity: r.quantity,
       unit: r.unit,
@@ -177,13 +181,50 @@ export function mapItems(rows: ItemRow[]) {
       totalCost: r.totalCost || 0,
       billedValue: r.billedValue || 0,
       batchNo: r.batchNo || null,
+      purchaseBatchNo: r.purchaseBatchNo || null,
       mfgDate: r.mfgDate || null,
       expiryDate: r.expiryDate || null,
       isFree: r.lineType === "FREE" ? 1 : 0,
       lineNo: r.lineNo ?? i + 1,
-      overrideBatchPrices: r.overrideBatchPrices === true,
-      forceNewBatch: r.forceNewBatch === true,
+      appliedQuantity: r.appliedQuantity ?? null,
+      overReturnQuantity: r.overReturnQuantity ?? null,
+      overReturnReason: r.overReturnReason ?? null,
     }));
+}
+
+export function rowsFromDbItems(dbItems: any[]): ItemRow[] {
+  return dbItems.map((it: any, i: number) => ({
+    lineNo: it.lineNo ?? i + 1,
+    productId: it.productId,
+    code: it.productCode || "",
+    barcode: it.barcode ?? "",
+    name: it.productName || "",
+    unit: it.unit,
+    rate: Number(it.rate) || 0,
+    quantity: Number(it.quantity) || 0,
+    mrp: it.mrp ?? null,
+    taxPercent: it.taxPercent,
+    discountType: it.discountType || "ABS",
+    discount: Number(it.discount) || 0,
+    profitPercent: 0,
+    salePrice: it.salePrice ?? null,
+    profit: it.profit ?? null,
+    totalCost: Number(it.totalCost) || 0,
+    billedValue: Number(it.billedValue) || 0,
+    batchId: it.batchId ?? null,
+    batchNo: it.batchNo ?? null,
+    purchaseBatchNo: it.purchaseBatchNo ?? null,
+    mfgDate: it.mfgDate ?? null,
+    expiryDate: it.expiryDate ?? null,
+    lineType: (it.isFree ? "FREE" : "VALUED") as any,
+    unitBilled: it.quantity
+      ? Number(it.billedValue || 0) / Number(it.quantity || 1)
+      : 0,
+    printBarcode: true,
+    appliedQuantity: it.appliedQuantity ?? 0,
+    overReturnQuantity: it.overReturnQuantity ?? 0,
+    overReturnReason: it.overReturnReason ?? null,
+  }));
 }
 
 export function toLocalDate(iso?: string) {
@@ -192,12 +233,14 @@ export function toLocalDate(iso?: string) {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
+
 export function toLocalTime(iso?: string) {
   if (!iso) return "";
   const d = new Date(iso);
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
+
 export function fromDateTime(date: string, time: string) {
   if (!date) return new Date().toISOString();
   const t = time && /^\d{2}:\d{2}$/.test(time) ? time : "00:00";
@@ -233,38 +276,6 @@ export function validateReturnBill(_header: HeaderForm, items: any[]) {
   return errs;
 }
 
-// Map purchase_items / purchase_return_items to ItemRow[]
-export function rowsFromDbItems(dbItems: any[]): ItemRow[] {
-  return dbItems.map((it: any, i: number) => ({
-    lineNo: it.lineNo ?? i + 1,
-    productId: it.productId,
-    code: it.productCode || "",
-    barcode: it.barcode ?? "",
-    name: it.productName || "",
-    unit: it.unit,
-    rate: Number(it.rate) || 0,
-    quantity: Number(it.quantity) || 0,
-    mrp: it.mrp ?? null,
-    taxPercent: it.taxPercent,
-    discountType: it.discountType,
-    discount: Number(it.discount) || 0,
-    profitPercent: 0,
-    salePrice: it.salePrice ?? null,
-    profit: it.profit ?? null,
-    totalCost: Number(it.totalCost) || 0,
-    billedValue: Number(it.billedValue) || 0,
-    batchNo: it.batchNo ?? null,
-    mfgDate: it.mfgDate ?? null,
-    expiryDate: it.expiryDate ?? null,
-    lineType: (it.isFree ? "FREE" : "VALUED") as any,
-    unitBilled: it.quantity
-      ? Number(it.billedValue || 0) / Number(it.quantity || 1)
-      : 0,
-    printBarcode: true,
-  }));
-}
-
-// Normalize purchase header from DB to HeaderForm (purchase)
 export function headerFromPurchaseDb(
   p: any,
   supplierOpt: Array<{ id: string; name: string }>,
@@ -288,7 +299,6 @@ export function headerFromPurchaseDb(
   };
 }
 
-// For returns, reuse HeaderForm but map date field from returnDate
 export function headerFromReturnDb(
   r: any,
   supplierOpt: Array<{ id: string; name: string }>,
@@ -305,7 +315,7 @@ export function headerFromReturnDb(
     department: r.department || "",
     debitAccount: r.debitAccount || "",
     natureOfEntry: r.natureOfEntry || "",
-    purchaseDate: r.returnDate, // reuse purchaseDate field to drive inputs
+    purchaseDate: r.returnDate,
     entryTime: r.entryTime || r.returnDate,
     discount: Number(r.discount || 0),
     purchaseType: r.purchaseType === "CASH" ? "CASH" : "CREDIT",

@@ -2,8 +2,15 @@
 import { getShopProfile } from "./getShopProfile";
 import { buildInvoiceHtml } from "./buildInvoiceHtml";
 
-export async function printPurchaseBill(purchaseId: string) {
+export async function printPurchaseBill(
+  purchaseId: string,
+  options?: {
+    preview?: boolean;
+    silent?: boolean;
+  },
+) {
   const api = (window as any).electronAPI;
+
   if (!api?.getPurchaseFull || !api?.printHtml) {
     throw new Error("Purchase print API not available");
   }
@@ -60,7 +67,8 @@ export async function printPurchaseBill(purchaseId: string) {
   });
 
   return api.printHtml(html, {
-    preview: false,
+    preview: options?.preview ?? true,
+    silent: options?.silent ?? false,
     pageSize: "A4",
   });
 }

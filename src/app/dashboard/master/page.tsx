@@ -9,12 +9,14 @@ import {
   Settings,
   Percent,
   ArrowLeft,
+  Printer,
 } from "lucide-react";
 import SuppliersTable from "@/components/suppliers/SuppliersTable";
 import CustomersTable from "@/components/customers/CustomersTable";
 import AccountMaster from "@/components/accounts/AccountMaster";
 import TaxSettings from "@/components/tax/TaxSettings";
 import ShopSettingsPanel from "@/components/master/ShopSettingsPanel";
+import LabelPrintSettings from "@/components/master/LabelPrintSettings";
 
 type MasterSection =
   | "dashboard"
@@ -23,7 +25,8 @@ type MasterSection =
   | "categories"
   | "shopSettings"
   | "accounts"
-  | "tax";
+  | "tax"
+  | "labelPrint";
 
 const masterSections = [
   {
@@ -79,6 +82,15 @@ const masterSections = [
     color: "bg-orange-500",
     hoverColor: "hover:bg-orange-600",
     count: 1,
+  },
+  {
+    id: "labelPrint" as MasterSection,
+    title: "Label Print Settings",
+    description: "Configure printers and print templates",
+    icon: Printer,
+    color: "bg-cyan-500",
+    hoverColor: "hover:bg-cyan-600",
+    count: 0,
   },
 ];
 
@@ -200,6 +212,8 @@ export default function MasterPage() {
         return <TaxSettings />;
       case "shopSettings":
         return <ShopSettingsPanel />;
+      case "labelPrint":
+        return <LabelPrintSettings />;
       case "categories":
         return (
           <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">

@@ -1,12 +1,18 @@
 // src/app/dashboard/sales-return/page.tsx
 "use client";
-import { useEffect, useMemo, useState, useCallback } from "react";
+import {
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useCallback,
+} from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import SalesNavigation from "@/components/sales/SalesNavigation";
 import ItemsTableSection from "@/components/purchase/ItemsTableSection";
 import CustomerFormModal from "@/components/customers/CustomerFormModal";
 import SalesReturnReportsModal from "@/components/sales-return/SalesReturnReportsModal";
-import PromptModal from "@/components/ui/PromptModal";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import ValidationModal from "@/components/ui/ValidationModal";
 import BillDetailsSectionReturn from "@/components/sales-return/BillDetailsSectionReturn";
@@ -16,7 +22,7 @@ import {
   ItemRow,
   Customer,
   BatchInfo,
-} from "@/components/sales/type";
+} from "@/components/sales/types";
 import {
   createEmptyRow,
   calcRow,
@@ -24,30 +30,62 @@ import {
   validateSaleBill,
 } from "@/components/sales/utils";
 
-export default function SalesReturnPage() {
+function makeSnapshot(header: HeaderForm, rows: ItemRow[]) {
+  return JSON.stringify({
+    header,
+    rows: rows.map((r) => ({
+      productId: r.productId,
+      batchId: r.batchId,
+      barcode: r.barcode,
+      unit: r.unit,
+      rate: r.rate,
+      quantity: r.quantity,
+      mrp: r.mrp,
+      taxPercent: r.taxPercent,
+      discountType: r.discountType,
+      discount: r.discount,
+      salePrice: r.salePrice,
+      batchNo: r.batchNo,
+      purchaseBatchNo: r.purchaseBatchNo,
+      mfgDate: r.mfgDate,
+      expiryDate: r.expiryDate,
+      lineType: r.lineType,
+    })),
+  });
+}
+
+// Unified finalize-after-successful-save flow
+async function finalizeAfterSuccessfulSaleReturn({
+  resetFn,
+}: {
+  resetFn: () => void;
+}) {
+  resetFn();
+
+  setTimeout(() => {
+    const el = document.querySelector<HTMLElement>(`[data-cell="0:product"]`);
+    el?.focus();
+  }, 50);
+}
+
+function SalesReturnPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const openId = searchParams.get("open");
 
-  const licenseId =
-    typeof window !== "undefined"
-      ? localStorage.getItem("licenseId") || "demo-license"
-      : "demo-license";
-  const userId =
-    typeof window !== "undefined"
-      ? localStorage.getItem("userName") || "U1"
-      : "U1";
+  const [isClient, setIsClient] = useState(false);
+  const [licenseId, setLicenseId] = useState("demo-license");
+  const [userId, setUserId] = useState("U1");
 
   const [products, setProducts] = useState<any[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [nextEntryNo, setNextEntryNo] = useState<number | null>(null);
 
-  // Edit / Open states
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingSlNo, setEditingSlNo] = useState<number | null>(null);
   const [openingId, setOpeningId] = useState<string | undefined>(undefined);
 
-  // Batch picker state
   const [batchPicker, setBatchPicker] = useState<{
     rowIndex: number;
     productId: string;
@@ -56,7 +94,6 @@ export default function SalesReturnPage() {
     nextBarcode: string;
   } | null>(null);
 
-  // editor state
   const [header, setHeader] = useState<HeaderForm>({
     billNo: "",
     customer: null,
@@ -70,13 +107,26 @@ export default function SalesReturnPage() {
   });
   const [rows, setRows] = useState<ItemRow[]>([createEmptyRow(1)]);
   const [isDirty, setIsDirty] = useState(false);
-  const [didMount, setDidMount] = useState(false);
+  const initialSnapshot = useRef<string | null>(null);
 
   const [showReports, setShowReports] = useState(false);
   const [leaveOpen, setLeaveOpen] = useState(false);
   const [pendingPath, setPendingPath] = useState<string | null>(null);
   const [validationOpen, setValidationOpen] = useState(false);
   const [validationMsgs, setValidationMsgs] = useState<string[]>([]);
+
+  // NEW: Cancel confirmation modal
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
+
+  // Initialize from localStorage
+  useEffect(() => {
+    setIsClient(true);
+
+    if (typeof window !== "undefined") {
+      setLicenseId(localStorage.getItem("licenseId") || "demo-license");
+      setUserId(localStorage.getItem("userName") || "U1");
+    }
+  }, []);
 
   const handleOpenSaleReturn = useCallback(
     (id: string) => {
@@ -86,8 +136,9 @@ export default function SalesReturnPage() {
     [router],
   );
 
-  // Load products + next SL No
   useEffect(() => {
+    if (!isClient) return;
+
     (async () => {
       const res = await (window as any).electronAPI.getProducts(licenseId, {
         page: 1,
@@ -101,9 +152,8 @@ export default function SalesReturnPage() {
       );
       setNextEntryNo(res?.nextSlNo ?? 1);
     })();
-  }, [licenseId]);
+  }, [licenseId, isClient]);
 
-  // Customers
   useEffect(() => {
     loadCustomers();
   }, [showCustomerModal]);
@@ -116,7 +166,6 @@ export default function SalesReturnPage() {
     setCustomers(cs.map((c: any) => ({ id: c.id, name: c.name })));
   };
 
-  // Load selected sale return for Edit Mode
   useEffect(() => {
     if (!openId) return;
 
@@ -142,10 +191,12 @@ export default function SalesReturnPage() {
               calcRow({
                 lineNo: it.lineNo || idx + 1,
                 productId: it.productId || "",
-                code: "",
-                name: "",
+                code: it.productCode || "",
+                name: it.productName || "",
                 barcode: it.barcode || "",
+                batchId: it.batchId ?? null,
                 batchNo: it.batchNo || "",
+                purchaseBatchNo: it.purchaseBatchNo || it.batchNo || "",
                 mfgDate: it.mfgDate || null,
                 expiryDate: it.expiryDate || null,
                 quantity: Number(it.quantity || 0),
@@ -153,7 +204,6 @@ export default function SalesReturnPage() {
                 rate: Number(it.rate || 0),
                 mrp: it.mrp != null ? Number(it.mrp) : null,
                 taxPercent: it.taxPercent || "NT",
-                taxAmount: Number(it.taxAmount || 0),
                 discount: Number(it.discount || 0),
                 discountType: it.discountType || "ABS",
                 salePrice:
@@ -163,10 +213,7 @@ export default function SalesReturnPage() {
                 profit: it.profit != null ? Number(it.profit) : 0,
                 totalCost: Number(it.totalCost || 0),
                 billedValue: Number(it.billedValue || 0),
-                effectiveUnitValue: Number(it.effectiveUnitValue || 0),
-                appliedQuantity: Number(it.appliedQuantity || it.quantity || 0),
-                overReturnQuantity: Number(it.overReturnQuantity || 0),
-                overReturnReason: it.overReturnReason || null,
+                lineType: "VALUED",
               } as ItemRow),
             )
           : [createEmptyRow(1)];
@@ -174,7 +221,9 @@ export default function SalesReturnPage() {
         if (cancelled) return;
 
         setEditingId(sr.id);
-        setHeader({
+        setEditingSlNo(sr.slNo ?? null);
+
+        const nextHeader: HeaderForm = {
           billNo: sr.billNo || "",
           customer: mappedCustomer,
           department: sr.department || "",
@@ -184,8 +233,11 @@ export default function SalesReturnPage() {
           entryTime: sr.entryTime || new Date().toISOString(),
           discount: Number(sr.discount || 0),
           saleType: sr.saleType || "CASH",
-        });
+        };
+
+        setHeader(nextHeader);
         setRows(mappedRows);
+        initialSnapshot.current = makeSnapshot(nextHeader, mappedRows);
         setIsDirty(false);
       } catch (err) {
         console.error("Failed to open sale return", err);
@@ -199,7 +251,6 @@ export default function SalesReturnPage() {
     };
   }, [openId]);
 
-  // Batch-aware handleSelectProduct
   const handleSelectProduct = async (rowIndex: number, productId: string) => {
     const product = await (window as any).electronAPI.getProduct(productId);
     if (!product) return;
@@ -209,18 +260,18 @@ export default function SalesReturnPage() {
       productId,
     );
 
-    const liveBatches: BatchInfo[] = (batchesRes?.rows || [])
-      .filter((b: any) => Number(b.stock || 0) > 0)
-      .map((b: any) => ({
-        id: b.id,
-        barcode: b.barcode,
-        batchNo: b.batchNo,
-        mfgDate: b.mfgDate,
-        expiryDate: b.expiryDate,
-        mrp: b.mrp,
-        salePrice: b.salePrice,
-        stock: b.stock,
-      }));
+    const liveBatches: BatchInfo[] = (batchesRes?.rows || []).map((b: any) => ({
+      id: b.id,
+      barcode: b.barcode,
+      batchNo: b.batchNo,
+      purchaseBatchNo: b.purchaseBatchNo || b.batchNo,
+      mfgDate: b.mfgDate,
+      expiryDate: b.expiryDate,
+      mrp: b.mrp,
+      salePrice: b.salePrice,
+      costPrice: b.costPrice,
+      stock: b.stock,
+    }));
 
     const basePatch = {
       productId,
@@ -228,8 +279,10 @@ export default function SalesReturnPage() {
       name: product.name,
       unit: product.unit,
       taxPercent: product.tax,
+      batchId: null,
       barcode: "",
       batchNo: "",
+      purchaseBatchNo: "",
       mfgDate: null,
       expiryDate: null,
       mrp: null,
@@ -240,7 +293,6 @@ export default function SalesReturnPage() {
           : 0,
     };
 
-    // Only one live batch -> auto select
     if (liveBatches.length === 1) {
       const b = liveBatches[0];
       setRows((prev) =>
@@ -250,8 +302,10 @@ export default function SalesReturnPage() {
             : {
                 ...r,
                 ...basePatch,
+                batchId: b.id,
                 barcode: b.barcode || "",
                 batchNo: b.batchNo ?? null,
+                purchaseBatchNo: b.purchaseBatchNo ?? b.batchNo ?? null,
                 mfgDate: b.mfgDate ?? null,
                 expiryDate: b.expiryDate ?? null,
                 mrp: b.mrp ?? null,
@@ -269,7 +323,6 @@ export default function SalesReturnPage() {
       return;
     }
 
-    // Multiple batches -> let user choose
     if (liveBatches.length > 1) {
       setRows((prev) =>
         prev.map((r, i) => (i !== rowIndex ? r : { ...r, ...basePatch })),
@@ -284,7 +337,6 @@ export default function SalesReturnPage() {
       return;
     }
 
-    // No batch -> fallback to product barcode/code
     setRows((prev) =>
       prev.map((r, i) =>
         i !== rowIndex
@@ -298,7 +350,6 @@ export default function SalesReturnPage() {
     );
   };
 
-  // Manual batch re-select (F2 / Ctrl+B)
   const handleRequestBatchSelect = async (
     rowIndex: number,
     explicitProductId?: string,
@@ -312,18 +363,20 @@ export default function SalesReturnPage() {
         window as any
       ).electronAPI.listBarcodesForProduct(licenseId, productId);
 
-      const liveBatches: BatchInfo[] = (batchesRes?.rows || [])
-        .filter((b: any) => Number(b.stock || 0) > 0)
-        .map((b: any) => ({
+      const liveBatches: BatchInfo[] = (batchesRes?.rows || []).map(
+        (b: any) => ({
           id: b.id,
           barcode: b.barcode,
           batchNo: b.batchNo,
+          purchaseBatchNo: b.purchaseBatchNo || b.batchNo,
           mfgDate: b.mfgDate,
           expiryDate: b.expiryDate,
           mrp: b.mrp,
           salePrice: b.salePrice,
+          costPrice: b.costPrice,
           stock: b.stock,
-        }));
+        }),
+      );
 
       if (!liveBatches.length) return;
 
@@ -342,7 +395,6 @@ export default function SalesReturnPage() {
     }
   };
 
-  // line calc
   useEffect(() => {
     setRows((prev) => prev.map(calcRow));
   }, [
@@ -368,7 +420,6 @@ export default function SalesReturnPage() {
     [subTotal, header.discount],
   );
 
-  // list utils
   const addRow = () =>
     setRows((prev) => [...prev, createEmptyRow(prev.length + 1)]);
   const removeRow = (index: number) =>
@@ -378,72 +429,113 @@ export default function SalesReturnPage() {
         .map((r, i) => ({ ...r, lineNo: i + 1 })),
     );
 
-  // SAVE
   const handleSave = async () => {
     const items = mapItems(rows);
     const errs = validateSaleBill(header, items);
+
     if (errs.length) {
       setValidationMsgs(errs);
       setValidationOpen(true);
       return false;
     }
 
-    const payload = {
-      header: {
-        id: editingId || undefined,
-        userId,
-        licenseId,
-        customerId: header.customer?.id || null,
-        customerName: header.customer?.name || null,
-        billNo: header.billNo || null,
-        department: header.department || null,
-        debitAccount: header.debitAccount || null,
-        natureOfEntry: header.natureOfEntry || null,
-        returnDate: header.saleDate,
-        entryTime: header.entryTime,
-        discount: header.discount || 0,
-        saleType: header.saleType,
-      },
-      items,
-    };
+    const payload = editingId
+      ? {
+          id: editingId,
+          header: {
+            userId,
+            licenseId,
+            customerId: header.customer?.id || null,
+            customerName: header.customer?.name || null,
+            billNo: header.billNo || null,
+            department: header.department || null,
+            debitAccount: header.debitAccount || null,
+            natureOfEntry: header.natureOfEntry || null,
+            returnDate: header.saleDate,
+            entryTime: header.entryTime,
+            discount: header.discount || 0,
+            saleType: header.saleType,
+          },
+          items,
+        }
+      : {
+          header: {
+            userId,
+            licenseId,
+            customerId: header.customer?.id || null,
+            customerName: header.customer?.name || null,
+            billNo: header.billNo || null,
+            department: header.department || null,
+            debitAccount: header.debitAccount || null,
+            natureOfEntry: header.natureOfEntry || null,
+            returnDate: header.saleDate,
+            entryTime: header.entryTime,
+            discount: header.discount || 0,
+            saleType: header.saleType,
+          },
+          items,
+        };
 
     const res = editingId
       ? await (window as any).electronAPI.updateSaleReturn(payload)
       : await (window as any).electronAPI.createSaleReturn(payload);
-
     if (res?.success) {
       alert(
         `✅ Return ${editingId ? "updated" : "saved"}! ${!editingId ? `SlNo: ${res.slNo}, ` : ""}Total: ${(res.totalAmount ?? grandTotal).toFixed(2)}`,
       );
+
+      if (!editingId) {
+        setEditingId(res.returnId || null);
+        setEditingSlNo(res.slNo ?? null);
+        initialSnapshot.current = makeSnapshot(header, rows);
+        setIsDirty(false);
+      }
+
       try {
         const peek = await (window as any).electronAPI.getNextSaleReturnSlNo(
           licenseId,
         );
         setNextEntryNo(peek?.nextSlNo ?? null);
       } catch {}
-      resetAll();
+
+      if (editingId) {
+        await finalizeAfterSuccessfulSaleReturn({
+          resetFn: resetAll,
+        });
+      }
+
       return true;
     }
-    alert("Failed to save sale return.");
+
+    setValidationMsgs([res?.error || "Failed to save sale return."]);
+    setValidationOpen(true);
     return false;
   };
 
+  // FIXED: Use modal instead of raw confirm
   const handleCancel = () => {
-    const ok = confirm("Discard changes to this return?");
-    if (ok) resetAll();
-  };
-
-  // dirty guard
-  useEffect(() => {
-    if (!didMount) {
-      setDidMount(true);
+    if (!isDirty) {
+      resetAll();
       return;
     }
-    setIsDirty(true);
+    setCancelConfirmOpen(true);
+  };
+
+  useEffect(() => {
+    const snap = makeSnapshot(header, rows);
+
+    if (initialSnapshot.current === null) {
+      initialSnapshot.current = snap;
+      setIsDirty(false);
+      return;
+    }
+
+    setIsDirty(initialSnapshot.current !== snap);
   }, [header, rows]);
 
+  // STRENGTHENED: Clear ALL auxiliary state
   function resetAll() {
-    setHeader({
+    const freshHeader: HeaderForm = {
       billNo: "",
       customer: null,
       department: "",
@@ -453,14 +545,30 @@ export default function SalesReturnPage() {
       entryTime: new Date().toISOString(),
       discount: 0,
       saleType: "CASH",
-    });
-    setRows([createEmptyRow(1)]);
+    };
+
+    const freshRows = [createEmptyRow(1)];
+
+    setHeader(freshHeader);
+    setRows(freshRows);
     setIsDirty(false);
     setEditingId(null);
-    router.replace("/dashboard/sales-return"); // Clears the ?open= query param
+    setEditingSlNo(null);
+
+    // Clear all modals and auxiliary state
+    setShowReports(false);
+    setShowCustomerModal(false);
+    setBatchPicker(null);
+    setValidationMsgs([]);
+    setValidationOpen(false);
+    setLeaveOpen(false);
+    setPendingPath(null);
+    setCancelConfirmOpen(false);
+
+    initialSnapshot.current = makeSnapshot(freshHeader, freshRows);
+    router.replace("/dashboard/sales-return");
   }
 
-  // leave guard (browser)
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
       if (!isDirty) return;
@@ -471,7 +579,6 @@ export default function SalesReturnPage() {
     return () => window.removeEventListener("beforeunload", handler);
   }, [isDirty]);
 
-  // Ctrl/Cmd+S
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
@@ -495,6 +602,9 @@ export default function SalesReturnPage() {
     setLeaveOpen(true);
   }
 
+  // Return null until client-side hydration is complete
+  if (!isClient) return null;
+
   return (
     <div className="flex h-screen flex-col bg-gray-50">
       <SalesNavigation
@@ -503,7 +613,23 @@ export default function SalesReturnPage() {
       />
 
       <div className="flex-1 min-h-0 overflow-hidden p-0">
-        <div className="grid h-full grid-cols-[300px_1fr]">
+        {editingId && (
+          <div className="px-4 py-2 border-b bg-white flex items-center gap-3">
+            <span className="text-sm text-gray-500">Saved return open</span>
+
+            <button
+              type="button"
+              onClick={() => resetAll()}
+              className="px-3 py-1.5 rounded border border-gray-300 bg-white text-sm"
+            >
+              New Return
+            </button>
+          </div>
+        )}
+
+        <div
+          className={`grid ${editingId ? "h-[calc(100%-41px)]" : "h-full"} grid-cols-[300px_1fr]`}
+        >
           <BillDetailsSectionReturn
             header={header}
             setHeader={setHeader}
@@ -513,7 +639,11 @@ export default function SalesReturnPage() {
             grandTotal={grandTotal}
             onSave={handleSave}
             onCancel={handleCancel}
-            entryNo={nextEntryNo ?? undefined}
+            entryNo={
+              editingId
+                ? (editingSlNo ?? undefined)
+                : (nextEntryNo ?? undefined)
+            }
             requireCustomer={header.saleType === "CREDIT"}
           />
 
@@ -577,8 +707,11 @@ export default function SalesReturnPage() {
                 ? r
                 : {
                     ...r,
+                    batchId: batch.id,
                     barcode: batch.barcode || "",
                     batchNo: batch.batchNo ?? null,
+                    purchaseBatchNo:
+                      batch.purchaseBatchNo ?? batch.batchNo ?? null,
                     mfgDate: batch.mfgDate ?? null,
                     expiryDate: batch.expiryDate ?? null,
                     mrp: batch.mrp ?? null,
@@ -599,12 +732,26 @@ export default function SalesReturnPage() {
           setBatchPicker(null);
         }}
         onAddNewBatch={() => {
-          // sales return must never create a new batch from UI
           setBatchPicker(null);
         }}
       />
 
-      {/* Leave-guard modal */}
+      {/* FIXED: Proper cancel confirmation modal */}
+      <ConfirmModal
+        isOpen={cancelConfirmOpen}
+        title="Discard current return?"
+        message="You have unsaved changes in this sales return entry. Do you really want to clear everything?"
+        confirmText="Discard"
+        cancelText="Keep editing"
+        onConfirm={() => {
+          setCancelConfirmOpen(false);
+          resetAll();
+        }}
+        onCancel={() => {
+          setCancelConfirmOpen(false);
+        }}
+      />
+
       <ConfirmModal
         isOpen={leaveOpen}
         title="Leave this page?"
@@ -644,5 +791,13 @@ export default function SalesReturnPage() {
         onClose={() => setValidationOpen(false)}
       />
     </div>
+  );
+}
+
+export default function SalesReturnPage() {
+  return (
+    <Suspense fallback={null}>
+      <SalesReturnPageInner />
+    </Suspense>
   );
 }

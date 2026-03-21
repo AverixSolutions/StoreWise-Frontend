@@ -27,7 +27,8 @@ import {
   headerFromPurchaseDb,
   rowsFromDbItems,
 } from "@/components/purchase/utils";
-import BarcodePrintModal from "@/components/barcodes/BarcodePrintModal";
+import BarcodePrintCenterButton from "@/components/barcodes/BarcodePrintCenterButton";
+import type { PrintCenterItemRow } from "@/lib/barcode/printCenterTypes";
 import { printPurchaseBill } from "@/lib/print/printPurchaseBill";
 
 type BatchDecision = "OVERRIDE" | "NEW";
@@ -137,17 +138,14 @@ export default function PurchasePage() {
   const router = useRouter();
 
   const initialSnapshot = useRef<string | null>(null);
-  const [barcodePrintOpen, setBarcodePrintOpen] = useState(false);
 
-  const licenseId =
-    typeof window !== "undefined"
-      ? localStorage.getItem("licenseId") || "demo-license"
-      : "demo-license";
+  const [isClient, setIsClient] = useState(false);
+  const [licenseId, setLicenseId] = useState("demo-license");
+  const [userId, setUserId] = useState("admin");
+  const [shopName, setShopName] = useState("My Shop");
 
-  const userId =
-    typeof window !== "undefined"
-      ? localStorage.getItem("userName") || "admin"
-      : "admin";
+  const [printers, setPrinters] = useState<any[]>([]);
+  const [templates, setTemplates] = useState<any[]>([]);
 
   const [products, setProducts] = useState<Product[]>([]);
   const [suppliers, setSuppliers] = useState<
@@ -210,7 +208,18 @@ export default function PurchasePage() {
 
   const [batchConfirmOpen, setBatchConfirmOpen] = useState(false);
 
-  function getBarcodePrintItemsFromRows() {
+  // Initialize from localStorage
+  useEffect(() => {
+    setIsClient(true);
+
+    if (typeof window !== "undefined") {
+      setLicenseId(localStorage.getItem("licenseId") || "demo-license");
+      setUserId(localStorage.getItem("userName") || "admin");
+      setShopName(localStorage.getItem("shopName") || "My Shop");
+    }
+  }, []);
+
+  function getPrintCenterRowsFromPurchaseRows(): PrintCenterItemRow[] {
     return rows
       .filter(
         (r: ItemRow) =>
@@ -219,8 +228,11 @@ export default function PurchasePage() {
           String(r.barcode || "").trim(),
       )
       .map((r: ItemRow) => ({
-        code: String(r.barcode || "").trim(),
-        name: r.name || "",
+        productId: r.productId!,
+        batchId: (r as any).batchId || undefined,
+        itemName: r.name || "",
+        barcode: String(r.barcode || "").trim(),
+        batchNo: r.batchNo || null,
         salePrice:
           typeof r.salePrice === "number" && !Number.isNaN(r.salePrice)
             ? r.salePrice
@@ -228,21 +240,6 @@ export default function PurchasePage() {
         mrp: typeof r.mrp === "number" && !Number.isNaN(r.mrp) ? r.mrp : null,
         copies: Math.max(1, Number(r.quantity || 1)),
       }));
-  }
-
-  function handleOpenBarcodePrint() {
-    const items = getBarcodePrintItemsFromRows();
-
-    if (!items.length) {
-      setValidationMsgs([
-        "No printable barcodes found.",
-        "Add/select products and make sure barcode exists in purchase rows.",
-      ]);
-      setValidationOpen(true);
-      return;
-    }
-
-    setBarcodePrintOpen(true);
   }
 
   useEffect(() => {
@@ -256,6 +253,8 @@ export default function PurchasePage() {
   }, []);
 
   useEffect(() => {
+    if (!isClient) return;
+
     (async () => {
       const res = await (window as any).electronAPI.getProducts(licenseId, {
         page: 1,
@@ -270,7 +269,7 @@ export default function PurchasePage() {
       );
       setNextEntryNo(res?.nextSlNo ?? 1);
     })();
-  }, [licenseId]);
+  }, [licenseId, isClient]);
 
   useEffect(() => {
     loadSuppliers();
@@ -291,61 +290,23 @@ export default function PurchasePage() {
   };
 
   const handleSelectProduct = async (rowIndex: number, productId: string) => {
-    const product = await (window as any).electronAPI.getProduct(productId);
-    if (!product) return;
-
-    let nextBarcode = "";
     try {
-      const peekRes = await (window as any).electronAPI.peekNextBarcode(
-        licenseId,
-      );
-      nextBarcode = getNextPreviewBarcode(
+      const [product, peekRes, batchesRes] = await Promise.all([
+        (window as any).electronAPI.getProduct(productId),
+        (window as any).electronAPI.peekNextBarcode(licenseId),
+        (window as any).electronAPI.listBarcodesForProduct(
+          licenseId,
+          productId,
+        ),
+      ]);
+
+      if (!product) return;
+
+      const nextBarcode = getNextPreviewBarcode(
         peekRes?.barcode || "00000",
         rows,
         rowIndex,
       );
-    } catch (e) {
-      console.error("Failed to peek next barcode", e);
-      nextBarcode = getNextPreviewBarcode("00000", rows, rowIndex);
-    }
-
-    if (!nextBarcode) {
-      nextBarcode = getNextPreviewBarcode("00000", rows, rowIndex);
-    }
-    setRows((prev) =>
-      prev.map((r, i) =>
-        i !== rowIndex
-          ? r
-          : {
-              ...r,
-              productId,
-              code: product.code,
-              name: product.name,
-              unit: product.unit,
-              taxPercent: product.tax,
-              barcode: nextBarcode || "00001",
-              rate: Number(product.costPrice) || 0,
-              batchNo: "",
-              mfgDate: null,
-              expiryDate: null,
-              forceNewBatch: true,
-              mrp:
-                product.mrp != null && !Number.isNaN(Number(product.mrp))
-                  ? Number(product.mrp)
-                  : null,
-              salePrice:
-                product.salePrice != null &&
-                !Number.isNaN(Number(product.salePrice))
-                  ? Number(product.salePrice)
-                  : 0,
-            },
-      ),
-    );
-
-    try {
-      const batchesRes = await (
-        window as any
-      ).electronAPI.listBarcodesForProduct(licenseId, productId);
 
       const batches: BatchInfo[] = (batchesRes?.rows || []).map((b: any) => ({
         id: b.id,
@@ -358,16 +319,112 @@ export default function PurchasePage() {
         stock: b.stock,
       }));
 
-      if (batches.length > 0) {
-        const productName = product.name;
-        setBatchPicker({
-          rowIndex,
-          productId,
-          batches,
-          productName,
-          nextBarcode,
-        });
+      // First fill only base product details
+      setRows((prev) =>
+        prev.map((r, i) =>
+          i !== rowIndex
+            ? r
+            : {
+                ...r,
+                productId,
+                code: product.code,
+                name: product.name,
+                unit: product.unit,
+                taxPercent: product.tax,
+                rate: Number(product.costPrice) || 0,
+                barcode: "",
+                batchNo: "",
+                mfgDate: null,
+                expiryDate: null,
+                forceNewBatch: false,
+                mrp:
+                  product.mrp != null && !Number.isNaN(Number(product.mrp))
+                    ? Number(product.mrp)
+                    : null,
+                salePrice:
+                  product.salePrice != null &&
+                  !Number.isNaN(Number(product.salePrice))
+                    ? Number(product.salePrice)
+                    : 0,
+              },
+        ),
+      );
+
+      // No existing barcodes -> suggest next barcode
+      if (batches.length === 0) {
+        setRows((prev) =>
+          prev.map((r, i) =>
+            i !== rowIndex
+              ? r
+              : {
+                  ...r,
+                  barcode: nextBarcode,
+                  forceNewBatch: true,
+                },
+          ),
+        );
+
+        setTimeout(() => {
+          const el = document.querySelector<HTMLInputElement>(
+            `[data-cell="${rowIndex}:barcode"]`,
+          );
+          if (el) {
+            el.focus();
+            el.select();
+          }
+        }, 0);
+
+        return;
       }
+
+      // Exactly one existing barcode -> auto use it
+      if (batches.length === 1) {
+        const b = batches[0];
+
+        setRows((prev) =>
+          prev.map((r, i) =>
+            i !== rowIndex
+              ? r
+              : {
+                  ...r,
+                  barcode: b.barcode || "",
+                  batchNo: b.batchNo ?? "",
+                  mfgDate: b.mfgDate ?? null,
+                  expiryDate: b.expiryDate ?? null,
+                  forceNewBatch: false,
+                  mrp:
+                    b.mrp != null && !Number.isNaN(Number(b.mrp))
+                      ? Number(b.mrp)
+                      : r.mrp,
+                  salePrice:
+                    b.salePrice != null && !Number.isNaN(Number(b.salePrice))
+                      ? Number(b.salePrice)
+                      : r.salePrice,
+                },
+          ),
+        );
+
+        setTimeout(() => {
+          const el = document.querySelector<HTMLInputElement>(
+            `[data-cell="${rowIndex}:barcode"]`,
+          );
+          if (el) {
+            el.focus();
+            el.select();
+          }
+        }, 0);
+
+        return;
+      }
+
+      // Multiple existing barcodes -> let user choose
+      setBatchPicker({
+        rowIndex,
+        productId,
+        batches,
+        productName: product.name,
+        nextBarcode,
+      });
 
       setTimeout(() => {
         const el = document.querySelector<HTMLInputElement>(
@@ -379,17 +436,7 @@ export default function PurchasePage() {
         }
       }, 0);
     } catch (e) {
-      console.error("Failed to load product barcodes", e);
-
-      setTimeout(() => {
-        const el = document.querySelector<HTMLInputElement>(
-          `[data-cell="${rowIndex}:barcode"]`,
-        );
-        if (el) {
-          el.focus();
-          el.select();
-        }
-      }, 0);
+      console.error("Failed to select product", e);
     }
   };
 
@@ -653,7 +700,14 @@ export default function PurchasePage() {
   function handleBarcodeError(err: any) {
     const msg = String(err?.message || err || "");
 
-    if (!msg.includes("BARCODE_IN_USE")) return false;
+    if (
+      !msg.includes("BARCODE_IN_USE") &&
+      !msg.includes(
+        "UNIQUE constraint failed: product_batches.licenseId, product_batches.barcode",
+      )
+    ) {
+      return false;
+    }
 
     let barcode: string | null = null;
     const m = msg.match(/BARCODE_IN_USE:\s*Barcode\s+(.+?)\s+already/i);
@@ -907,11 +961,18 @@ export default function PurchasePage() {
       } catch {}
 
       const shouldPrint = confirm(
-        `✅ Saved! SlNo: ${res.slNo}, Total: ${res.totalAmount}\n\nPrint bill now?`,
+        `✅ Saved! SlNo: ${res.slNo}, Total: ${res.totalAmount}\n\nOpen print preview now?`,
       );
+
+      setEditingPurchaseId(res.purchaseId || null);
+      setEditingSlNo(res.slNo ?? null);
+
+      initialSnapshot.current = makeSnapshot(header, rowsToUse);
+      setIsDirty(false);
+
       if (shouldPrint && res.purchaseId) {
         try {
-          await printPurchaseBill(res.purchaseId);
+          await printPurchaseBill(res.purchaseId, { preview: true });
         } catch (e: any) {
           alert("Print failed: " + String(e?.message || e));
         }
@@ -966,7 +1027,6 @@ export default function PurchasePage() {
         }
       }
 
-      resetAll();
       return true;
     } catch (err: any) {
       if (!handleBarcodeError(err)) {
@@ -1058,19 +1118,25 @@ export default function PurchasePage() {
     setLeaveOpen(true);
   }
 
+  // Return null until client-side hydration is complete
+  if (!isClient) return null;
+
   return (
     <div className="flex h-screen flex-col bg-gray-50">
       <PurchaseNavigation onNavigate={tryNavigate} title="Purchase" />
 
       <div className="flex-1 min-h-0 overflow-hidden p-0">
         {editingPurchaseId && (
-          <div className="px-4 py-2 border-b bg-white flex items-center gap-3">
-            <span className="text-sm text-gray-500">Editing saved bill</span>
+          <div className="px-4 py-2 border-b bg-white flex items-center gap-3 flex-wrap">
+            <span className="text-sm text-gray-500">Saved bill open</span>
+
             <button
               type="button"
               onClick={async () => {
                 try {
-                  const res = await printPurchaseBill(editingPurchaseId);
+                  const res = await printPurchaseBill(editingPurchaseId, {
+                    preview: true,
+                  });
                   if (!res?.success) alert(res?.error || "Print failed");
                 } catch (e: any) {
                   alert("Print failed: " + String(e?.message || e));
@@ -1079,6 +1145,22 @@ export default function PurchasePage() {
               className="px-3 py-1.5 rounded bg-slate-800 text-white text-sm"
             >
               Print Bill
+            </button>
+
+            <BarcodePrintCenterButton
+              licenseId={licenseId}
+              initialRows={getPrintCenterRowsFromPurchaseRows()}
+              defaultShopName={shopName}
+              buttonText="Print Barcodes"
+              className="inline-flex items-center gap-2 rounded border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            />
+
+            <button
+              type="button"
+              onClick={() => resetAll()}
+              className="px-3 py-1.5 rounded border border-gray-300 bg-white text-sm"
+            >
+              New Bill
             </button>
           </div>
         )}
@@ -1103,24 +1185,35 @@ export default function PurchasePage() {
             isEditing={Boolean(editingPurchaseId)}
           />
 
-          <ItemsTableSection
-            rows={rows}
-            products={products}
-            onSelectProduct={handleSelectProduct}
-            onUpdateRow={updateRow}
-            onAddRow={addRow}
-            onRemoveRow={removeRow}
-            subTotal={subTotal}
-            grandTotal={grandTotal}
-            headerDiscount={header.discount}
-            onHold={handleHold}
-            onShowHolds={handleShowHolds}
-            onShowReports={() => setShowReports(true)}
-            showHoldControls={!editingPurchaseId}
-            onRequestBatchSelect={handleRequestBatchSelect}
-            onBarcodeCommit={handleBarcodeCommit}
-            onPrintBarcodes={handleOpenBarcodePrint}
-          />
+          <div className="min-h-0 flex flex-col bg-white">
+            <div className="px-4 pt-3 pb-2 border-b flex justify-end">
+              <BarcodePrintCenterButton
+                licenseId={licenseId}
+                initialRows={getPrintCenterRowsFromPurchaseRows()}
+                defaultShopName={shopName}
+                buttonText="Print Barcodes"
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              />
+            </div>
+
+            <ItemsTableSection
+              rows={rows}
+              products={products}
+              onSelectProduct={handleSelectProduct}
+              onUpdateRow={updateRow}
+              onAddRow={addRow}
+              onRemoveRow={removeRow}
+              subTotal={subTotal}
+              grandTotal={grandTotal}
+              headerDiscount={header.discount}
+              onHold={handleHold}
+              onShowHolds={handleShowHolds}
+              onShowReports={() => setShowReports(true)}
+              showHoldControls={!editingPurchaseId}
+              onRequestBatchSelect={handleRequestBatchSelect}
+              onBarcodeCommit={handleBarcodeCommit}
+            />
+          </div>
         </div>
       </div>
 
@@ -1467,14 +1560,6 @@ export default function PurchasePage() {
         onCancel={() => {
           setCancelConfirmOpen(false);
         }}
-      />
-
-      {/* Barcode print model */}
-      <BarcodePrintModal
-        isOpen={barcodePrintOpen}
-        onClose={() => setBarcodePrintOpen(false)}
-        items={getBarcodePrintItemsFromRows()}
-        defaultShopName={localStorage.getItem("shopName") || "My Shop"}
       />
 
       {/* Leave page confirm modal */}

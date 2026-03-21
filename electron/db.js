@@ -112,6 +112,14 @@ db.prepare(
 `,
 ).run();
 
+addColumnIfMissing("product_batches", "purchaseBatchNo", "TEXT");
+addColumnIfMissing("product_batches", "purchaseId", "TEXT");
+addColumnIfMissing(
+  "product_batches",
+  "isSystemGeneratedBarcode",
+  "INTEGER DEFAULT 0",
+);
+
 db.prepare(
   `CREATE INDEX IF NOT EXISTS idx_batches_identity 
    ON product_batches(productId, batchNo, expiryDate, mfgDate, mrp, salePrice)`,
@@ -122,6 +130,16 @@ db.prepare(
 db.prepare(
   `CREATE INDEX IF NOT EXISTS idx_batches_barcode
    ON product_batches(licenseId, barcode)`,
+).run();
+
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_batches_purchase_batch
+   ON product_batches(licenseId, purchaseBatchNo, productId, deletedAt)`,
+).run();
+
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_batches_purchase_id
+   ON product_batches(purchaseId, productId, deletedAt)`,
 ).run();
 
 try {
@@ -163,6 +181,7 @@ addColumnIfMissing("purchases", "debitAccount", "TEXT");
 addColumnIfMissing("purchases", "natureOfEntry", "TEXT");
 addColumnIfMissing("purchases", "purchaseType", "TEXT");
 addColumnIfMissing("purchases", "updatedAt", "TEXT");
+addColumnIfMissing("purchases", "purchaseBatchNo", "TEXT");
 
 // Purchase Index
 db.prepare(
@@ -325,6 +344,7 @@ addColumnIfMissing("purchase_items", "discountType", "TEXT");
 addColumnIfMissing("purchase_items", "lineNo", "INTEGER");
 addColumnIfMissing("purchase_items", "isFree", "INTEGER DEFAULT 0");
 addColumnIfMissing("purchase_items", "effectiveUnitValue", "REAL");
+addColumnIfMissing("purchase_items", "purchaseBatchNo", "TEXT");
 
 // Purchase Items Index
 db.prepare(
@@ -1291,45 +1311,7 @@ if (!alreadyRan) {
   trx();
 }
 
-const barcodeNormRan = db
-  .prepare(
-    `SELECT 1 FROM _migrations WHERE name='normalize_barcodes_v1' LIMIT 1`,
-  )
-  .get();
-
-if (!barcodeNormRan) {
-  try {
-    const rows = db
-      .prepare(
-        `
-      SELECT id, codeNumber, barcode FROM products
-      WHERE COALESCE(deletedAt,'')=''
-    `,
-      )
-      .all();
-
-    const upd = db.prepare(
-      `UPDATE products SET barcode=?, updatedAt=? WHERE id=?`,
-    );
-    const now = new Date().toISOString();
-
-    db.transaction(() => {
-      for (const row of rows) {
-        const gen = String(Number(row.codeNumber || 0)).padStart(5, "0");
-        if (row.barcode !== gen) upd.run(gen, now, row.id);
-      }
-      db.prepare(
-        `INSERT INTO _migrations(name, ranAt) VALUES('normalize_barcodes_v1', ?)`,
-      ).run(now);
-    })();
-  } catch (e) {
-    console.error("barcode normalization failed", e);
-  }
-}
-
 // --- Global Barcode Sequence ---
-// One row per license. lastBarcodeNumber = highest barcode number ever reserved.
-// Each new unique barcode = String(++lastBarcodeNumber).padStart(5, "0")
 db.prepare(
   `
   CREATE TABLE IF NOT EXISTS barcode_sequence (
@@ -1339,91 +1321,174 @@ db.prepare(
 `,
 ).run();
 
-// Migration: seed barcode_sequence from existing barcodes so we don't re-issue them
-const barcodeSeqRan = db
+const legacyProductBarcodeCleanupRan = db
   .prepare(
-    `SELECT 1 FROM _migrations WHERE name='seed_barcode_sequence_v2' LIMIT 1`,
+    `SELECT 1 FROM _migrations WHERE name='cleanup_legacy_product_barcodes_v3' LIMIT 1`,
   )
   .get();
 
-if (!barcodeSeqRan) {
+if (!legacyProductBarcodeCleanupRan) {
   try {
-    db.transaction(() => {
-      const licenses = db
-        .prepare(
-          `
-          SELECT licenseId FROM products
-          UNION
-          SELECT licenseId FROM product_batches
-          UNION
-          SELECT licenseId FROM code_sequence
-        `,
-        )
-        .all();
+    const ts = new Date().toISOString();
+    const uuidv4 = require("uuid").v4;
 
-      const maxBatchStmt = db.prepare(`
-        SELECT MAX(CAST(barcode AS INTEGER)) AS mx
-        FROM product_batches
-        WHERE licenseId=?
-          AND barcode IS NOT NULL
-          AND barcode <> ''
-          AND barcode GLOB '[0-9]*'
-          AND barcode NOT GLOB '*[^0-9]*'
-          AND COALESCE(deletedAt,'')=''
-      `);
-
-      const maxProductStmt = db.prepare(`
-        SELECT MAX(CAST(barcode AS INTEGER)) AS mx
+    const rows = db
+      .prepare(
+        `
+        SELECT id, licenseId, barcode, salePrice, costPrice
         FROM products
-        WHERE licenseId=?
+        WHERE COALESCE(deletedAt,'')=''
           AND barcode IS NOT NULL
           AND barcode <> ''
-          AND barcode GLOB '[0-9]*'
-          AND barcode NOT GLOB '*[^0-9]*'
-          AND COALESCE(deletedAt,'')=''
-      `);
+      `,
+      )
+      .all();
 
-      const maxCodeStmt = db.prepare(`
-        SELECT lastCodeNumber AS mx
-        FROM code_sequence
-        WHERE licenseId=?
-      `);
+    const hasLiveBatchWithSameBarcode = db.prepare(`
+      SELECT 1
+      FROM product_batches
+      WHERE licenseId=?
+        AND productId=?
+        AND barcode=?
+        AND COALESCE(deletedAt,'')=''
+      LIMIT 1
+    `);
 
-      const upsertSeq = db.prepare(`
-        INSERT INTO barcode_sequence (licenseId, lastBarcodeNumber)
-        VALUES (?, ?)
-        ON CONFLICT(licenseId) DO UPDATE SET
-          lastBarcodeNumber = CASE
-            WHEN barcode_sequence.lastBarcodeNumber > excluded.lastBarcodeNumber
-              THEN barcode_sequence.lastBarcodeNumber
-            ELSE excluded.lastBarcodeNumber
-          END
-      `);
+    const insertZeroStockBatch = db.prepare(`
+      INSERT INTO product_batches(
+        id, licenseId, productId, barcode, mrp, salePrice, costPrice,
+        batchNo, mfgDate, expiryDate, receivedAt, stock, createdAt, updatedAt
+      ) VALUES (?, ?, ?, ?, NULL, ?, ?, NULL, NULL, NULL, ?, 0, ?, ?)
+    `);
 
-      for (const { licenseId } of licenses) {
-        const maxFromBatches = Number(maxBatchStmt.get(licenseId)?.mx || 0);
-        const maxFromProducts = Number(maxProductStmt.get(licenseId)?.mx || 0);
-        const maxFromCodeSeq = Number(maxCodeStmt.get(licenseId)?.mx || 0);
+    const clearProductBarcode = db.prepare(`
+      UPDATE products
+      SET barcode=NULL, updatedAt=?, isSynced=0, syncedAt=NULL
+      WHERE id=?
+    `);
 
-        const maxForLicense = Math.max(
-          maxFromBatches,
-          maxFromProducts,
-          maxFromCodeSeq,
+    db.transaction(() => {
+      for (const p of rows) {
+        const exists = hasLiveBatchWithSameBarcode.get(
+          p.licenseId,
+          p.id,
+          p.barcode,
         );
 
-        upsertSeq.run(licenseId, maxForLicense);
+        if (!exists) {
+          insertZeroStockBatch.run(
+            uuidv4(),
+            p.licenseId,
+            p.id,
+            p.barcode,
+            p.salePrice ?? null,
+            p.costPrice ?? null,
+            ts,
+            ts,
+            ts,
+          );
+        }
+
+        clearProductBarcode.run(ts, p.id);
       }
 
       db.prepare(
-        `INSERT INTO _migrations(name, ranAt) VALUES('seed_barcode_sequence_v2', ?)`,
-      ).run(new Date().toISOString());
-
-      console.log(
-        `[db] barcode_sequence seeded per license. licenses=${licenses.length}`,
-      );
+        `INSERT INTO _migrations(name, ranAt) VALUES('cleanup_legacy_product_barcodes_v3', ?)`,
+      ).run(ts);
     })();
+
+    console.log("[db] cleanup_legacy_product_barcodes_v3 completed");
   } catch (e) {
-    console.error("[db] seed_barcode_sequence_v2 failed:", e);
+    console.error("[db] cleanup_legacy_product_barcodes_v3 failed:", e);
+  }
+}
+
+const markLegacyGeneratedBarcodesRan = db
+  .prepare(
+    `SELECT 1 FROM _migrations WHERE name='mark_legacy_generated_barcodes_v1' LIMIT 1`,
+  )
+  .get();
+
+if (!markLegacyGeneratedBarcodesRan) {
+  try {
+    const ts = new Date().toISOString();
+
+    db.prepare(
+      `
+      UPDATE product_batches
+      SET isSystemGeneratedBarcode = 1
+      WHERE (isSystemGeneratedBarcode IS NULL OR isSystemGeneratedBarcode = 0)
+        AND barcode IS NOT NULL
+        AND length(barcode) = 5
+        AND barcode GLOB '[0-9][0-9][0-9][0-9][0-9]'
+        AND COALESCE(deletedAt,'') = ''
+    `,
+    ).run();
+
+    db.prepare(
+      `INSERT INTO _migrations(name, ranAt) VALUES('mark_legacy_generated_barcodes_v1', ?)`,
+    ).run(ts);
+
+    console.log("[db] mark_legacy_generated_barcodes_v1 completed");
+  } catch (e) {
+    console.error("[db] mark_legacy_generated_barcodes_v1 failed:", e);
+  }
+}
+
+const recalcBarcodeSequenceRan = db
+  .prepare(
+    `SELECT 1 FROM _migrations WHERE name='recalc_barcode_sequence_v3' LIMIT 1`,
+  )
+  .get();
+
+if (!recalcBarcodeSequenceRan) {
+  try {
+    const ts = new Date().toISOString();
+
+    const licenses = db
+      .prepare(
+        `
+        SELECT licenseId FROM product_batches
+        UNION
+        SELECT licenseId FROM barcode_sequence
+        UNION
+        SELECT licenseId FROM products
+      `,
+      )
+      .all();
+
+    const maxBatchStmt = db.prepare(`
+      SELECT MAX(CAST(barcode AS INTEGER)) AS mx
+      FROM product_batches
+      WHERE licenseId=?
+        AND barcode IS NOT NULL
+        AND barcode <> ''
+        AND barcode GLOB '[0-9]*'
+        AND barcode NOT GLOB '*[^0-9]*'
+        AND COALESCE(deletedAt,'')=''
+    `);
+
+    const upsertSeq = db.prepare(`
+      INSERT INTO barcode_sequence (licenseId, lastBarcodeNumber)
+      VALUES (?, ?)
+      ON CONFLICT(licenseId) DO UPDATE SET
+        lastBarcodeNumber = excluded.lastBarcodeNumber
+    `);
+
+    db.transaction(() => {
+      for (const { licenseId } of licenses) {
+        const maxFromBatches = Number(maxBatchStmt.get(licenseId)?.mx || 0);
+        upsertSeq.run(licenseId, maxFromBatches);
+      }
+
+      db.prepare(
+        `INSERT INTO _migrations(name, ranAt) VALUES('recalc_barcode_sequence_v3', ?)`,
+      ).run(ts);
+    })();
+
+    console.log("[db] recalc_barcode_sequence_v3 completed");
+  } catch (e) {
+    console.error("[db] recalc_barcode_sequence_v3 failed:", e);
   }
 }
 
@@ -1443,6 +1508,75 @@ db.prepare(
     gstin TEXT,
     footerNote TEXT,
     authorizedSignatory TEXT,
+    createdAt TEXT,
+    updatedAt TEXT
+  )
+`,
+).run();
+
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS label_printers (
+    id TEXT PRIMARY KEY,
+    licenseId TEXT NOT NULL,
+    name TEXT NOT NULL,
+    engine TEXT NOT NULL,          -- BARTENDER | ZPL | HTML
+    printerName TEXT NOT NULL,
+    connectionType TEXT,           -- WINDOWS | NETWORK
+    host TEXT,
+    port INTEGER,
+    dpi INTEGER,
+    isDefault INTEGER DEFAULT 0,
+    createdAt TEXT,
+    updatedAt TEXT,
+    deletedAt TEXT
+  )
+`,
+).run();
+
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS label_templates (
+    id TEXT PRIMARY KEY,
+    licenseId TEXT NOT NULL,
+    name TEXT NOT NULL,
+    engine TEXT NOT NULL,          -- BARTENDER | ZPL
+    templatePath TEXT NOT NULL,
+    widthMm REAL,
+    heightMm REAL,
+    defaultPrinterId TEXT,
+    createdAt TEXT,
+    updatedAt TEXT,
+    deletedAt TEXT
+  )
+`,
+).run();
+
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS label_template_mappings (
+    id TEXT PRIMARY KEY,
+    templateId TEXT NOT NULL,
+    appField TEXT NOT NULL,        -- barcode, itemName, salePrice, mrp
+    externalField TEXT NOT NULL,   -- BarcodeValue, ItemName, Price
+    createdAt TEXT,
+    updatedAt TEXT,
+    FOREIGN KEY (templateId) REFERENCES label_templates(id) ON DELETE CASCADE
+  )
+`,
+).run();
+
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS label_print_jobs (
+    id TEXT PRIMARY KEY,
+    licenseId TEXT NOT NULL,
+    templateId TEXT,
+    printerId TEXT,
+    engine TEXT NOT NULL,
+    status TEXT NOT NULL,          -- PENDING | SUCCESS | FAILED
+    payloadJson TEXT NOT NULL,
+    errorText TEXT,
     createdAt TEXT,
     updatedAt TEXT
   )

@@ -256,21 +256,25 @@ function registerSaleHandlers() {
         totalAmount += billedValue;
 
         // Resolve batchId
-        let batchId = null;
-        if (it.batchNo || it.barcode || it.mfgDate || it.expiryDate) {
+        let batchId = it.batchId || null;
+
+        if (
+          !batchId &&
+          (it.batchNo || it.barcode || it.mfgDate || it.expiryDate)
+        ) {
           const batch = db
             .prepare(
               `
-              SELECT id FROM product_batches
-              WHERE licenseId = ?
-                AND productId = ?
-                AND COALESCE(deletedAt,'') = ''
-                AND COALESCE(batchNo,'') = COALESCE(?, '')
-                AND COALESCE(barcode,'') = COALESCE(?, '')
-                AND COALESCE(mfgDate,'') = COALESCE(?, '')
-                AND COALESCE(expiryDate,'') = COALESCE(?, '')
-              LIMIT 1
-            `,
+      SELECT id FROM product_batches
+      WHERE licenseId = ?
+        AND productId = ?
+        AND COALESCE(deletedAt,'') = ''
+        AND COALESCE(batchNo,'') = COALESCE(?, '')
+        AND COALESCE(barcode,'') = COALESCE(?, '')
+        AND COALESCE(mfgDate,'') = COALESCE(?, '')
+        AND COALESCE(expiryDate,'') = COALESCE(?, '')
+      LIMIT 1
+    `,
             )
             .get(
               header.licenseId,
@@ -280,6 +284,7 @@ function registerSaleHandlers() {
               it.mfgDate || null,
               it.expiryDate || null,
             );
+
           batchId = batch?.id || null;
         }
 
@@ -460,23 +465,26 @@ function registerSaleHandlers() {
         const qty = Number(it.quantity || 0);
         const effUnit = qty > 0 ? Number(it.billedValue || 0) / qty : 0;
 
-        let batchId = null;
+        let batchId = it.batchId || null;
 
-        if (it.batchNo || it.barcode || it.mfgDate || it.expiryDate) {
+        if (
+          !batchId &&
+          (it.batchNo || it.barcode || it.mfgDate || it.expiryDate)
+        ) {
           const batch = db
             .prepare(
               `
-        SELECT id
-        FROM product_batches
-        WHERE licenseId = ?
-          AND productId = ?
-          AND COALESCE(deletedAt,'') = ''
-          AND COALESCE(batchNo,'') = COALESCE(?, '')
-          AND COALESCE(barcode,'') = COALESCE(?, '')
-          AND COALESCE(mfgDate,'') = COALESCE(?, '')
-          AND COALESCE(expiryDate,'') = COALESCE(?, '')
-        LIMIT 1
-      `,
+      SELECT id
+      FROM product_batches
+      WHERE licenseId = ?
+        AND productId = ?
+        AND COALESCE(deletedAt,'') = ''
+        AND COALESCE(batchNo,'') = COALESCE(?, '')
+        AND COALESCE(barcode,'') = COALESCE(?, '')
+        AND COALESCE(mfgDate,'') = COALESCE(?, '')
+        AND COALESCE(expiryDate,'') = COALESCE(?, '')
+      LIMIT 1
+    `,
             )
             .get(
               header.licenseId,

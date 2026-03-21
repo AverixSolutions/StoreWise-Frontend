@@ -1,6 +1,27 @@
 // src/types/electron.d.ts
 export {};
 
+type LabelPrintEngine = "BARTENDER" | "ZPL" | "HTML";
+
+type LabelPrintRow = {
+  productId: string;
+  batchId?: string;
+  barcode: string;
+  itemName?: string;
+  salePrice?: number | null;
+  mrp?: number | null;
+  batchNo?: string | null;
+  copies?: number;
+};
+
+type LabelPrintRequest = {
+  licenseId: string;
+  printerId?: string;
+  templateId?: string;
+  engine?: LabelPrintEngine;
+  rows: LabelPrintRow[];
+};
+
 declare global {
   interface Window {
     electronAPI: {
@@ -15,6 +36,51 @@ declare global {
         success: boolean;
         error?: string;
       }>;
+
+      // NEW label printing APIs
+      listLabelPrinters: (licenseId: string) => Promise<{
+        success: boolean;
+        rows?: Array<{
+          id: string;
+          licenseId: string;
+          name: string;
+          engine: LabelPrintEngine;
+          printerName: string;
+          connectionType?: string | null;
+          host?: string | null;
+          port?: number | null;
+          dpi?: number | null;
+          isDefault?: number;
+          createdAt?: string | null;
+          updatedAt?: string | null;
+          deletedAt?: string | null;
+        }>;
+        error?: string;
+      }>;
+
+      listLabelTemplates: (licenseId: string) => Promise<{
+        success: boolean;
+        rows?: Array<{
+          id: string;
+          licenseId: string;
+          name: string;
+          engine: Exclude<LabelPrintEngine, "HTML">;
+          templatePath: string;
+          widthMm?: number | null;
+          heightMm?: number | null;
+          defaultPrinterId?: string | null;
+          createdAt?: string | null;
+          updatedAt?: string | null;
+          deletedAt?: string | null;
+        }>;
+        error?: string;
+      }>;
+
+      printLabels: (payload: LabelPrintRequest) => Promise<{
+        success: boolean;
+        error?: string;
+      }>;
+
       getNextCode: (licenseId: string) => Promise<string>;
 
       createProduct: (product: {
@@ -165,7 +231,6 @@ declare global {
       setSyncState: (scope: string, changes: any) => Promise<any>;
       wipeLocalData: () => Promise<any>;
 
-      // Barcode / batch methods (added with new barcode system)
       listBarcodesForProduct: (
         licenseId: string,
         productId: string,

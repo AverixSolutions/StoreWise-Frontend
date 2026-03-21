@@ -1,6 +1,6 @@
 // src/components/sales-return/BillDetailsSectionReturn.tsx
-import { Receipt, UserRound, CalendarClock, Wallet } from "lucide-react";
-import { HeaderForm } from "@/components/sales/type";
+import { Receipt, UserRound, CalendarClock, Wallet, Plus } from "lucide-react";
+import { HeaderForm } from "@/components/sales/types";
 import SearchableDropdown from "@/components/ui/SearchableDropdown";
 import {
   toLocalDate,
@@ -120,6 +120,7 @@ export default function BillDetailsSectionReturn({
           </div>
         </div>
 
+        {/* FIXED: Both Return Date and Entry Date now expose date + time */}
         <div className="grid grid-cols-2 gap-3 min-w-0">
           <div className="min-w-0">
             <label className={labelCls}>
@@ -163,6 +164,16 @@ export default function BillDetailsSectionReturn({
                   setHeader((s) => ({ ...s, entryTime: fromDateTime(d, t) }));
                 }}
               />
+              <input
+                className={inputBase + " text-xs px-2 w-[90px]"}
+                type="time"
+                value={toLocalTime(header.entryTime)}
+                onChange={(e) => {
+                  const t = e.target.value;
+                  const d = toLocalDate(header.entryTime);
+                  setHeader((s) => ({ ...s, entryTime: fromDateTime(d, t) }));
+                }}
+              />
             </div>
           </div>
         </div>
@@ -191,7 +202,7 @@ export default function BillDetailsSectionReturn({
               className="h-9 px-3 bg-averix-red-dark text-white rounded-md hover:bg-averix-red-darker transition-colors"
               title="Add customer"
             >
-              +
+              <Plus className="w-4 h-4" />
             </button>
           </div>
         </div>

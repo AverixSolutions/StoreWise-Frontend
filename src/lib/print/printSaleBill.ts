@@ -1,9 +1,16 @@
 // src/lib/print/printSaleBill.ts
 import { getShopProfile } from "./getShopProfile";
-import { buildInvoiceHtml } from "./buildInvoiceHtml";
+import { buildThermalReceiptHtml } from "./buildThermalReceiptHtml";
 
-export async function printSaleBill(saleId: string) {
+export async function printSaleBill(
+  saleId: string,
+  options?: {
+    preview?: boolean;
+    silent?: boolean;
+  },
+) {
   const api = (window as any).electronAPI;
+
   if (!api?.getSaleFull || !api?.printHtml) {
     throw new Error("Sale print API not available");
   }
@@ -20,47 +27,47 @@ export async function printSaleBill(saleId: string) {
     (sum: number, it: any) => sum + Number(it.billedValue || 0),
     0,
   );
+
   const discount = Number(sale.discount || 0);
   const grandTotal = Math.max(0, subTotal - discount);
 
-  const html = buildInvoiceHtml({
+  const totalQty = items.reduce(
+    (sum: number, it: any) => sum + Number(it.quantity || 0),
+    0,
+  );
+
+  const html = buildThermalReceiptHtml({
     shop,
-    document: {
-      title: "Sale Bill",
-      entryNo: sale.slNo,
-      billNo: sale.billNo,
-      date: sale.saleDate,
-      time: sale.entryTime,
-      department: sale.department,
-      debitAccount: sale.debitAccount,
-      natureOfEntry: sale.natureOfEntry,
-      typeLabel: sale.saleType,
-    },
-    party: {
-      label: "Customer",
-      name: sale.customerName,
-    },
+    billNo: sale.billNo || sale.slNo || "",
+    date: sale.saleDate,
+    time: sale.entryTime || sale.saleDate,
+    customerPhone: sale.customerMobile || sale.customerPhone || "",
     items: items.map((it: any, index: number) => ({
       lineNo: it.lineNo ?? index + 1,
-      name: it.productName || "",
-      barcode: it.barcode,
-      batchNo: it.batchNo,
-      expiryDate: it.expiryDate,
+      name: it.productName || it.name || "",
       qty: Number(it.quantity || 0),
-      unit: it.unit,
-      rate: Number(it.rate || 0),
-      taxPercent: it.taxPercent,
-      mrp: it.mrp ?? null,
-      salePrice: it.salePrice ?? null,
-      amount: Number(it.billedValue || 0),
+      rate: Number(it.salePrice ?? it.rate ?? 0),
+      total: Number(it.billedValue || 0),
     })),
+    totalQty,
     subTotal,
     discount,
     grandTotal,
+    notes: [
+      "HAVE A NICE DAY",
+      "EXCHANGE WITHIN 7 DAYS ONLY",
+      "NO COLOUR GUARANTEE FOR COTTON GARMENTS",
+      "BILL AND PRODUCT PRICE TAG REQUIRED FOR EXCHANGE",
+      "NO REFUND",
+    ],
   });
 
   return api.printHtml(html, {
-    preview: false,
-    pageSize: "A4",
+    preview: options?.preview ?? true,
+    silent: options?.silent ?? false,
+    pageSize: {
+      width: 80000,
+      height: 200000,
+    },
   });
 }

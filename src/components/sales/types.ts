@@ -12,10 +12,12 @@ export interface BatchInfo {
   id: string;
   barcode?: string | null;
   batchNo?: string | null;
+  purchaseBatchNo?: string | null;
   mfgDate?: string | null;
   expiryDate?: string | null;
   mrp?: number | null;
   salePrice?: number | null;
+  costPrice?: number | null;
   stock?: number | null;
 }
 
@@ -37,7 +39,9 @@ export interface ItemRow {
   profit?: number | null;
   totalCost?: number | null;
   billedValue?: number | null;
+  batchId?: string | null;
   batchNo?: string | null;
+  purchaseBatchNo?: string | null;
   mfgDate?: string | null;
   expiryDate?: string | null;
   lineType?: LineType;

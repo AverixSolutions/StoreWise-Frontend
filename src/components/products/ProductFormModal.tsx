@@ -56,6 +56,7 @@ export default function ProductFormModal({
   const [barcodeEntries, setBarcodeEntries] = useState<BarcodeEntry[]>([]);
   const [customBarcodeInput, setCustomBarcodeInput] = useState("");
   const [barcodeError, setBarcodeError] = useState<string | null>(null);
+  const [nextBarcodePreview, setNextBarcodePreview] = useState("00001");
 
   const licenseId =
     typeof window !== "undefined"
@@ -116,6 +117,9 @@ export default function ProductFormModal({
 
   useEffect(() => {
     if (!isOpen) return;
+
+    loadNextBarcodePreview();
+
     if (editProduct) {
       setCode(editProduct.code);
       setName(editProduct.name);
@@ -126,7 +130,6 @@ export default function ProductFormModal({
       setHsn(editProduct.hsn || "");
       setCostPrice(editProduct.costPrice.toString());
       setSalePrice(editProduct.salePrice?.toString() || "");
-      // Load existing barcodes from DB
       loadExistingBarcodes(editProduct.id);
     } else {
       resetForm();
@@ -134,7 +137,16 @@ export default function ProductFormModal({
         setCode(nextCode);
       });
     }
-  }, [isOpen, editProduct]);
+  }, [isOpen, editProduct, licenseId]);
+
+  async function loadNextBarcodePreview() {
+    try {
+      const res = await (window as any).electronAPI.peekNextBarcode(licenseId);
+      setNextBarcodePreview(res?.barcode || "00001");
+    } catch {
+      setNextBarcodePreview("00001");
+    }
+  }
 
   async function loadExistingBarcodes(productId: string) {
     const res = await (window as any).electronAPI.listBarcodesForProduct(
@@ -170,16 +182,26 @@ export default function ProductFormModal({
   // Add a system-generated barcode (reserves from global sequence)
   async function addGeneratedBarcode() {
     setBarcodeError(null);
+
     const res = await (window as any).electronAPI.reserveBarcodes(licenseId, 1);
     if (!res?.success) {
       setBarcodeError("Failed to generate barcode");
       return;
     }
+
     const barcode = res.barcodes[0];
+
     setBarcodeEntries((prev) => [
       ...prev,
-      { id: `temp-${Date.now()}`, barcode, isGenerated: true, saved: false },
+      {
+        id: `temp-${Date.now()}`,
+        barcode,
+        isGenerated: true,
+        saved: false,
+      },
     ]);
+
+    await loadNextBarcodePreview();
   }
 
   // Add a custom barcode
@@ -210,10 +232,11 @@ export default function ProductFormModal({
   async function removeBarcode(entry: BarcodeEntry) {
     if (entry.saved && entry.batchId) {
       const ok = confirm(
-        `Remove barcode ${entry.barcode}? Stock will also be removed.`,
+        `Remove barcode ${entry.barcode}? This will delete the empty barcode entry if it has no stock.`,
       );
       if (!ok) return;
       const res = await (window as any).electronAPI.deleteBarcode(
+        licenseId,
         entry.batchId,
       );
       if (!res?.success) {
@@ -563,7 +586,7 @@ export default function ProductFormModal({
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-medium hover:bg-blue-700 transition-colors"
                 >
                   <Zap className="w-3.5 h-3.5" />
-                  Generate Barcode
+                  Reserve {nextBarcodePreview}
                 </button>
 
                 {/* Custom barcode input */}
@@ -600,8 +623,8 @@ export default function ProductFormModal({
 
               {barcodeEntries.length === 0 && (
                 <p className="text-xs text-gray-400 italic">
-                  No barcodes added yet. A default will be auto-assigned on
-                  first purchase.
+                  No barcodes added yet. On purchase, the next available global
+                  barcode preview will be suggested.
                 </p>
               )}
             </div>

@@ -17,7 +17,7 @@ import {
   ItemRow,
   Customer,
   BatchInfo,
-} from "@/components/sales/type";
+} from "@/components/sales/types";
 import {
   createEmptyRow,
   calcRow,
@@ -47,6 +47,23 @@ function makeSnapshot(header: HeaderForm, rows: ItemRow[]) {
       lineType: r.lineType,
     })),
   });
+}
+
+// Unified finalize-after-successful-save flow
+async function finalizeAfterSuccessfulSale({
+  shouldPrint,
+  printFn,
+}: {
+  shouldPrint: boolean;
+  printFn?: () => Promise<any>;
+}) {
+  try {
+    if (shouldPrint && printFn) {
+      await printFn();
+    }
+  } catch (e) {
+    alert("Saved, but print failed: " + String((e as any)?.message || e));
+  }
 }
 
 export default function SalesPage() {
@@ -102,6 +119,9 @@ export default function SalesPage() {
     nextBarcode: string;
   } | null>(null);
 
+  // NEW: Cancel confirmation modal
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
+
   useEffect(() => {
     (async () => {
       const res = await (window as any).electronAPI.getProducts(licenseId, {
@@ -119,6 +139,7 @@ export default function SalesPage() {
   useEffect(() => {
     loadCustomers();
   }, [showCustomerModal]);
+
   const loadCustomers = async () => {
     const { customers: cs } = await (window as any).electronAPI.listCustomers(
       licenseId,
@@ -142,10 +163,12 @@ export default function SalesPage() {
         id: b.id,
         barcode: b.barcode,
         batchNo: b.batchNo,
+        purchaseBatchNo: b.purchaseBatchNo || b.batchNo,
         mfgDate: b.mfgDate,
         expiryDate: b.expiryDate,
         mrp: b.mrp,
         salePrice: b.salePrice,
+        costPrice: b.costPrice,
         stock: b.stock,
       }));
 
@@ -179,15 +202,17 @@ export default function SalesPage() {
             : {
                 ...r,
                 ...basePatch,
+                batchId: b.id,
                 barcode: b.barcode || "",
                 batchNo: b.batchNo ?? null,
+                purchaseBatchNo: b.purchaseBatchNo ?? b.batchNo ?? null,
                 mfgDate: b.mfgDate ?? null,
                 expiryDate: b.expiryDate ?? null,
                 mrp: b.mrp ?? null,
                 rate:
-                  b.salePrice != null && !Number.isNaN(Number(b.salePrice))
-                    ? Number(b.salePrice)
-                    : Number(product.salePrice) || 0,
+                  b.costPrice != null && !Number.isNaN(Number(b.costPrice))
+                    ? Number(b.costPrice)
+                    : Number(product.costPrice) || 0,
                 salePrice:
                   b.salePrice != null && !Number.isNaN(Number(b.salePrice))
                     ? Number(b.salePrice)
@@ -222,6 +247,12 @@ export default function SalesPage() {
           : {
               ...r,
               ...basePatch,
+              batchId: null,
+              batchNo: null,
+              purchaseBatchNo: null,
+              mfgDate: null,
+              expiryDate: null,
+              mrp: null,
               barcode: product.barcode || product.code || "",
             },
       ),
@@ -247,10 +278,12 @@ export default function SalesPage() {
           id: b.id,
           barcode: b.barcode,
           batchNo: b.batchNo,
+          purchaseBatchNo: b.purchaseBatchNo || b.batchNo,
           mfgDate: b.mfgDate,
           expiryDate: b.expiryDate,
           mrp: b.mrp,
           salePrice: b.salePrice,
+          costPrice: b.costPrice,
           stock: b.stock,
         }));
 
@@ -326,6 +359,7 @@ export default function SalesPage() {
     setDefaultHoldTitle(header.billNo || "");
     setShowTitlePrompt(true);
   }
+
   function handleShowHolds() {
     setShowHolds(true);
   }
@@ -378,6 +412,7 @@ export default function SalesPage() {
       discount: Number(sale.discount || 0),
       saleType: sale.saleType === "CREDIT" ? "CREDIT" : "CASH",
     } as HeaderForm;
+
     const nextRows = items.map((it: any, i: number) => ({
       lineNo: it.lineNo ?? i + 1,
       productId: it.productId,
@@ -391,12 +426,14 @@ export default function SalesPage() {
       taxPercent: it.taxPercent,
       discountType: it.discountType,
       discount: Number(it.discount) || 0,
-      profitPercent: it.profit ?? null,
+      profitPercent: 0,
       salePrice: it.salePrice ?? null,
       profit: it.profit ?? null,
       totalCost: Number(it.totalCost) || 0,
       billedValue: Number(it.billedValue) || 0,
+      batchId: it.batchId ?? null,
       batchNo: it.batchNo ?? null,
+      purchaseBatchNo: it.purchaseBatchNo ?? it.batchNo ?? null,
       mfgDate: it.mfgDate ?? null,
       expiryDate: it.expiryDate ?? null,
       lineType: (it.isFree ? "FREE" : "VALUED") as any,
@@ -414,6 +451,7 @@ export default function SalesPage() {
     initialSnapshot.current = makeSnapshot(nextHeader, nextRows);
     setIsDirty(false);
   }
+
   function showSaleError(err: any) {
     const raw = String(err?.message || err || "Unknown error");
 
@@ -507,6 +545,23 @@ export default function SalesPage() {
       const res = await (window as any).electronAPI.createSale(sale, items);
 
       if (res?.success) {
+        const shouldPrint = confirm(
+          `✅ Saved! SlNo: ${res.slNo}, Total: ${res.totalAmount}\n\nOpen print preview now?`,
+        );
+
+        setEditingSaleId(res.saleId || null);
+        setEditingSlNo(res.slNo ?? null);
+
+        initialSnapshot.current = makeSnapshot(header, rows);
+        setIsDirty(false);
+
+        await finalizeAfterSuccessfulSale({
+          shouldPrint,
+          printFn: res.saleId
+            ? () => printSaleBill(res.saleId, { preview: true })
+            : undefined,
+        });
+
         try {
           const peek = await (window as any).electronAPI.getNextSaleSlNo(
             licenseId,
@@ -514,18 +569,6 @@ export default function SalesPage() {
           setNextEntryNo(peek?.nextSlNo ?? null);
         } catch {}
 
-        const shouldPrint = confirm(
-          `✅ Saved! SlNo: ${res.slNo}, Total: ${res.totalAmount}\n\nPrint bill now?`,
-        );
-        if (shouldPrint && res.saleId) {
-          try {
-            await printSaleBill(res.saleId);
-          } catch (e: any) {
-            alert("Print failed: " + String(e?.message || e));
-          }
-        }
-
-        resetAll();
         return true;
       }
 
@@ -537,9 +580,13 @@ export default function SalesPage() {
     }
   };
 
+  // FIXED: Use modal instead of raw confirm
   const handleCancel = () => {
-    const ok = confirm("Discard current bill?");
-    if (ok) resetAll();
+    if (!isDirty) {
+      resetAll();
+      return;
+    }
+    setCancelConfirmOpen(true);
   };
 
   useEffect(() => {
@@ -554,6 +601,7 @@ export default function SalesPage() {
     setIsDirty(initialSnapshot.current !== snap);
   }, [header, rows]);
 
+  // STRENGTHENED: Clear ALL auxiliary state
   function resetAll() {
     const freshHeader: HeaderForm = {
       billNo: "",
@@ -572,6 +620,19 @@ export default function SalesPage() {
     setRows(freshRows);
     setEditingSaleId(null);
     setEditingSlNo(null);
+
+    // Clear all modals and auxiliary state
+    setShowHolds(false);
+    setShowReports(false);
+    setShowTitlePrompt(false);
+    setDefaultHoldTitle("");
+    setShowCustomerModal(false);
+    setBatchPicker(null);
+    setValidationMsgs([]);
+    setValidationOpen(false);
+    setLeaveOpen(false);
+    setPendingPath(null);
+    setCancelConfirmOpen(false);
 
     initialSnapshot.current = makeSnapshot(freshHeader, freshRows);
     setIsDirty(false);
@@ -612,18 +673,22 @@ export default function SalesPage() {
     setPendingPath(path);
     setLeaveOpen(true);
   }
+
   return (
     <div className="flex h-screen flex-col bg-gray-50">
       <SalesNavigation onNavigate={tryNavigate} title="Sales" />
       <div className="flex-1 min-h-0 overflow-hidden p-0">
         {editingSaleId && (
           <div className="px-4 py-2 border-b bg-white flex items-center gap-3">
-            <span className="text-sm text-gray-500">Editing saved bill</span>
+            <span className="text-sm text-gray-500">Saved bill open</span>
+
             <button
               type="button"
               onClick={async () => {
                 try {
-                  const res = await printSaleBill(editingSaleId);
+                  const res = await printSaleBill(editingSaleId, {
+                    preview: true,
+                  });
                   if (!res?.success) alert(res?.error || "Print failed");
                 } catch (e: any) {
                   alert("Print failed: " + String(e?.message || e));
@@ -632,6 +697,14 @@ export default function SalesPage() {
               className="px-3 py-1.5 rounded bg-slate-800 text-white text-sm"
             >
               Print Bill
+            </button>
+
+            <button
+              type="button"
+              onClick={() => resetAll()}
+              className="px-3 py-1.5 rounded border border-gray-300 bg-white text-sm"
+            >
+              New Bill
             </button>
           </div>
         )}
@@ -677,6 +750,7 @@ export default function SalesPage() {
           />
         </div>
       </div>
+
       {showCustomerModal && (
         <CustomerFormModal
           isOpen={showCustomerModal}
@@ -702,6 +776,7 @@ export default function SalesPage() {
         customers={customers}
         onOpenSale={handleOpenSaleFromReport}
       />
+
       <BatchSelectModal
         isOpen={Boolean(batchPicker)}
         onClose={() => setBatchPicker(null)}
@@ -725,15 +800,18 @@ export default function SalesPage() {
                 ? r
                 : {
                     ...r,
+                    batchId: batch.id,
                     barcode: batch.barcode || "",
                     batchNo: batch.batchNo ?? null,
+                    purchaseBatchNo:
+                      batch.purchaseBatchNo ?? batch.batchNo ?? null,
                     mfgDate: batch.mfgDate ?? null,
                     expiryDate: batch.expiryDate ?? null,
                     mrp: batch.mrp ?? null,
                     rate:
-                      batch.salePrice != null &&
-                      !Number.isNaN(Number(batch.salePrice))
-                        ? Number(batch.salePrice)
+                      batch.costPrice != null &&
+                      !Number.isNaN(Number(batch.costPrice))
+                        ? Number(batch.costPrice)
                         : r.rate,
                     salePrice:
                       batch.salePrice != null &&
@@ -747,7 +825,6 @@ export default function SalesPage() {
           setBatchPicker(null);
         }}
         onAddNewBatch={() => {
-          // Sales should not create new batch from here
           setBatchPicker(null);
         }}
       />
@@ -763,6 +840,22 @@ export default function SalesPage() {
         onConfirm={(v) => {
           setShowTitlePrompt(false);
           saveHold(v.trim());
+        }}
+      />
+
+      {/* FIXED: Proper cancel confirmation modal */}
+      <ConfirmModal
+        isOpen={cancelConfirmOpen}
+        title="Discard current bill?"
+        message="You have unsaved changes in this sales entry. Do you really want to clear everything?"
+        confirmText="Discard"
+        cancelText="Keep editing"
+        onConfirm={() => {
+          setCancelConfirmOpen(false);
+          resetAll();
+        }}
+        onCancel={() => {
+          setCancelConfirmOpen(false);
         }}
       />
 
@@ -798,6 +891,7 @@ export default function SalesPage() {
           setPendingPath(null);
         }}
       />
+
       <ValidationModal
         isOpen={validationOpen}
         messages={validationMsgs}

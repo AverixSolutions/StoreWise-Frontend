@@ -185,54 +185,50 @@ export default function BatchSelectModal({
                     type="button"
                     data-batch-btn="1"
                     onClick={() => handleSelect(b)}
-                    className="w-full text-left border-2 border-gray-200 rounded-xl px-4 py-3 hover:border-blue-500 hover:bg-blue-50 focus:border-blue-600 focus:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-200 transition-all flex gap-3 items-start"
+                    className="w-full text-left border border-gray-200 rounded-xl overflow-hidden hover:border-blue-500 hover:bg-blue-50 focus:border-blue-600 focus:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-200 transition-all"
                   >
-                    <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center flex-shrink-0">
-                      <Barcode className="w-6 h-6 text-blue-700" />
+                    <div className="grid grid-cols-[1.2fr_1.3fr_0.8fr_0.9fr_0.9fr_0.8fr] gap-2 px-4 py-2 bg-gray-50 border-b border-gray-200 text-[11px] font-semibold text-gray-600 uppercase">
+                      <div>Barcode</div>
+                      <div>Purchase Batch</div>
+                      <div>MRP</div>
+                      <div>Sale</div>
+                      <div>Rate</div>
+                      <div>Stock</div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <span className="text-sm font-semibold text-gray-900 font-mono">
-                          {b.barcode || "No barcode"}
+
+                    <div className="grid grid-cols-[1.2fr_1.3fr_0.8fr_0.9fr_0.9fr_0.8fr] gap-2 px-4 py-3 text-sm text-gray-900 items-center">
+                      <div className="font-mono font-semibold">
+                        {b.barcode || "—"}
+                      </div>
+                      <div>{b.purchaseBatchNo || b.batchNo || "—"}</div>
+                      <div>{b.mrp != null ? `₹${b.mrp}` : "—"}</div>
+                      <div>{b.salePrice != null ? `₹${b.salePrice}` : "—"}</div>
+                      <div>
+                        {(b as any).costPrice != null
+                          ? `₹${(b as any).costPrice}`
+                          : "—"}
+                      </div>
+                      <div>
+                        <span className="inline-flex px-2 py-0.5 rounded-md bg-green-100 text-xs font-medium text-green-700">
+                          {(b as any).stock ?? 0}
                         </span>
-                        {b.batchNo && (
-                          <span className="inline-flex px-2 py-0.5 rounded-md bg-purple-100 text-xs font-medium text-purple-700">
-                            Batch: {b.batchNo}
+                      </div>
+                    </div>
+
+                    {(b.mfgDate || b.expiryDate) && (
+                      <div className="px-4 pb-3 text-xs text-gray-500 flex gap-4">
+                        {b.mfgDate && (
+                          <span>
+                            MFG: {new Date(b.mfgDate).toLocaleDateString()}
                           </span>
                         )}
-                        {(b as any).stock !== undefined && (
-                          <span className="inline-flex px-2 py-0.5 rounded-md bg-green-100 text-xs font-medium text-green-700 ml-auto">
-                            Stock: {(b as any).stock}
+                        {b.expiryDate && (
+                          <span>
+                            EXP: {new Date(b.expiryDate).toLocaleDateString()}
                           </span>
                         )}
                       </div>
-                      {(b.mrp || b.salePrice) && (
-                        <div className="text-xs text-gray-500 flex gap-3">
-                          {b.mrp && <span>MRP: ₹{b.mrp}</span>}
-                          {b.salePrice && <span>Sale: ₹{b.salePrice}</span>}
-                        </div>
-                      )}
-                      {(b.mfgDate || b.expiryDate) && (
-                        <div className="mt-1 text-xs text-gray-600 flex items-center gap-3">
-                          <CalendarDays className="w-3.5 h-3.5 flex-shrink-0" />
-                          {b.mfgDate && (
-                            <span>
-                              <span className="text-gray-400">MFG:</span>{" "}
-                              {new Date(b.mfgDate).toLocaleDateString()}
-                            </span>
-                          )}
-                          {b.expiryDate && (
-                            <span>
-                              <span className="text-gray-400">EXP:</span>{" "}
-                              {new Date(b.expiryDate).toLocaleDateString()}
-                            </span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                    <div className="text-xs text-gray-400 flex-shrink-0">
-                      #{idx + 1}
-                    </div>
+                    )}
                   </button>
                 ))
               )}

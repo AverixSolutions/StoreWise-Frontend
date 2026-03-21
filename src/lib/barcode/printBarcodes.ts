@@ -2,7 +2,7 @@
 import { buildBarcodePrintHtml } from "./printBarcodeHtml";
 import type { BarcodePrintItem, BarcodePrintOptions } from "./barcodeTemplates";
 
-export async function printBarcodes(
+export async function printBarcodesHtmlSheet(
   items: BarcodePrintItem[],
   options?: BarcodePrintOptions,
 ) {

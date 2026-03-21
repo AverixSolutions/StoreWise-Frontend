@@ -2,17 +2,22 @@
   "name": "storwise",
   "version": "0.1.0",
   "private": true,
+  "description": "StoreWise desktop inventory and billing application by Averix Solutions",
+  "author": "Krishna Kumar P S",
+  "main": "electron/main.js",
   "scripts": {
     "dev": "concurrently \"npm run dev:next\" \"npm run dev:electron\"",
     "dev:next": "cross-env NODE_ENV=development next dev",
     "dev:electron": "wait-on tcp:3000 && cross-env NODE_ENV=development electron electron/main.js",
-    "build": "next build && next export",
+    "build": "next build",
     "start": "cross-env NODE_ENV=production next start",
-    "dist": "npm run build && electron-builder"
+    "dist": "npm run build && electron-builder",
+    "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
     "axios": "^1.11.0",
     "better-sqlite3": "^12.2.0",
+    "express": "^5.1.0",
     "framer-motion": "^12.23.12",
     "jsbarcode": "^3.12.3",
     "lucide-react": "^0.540.0",
@@ -32,7 +37,6 @@
     "cross-env": "^10.0.0",
     "electron": "^37.4.0",
     "electron-builder": "^26.0.12",
-    "electron-rebuild": "^3.2.9",
     "eslint": "^9",
     "eslint-config-next": "15.5.0",
     "tailwindcss": "^4",
@@ -46,8 +50,15 @@
       "output": "release"
     },
     "files": [
-      "out",
-      "electron"
+      "out/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "extraMetadata": {
+      "main": "electron/main.js"
+    },
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**"
     ],
     "mac": {
       "category": "public.app-category.productivity"

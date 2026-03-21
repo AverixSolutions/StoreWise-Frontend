@@ -1,6 +1,4 @@
 // electron/ipc/barcodes.js
-// Global barcode sequence + batch-barcode IPC handlers
-// Import and call registerBarcodeHandlers() in your main electron entry
 
 const { ipcMain } = require("electron");
 const { v4: uuidv4 } = require("uuid");
@@ -13,14 +11,70 @@ function nowISO() {
 // ─── Core sequence helpers (also exported for use in purchases.js) ───────────
 
 /**
+ * Get the maximum numeric barcode actually stored in product_batches.
+ * Checks only numeric barcodes (no letters, no special chars).
+ */
+function getLiveMaxBarcodeNumber(licenseId) {
+  const row = db
+    .prepare(
+      `
+      SELECT MAX(CAST(barcode AS INTEGER)) AS mx
+      FROM product_batches
+      WHERE licenseId = ?
+        AND isSystemGeneratedBarcode = 1
+        AND barcode IS NOT NULL
+        AND length(barcode) = 5
+        AND barcode GLOB '[0-9][0-9][0-9][0-9][0-9]'
+        AND COALESCE(deletedAt,'') = ''
+    `,
+    )
+    .get(licenseId);
+
+  return Number(row?.mx || 0);
+}
+
+/**
+ * Get the last barcode number from the barcode_sequence table.
+ */
+function getSequenceBarcodeNumber(licenseId) {
+  const seq = db
+    .prepare(`SELECT lastBarcodeNumber FROM barcode_sequence WHERE licenseId=?`)
+    .get(licenseId);
+
+  return Number(seq?.lastBarcodeNumber || 0);
+}
+
+/**
+ * Get the safe current barcode number by taking the max of:
+ * - The sequence table value
+ * - The actual max live barcode in product_batches
+ * This ensures we never skip barcodes even if the sequence gets out of sync.
+ */
+function getSafeCurrentBarcodeNumber(licenseId) {
+  const fromSeq = getSequenceBarcodeNumber(licenseId);
+  const fromLive = getLiveMaxBarcodeNumber(licenseId);
+  return Math.max(fromSeq, fromLive);
+}
+
+/**
  * Peek next barcode number without committing it.
  * UI ONLY - Do not treat as guaranteed.
  */
 function peekNextBarcodeNumber(licenseId) {
-  const seq = db
-    .prepare(`SELECT lastBarcodeNumber FROM barcode_sequence WHERE licenseId=?`)
-    .get(licenseId);
-  return (seq?.lastBarcodeNumber || 0) + 1;
+  const current = getSafeCurrentBarcodeNumber(licenseId);
+  const next = current + 1;
+
+  console.log(
+    "[barcode:peekNext]",
+    "licenseId=",
+    licenseId,
+    "safeCurrent=",
+    current,
+    "next=",
+    next,
+  );
+
+  return next;
 }
 
 /**
@@ -29,11 +83,7 @@ function peekNextBarcodeNumber(licenseId) {
 const reserveBarcodesTx = db.transaction((licenseId, count = 1) => {
   const safeCount = Math.max(1, Number(count) || 1);
 
-  const seq = db
-    .prepare(`SELECT lastBarcodeNumber FROM barcode_sequence WHERE licenseId=?`)
-    .get(licenseId);
-
-  const current = Number(seq?.lastBarcodeNumber || 0);
+  const current = getSafeCurrentBarcodeNumber(licenseId);
   const next = current + safeCount;
 
   db.prepare(
@@ -46,6 +96,19 @@ const reserveBarcodesTx = db.transaction((licenseId, count = 1) => {
   for (let i = current + 1; i <= next; i++) {
     result.push(String(i).padStart(5, "0"));
   }
+
+  console.log(
+    "[barcode:reserve]",
+    "licenseId=",
+    licenseId,
+    "current=",
+    current,
+    "next=",
+    next,
+    "reserved=",
+    result,
+  );
+
   return result;
 });
 
@@ -117,14 +180,14 @@ function registerBarcodeHandlers() {
     try {
       const rows = db
         .prepare(
-          `SELECT id, barcode, mrp, salePrice, costPrice, batchNo,
-                  mfgDate, expiryDate, receivedAt, stock, createdAt
-           FROM product_batches
-           WHERE productId=? AND licenseId=? AND COALESCE(deletedAt,'')=''
-           ORDER BY 
-             CASE WHEN stock > 0 THEN 0 ELSE 1 END,
-             datetime(receivedAt) DESC,
-             barcode ASC`,
+          `SELECT id, barcode, mrp, salePrice, costPrice, batchNo, purchaseBatchNo,
+            mfgDate, expiryDate, receivedAt, stock, createdAt
+     FROM product_batches
+     WHERE productId=? AND licenseId=? AND COALESCE(deletedAt,'')=''
+     ORDER BY 
+       CASE WHEN stock > 0 THEN 0 ELSE 1 END,
+       datetime(receivedAt) DESC,
+       barcode ASC`,
         )
         .all(productId, licenseId);
       return { success: true, rows };
@@ -153,8 +216,8 @@ function registerBarcodeHandlers() {
         });
       }
 
-      // Format validation to prevent garbage strings
-      if (!/^[A-Za-z0-9_-]{3,50}$/.test(barcode)) {
+      // Format validation — allows short numeric barcodes like "1" or "22"
+      if (!/^[A-Za-z0-9_-]{1,50}$/.test(barcode)) {
         throw Object.assign(new Error("Invalid barcode format"), {
           code: "INVALID_BARCODE",
         });
@@ -177,6 +240,15 @@ function registerBarcodeHandlers() {
           );
         }
         // Same product — return the existing batch
+        console.log(
+          "[barcode:createForProduct:reused]",
+          "licenseId=",
+          payload.licenseId,
+          "productId=",
+          payload.productId,
+          "barcode=",
+          barcode,
+        );
         return {
           batch: db
             .prepare(`SELECT * FROM product_batches WHERE id=?`)
@@ -189,9 +261,9 @@ function registerBarcodeHandlers() {
       const batchId = uuidv4();
       db.prepare(
         `INSERT INTO product_batches
-           (id, licenseId, productId, barcode, mrp, salePrice, costPrice,
-            batchNo, mfgDate, expiryDate, receivedAt, stock, createdAt, updatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, 0, ?, ?)`,
+  (id, licenseId, productId, barcode, mrp, salePrice, costPrice,
+   batchNo, mfgDate, expiryDate, receivedAt, stock, createdAt, updatedAt, isSystemGeneratedBarcode)
+VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, 0, ?, ?, ?)`,
       ).run(
         batchId,
         payload.licenseId,
@@ -203,6 +275,19 @@ function registerBarcodeHandlers() {
         ts,
         ts,
         ts,
+        payload.useGenerated ? 1 : 0,
+      );
+
+      console.log(
+        "[barcode:createForProduct:new]",
+        "licenseId=",
+        payload.licenseId,
+        "productId=",
+        payload.productId,
+        "barcode=",
+        barcode,
+        "batchId=",
+        batchId,
       );
 
       const batch = db
@@ -276,4 +361,7 @@ module.exports = {
   reserveOneBarcode,
   reserveBarcodes,
   peekNextBarcodeNumber,
+  getLiveMaxBarcodeNumber,
+  getSequenceBarcodeNumber,
+  getSafeCurrentBarcodeNumber,
 };
