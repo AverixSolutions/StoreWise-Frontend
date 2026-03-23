@@ -1,32 +1,43 @@
 // src/app/layout.tsx
 import type { Metadata } from "next";
+import localFont from "next/font/local";
 import "./globals.css";
 
+const inter = localFont({
+  src: "../assets/fonts/InterVariable.woff2",
+  variable: "--font-inter",
+  display: "swap",
+  preload: true,
+  fallback: ["system-ui", "Arial", "sans-serif"],
+  adjustFontFallback: "Arial",
+});
+
 export const metadata: Metadata = {
-  title: "StoreWise - Smart Inventory Management Software | Averix Solutions",
+  title: "KYNFLOW - Smart Inventory Management Software | KYNSTACK",
   description:
-    "StoreWise by Averix Solutions is a modern inventory management software designed for businesses of all sizes. Easily manage stock, suppliers, multi-store operations, sales, and reporting in one platform.",
+    "KYNFLOW by KYNSTACK is a modern inventory, billing, and business operations platform built to manage stock, suppliers, sales, purchases, and reporting with speed and precision.",
   keywords: [
-    "StoreWise",
-    "Averix Solutions",
+    "KYNFLOW",
+    "KYNSTACK",
     "inventory management software",
+    "billing software",
     "stock management system",
-    "multi-store inventory",
-    "POS system",
-    "business software",
-    "warehouse tracking",
+    "purchase management",
+    "sales management",
     "supplier management",
-    "inventory SaaS",
+    "desktop inventory software",
+    "POS software",
+    "business operations software",
   ],
   authors: [{ name: "Krishna Kumar P S" }],
   creator: "Krishna Kumar P S",
-  publisher: "Averix Solutions",
+  publisher: "KYNSTACK",
   openGraph: {
-    title: "StoreWise - Smart Inventory Management Software",
+    title: "KYNFLOW - Smart Inventory Management Software",
     description:
-      "StoreWise by Averix Solutions is a scalable inventory management software to streamline stock, suppliers, and store operations.",
-    url: "https://storewise.averixsolutions.com/",
-    siteName: "StoreWise",
+      "KYNFLOW by KYNSTACK helps businesses manage inventory, billing, suppliers, purchases, sales, and reports in one powerful platform.",
+    url: "https://kynstack.com/",
+    siteName: "KYNFLOW",
     locale: "en_US",
     type: "website",
   },
@@ -42,8 +53,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body className="antialiased h-full">{children}</body>
+    <html lang="en" className={inter.variable}>
+      <body className="h-full antialiased">{children}</body>
     </html>
   );
 }

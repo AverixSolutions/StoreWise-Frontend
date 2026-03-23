@@ -1,37 +1,30 @@
 // src/components/ui/SplashScreen.tsx
 "use client";
+
 import Image from "next/image";
 import { motion } from "framer-motion";
 
 export default function SplashScreen() {
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
+    <div className="min-h-screen flex items-center justify-center bg-[radial-gradient(circle_at_top_left,rgba(32,183,255,0.08),transparent_32%),radial-gradient(circle_at_bottom_right,rgba(176,38,255,0.08),transparent_32%),linear-gradient(180deg,#040814_0%,#08101d_100%)] text-white">
       <motion.div
-        initial={{ opacity: 0, scale: 0.8 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.6 }}
+        initial={{ opacity: 0, y: 8, scale: 0.985 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.45, ease: "easeOut" }}
         className="flex flex-col items-center"
       >
         <Image
-          src="/Averix-icon.png"
-          alt="Averix Logo"
-          width={120}
-          height={120}
-          className="mb-6"
+          src="/branding/kynflow-logo-white-nobg.png"
+          alt="KynFlow"
+          width={280}
+          height={80}
+          className="h-16 w-auto object-contain sm:h-20"
+          priority
         />
-        <h1 className="text-3xl font-bold text-averix-black">
-          Averix Solutions
-        </h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Where Innovation Meets Integrity
-        </p>
 
-        <div className="mt-8 text-center">
-          <h2 className="text-2xl font-semibold text-averix-red-vivid">
-            StoreWise
-          </h2>
-          <p className="text-sm text-gray-400">Smart Inventory Management</p>
-        </div>
+        <p className="mt-5 text-xs uppercase tracking-[0.22em] text-white/55">
+          Powered by Kynstack
+        </p>
       </motion.div>
     </div>
   );

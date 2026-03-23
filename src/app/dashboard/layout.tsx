@@ -1,7 +1,6 @@
 // src/app/dashboard/layout.tsx
 "use client";
 
-import Header from "@/components/ui/Header";
 import { usePathname } from "next/navigation";
 import Sidebar from "@/components/ui/Sidebar";
 
@@ -10,7 +9,6 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const headerHeight = 72;
   const pathname = usePathname();
 
   const HIDE_SIDEBAR_PREFIXES = [
@@ -22,21 +20,21 @@ export default function DashboardLayout({
   const hideSidebar = HIDE_SIDEBAR_PREFIXES.some((p) =>
     pathname?.startsWith(p),
   );
-  const isFullWidth = hideSidebar;
+
+  if (hideSidebar) {
+    return <div className="min-h-screen kyn-shell">{children}</div>;
+  }
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50">
-      <Header />
-      <div className="flex flex-1 overflow-hidden">
-        {!hideSidebar && <Sidebar topOffset={headerHeight} />}
-        <main
-          className={
-            "flex-1 overflow-y-auto " +
-            (isFullWidth ? "p-0" : "p-6 max-w-[1400px] w-full mx-auto")
-          }
-        >
-          {children}
-        </main>
+    <div className="h-screen overflow-hidden kyn-shell">
+      <div className="flex h-full">
+        <Sidebar />
+
+        <div className="flex-1 p-3 md:p-3.5">
+          <main className="h-full overflow-y-auto rounded-2xl border border-black/5 bg-[#f6f5ef] text-black shadow-[0_12px_40px_rgba(0,0,0,0.24)]">
+            <div className="min-h-full p-5 md:p-6 lg:p-8">{children}</div>
+          </main>
+        </div>
       </div>
     </div>
   );
