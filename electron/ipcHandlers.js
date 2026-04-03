@@ -15,6 +15,7 @@ const { registerPrintingHandlers } = require("./ipc/printing");
 const { registerBarcodeHandlers } = require("./ipc/barcodes");
 const { registerShopSettingsHandlers } = require("./ipc/shopSettings");
 const { registerLabelPrintingHandlers } = require("./ipc/labelPrinting");
+const { registerDashboardHandlers } = require("./ipc/dashboard");
 
 function registerAllHandlers() {
   registerProductHandlers();
@@ -33,6 +34,7 @@ function registerAllHandlers() {
   registerPrintingHandlers();
   registerShopSettingsHandlers();
   registerLabelPrintingHandlers();
+  registerDashboardHandlers();
 }
 
 module.exports = { registerAllHandlers };

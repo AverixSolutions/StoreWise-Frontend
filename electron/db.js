@@ -10,18 +10,18 @@ function ensureDir(dirPath) {
   }
 }
 
-const appDataRoot = path.join(app.getPath("appData"), "StoreWise");
+const appDataRoot = path.join(app.getPath("appData"), "KYNFLOW");
 const dataDir = path.join(appDataRoot, "data");
 const backupDir = path.join(appDataRoot, "backups");
-const dbPath = path.join(dataDir, "storewise.db");
+const dbPath = path.join(dataDir, "kynflow.db");
 
 ensureDir(appDataRoot);
 ensureDir(dataDir);
 ensureDir(backupDir);
 
-console.log("StoreWise appDataRoot:", appDataRoot);
-console.log("StoreWise DB Path:", dbPath);
-console.log("StoreWise Backup Dir:", backupDir);
+console.log("KYNFLOW appDataRoot:", appDataRoot);
+console.log("KYNFLOW DB Path:", dbPath);
+console.log("KYNFLOW Backup Dir:", backupDir);
 
 const db = new Database(dbPath);
 

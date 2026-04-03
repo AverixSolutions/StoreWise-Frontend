@@ -2,6 +2,11 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("electronAPI", {
+  // ---- DASHBOARD ----
+  getDashboardOverview: (licenseId, days = 7) =>
+    ipcRenderer.invoke("dashboard:getOverview", { licenseId, days }),
+
+  // ----- BARCODE -----
   listBarcodesForProduct: (licenseId, productId) =>
     ipcRenderer.invoke("barcode:listForProduct", { licenseId, productId }),
 
@@ -16,6 +21,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   deleteBarcode: (licenseId, batchId) =>
     ipcRenderer.invoke("barcode:deleteForProduct", { licenseId, batchId }),
+
   // ---- Product APIs ----
   getNextCode: (licenseId) => ipcRenderer.invoke("get-next-code", licenseId),
   createProduct: (product) => ipcRenderer.invoke("create-product", product),

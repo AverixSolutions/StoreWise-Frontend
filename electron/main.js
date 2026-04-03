@@ -5,7 +5,7 @@ const path = require("path");
 const express = require("express");
 const http = require("http");
 
-app.setName("StoreWise");
+app.setName("KYNFLOW");
 
 let localServer = null;
 let mainWindow = null;
@@ -16,7 +16,6 @@ async function startLocalServer() {
 
   serverApp.use(express.static(outPath, { extensions: ["html"] }));
 
-  // SPA / exported Next fallback - Fixed: use middleware instead of wildcard route
   serverApp.use((req, res, next) => {
     if (req.method !== "GET") return next();
     res.sendFile(path.join(outPath, "index.html"));
@@ -81,8 +80,8 @@ function attachWindowDebug(win) {
 async function createWindow() {
   const iconPath =
     process.platform === "win32"
-      ? path.join(__dirname, "../public/favicon.ico")
-      : path.join(__dirname, "../public/Averix-icon.png");
+      ? path.join(__dirname, "../build/icon.ico")
+      : path.join(__dirname, "../build/icon.png");
 
   mainWindow = new BrowserWindow({
     width: 1600,
@@ -105,6 +104,7 @@ async function createWindow() {
   attachWindowDebug(mainWindow);
 
   mainWindow.once("ready-to-show", () => {
+    mainWindow.maximize();
     mainWindow.show();
   });
 
@@ -127,7 +127,7 @@ app.whenReady().then(async () => {
 
     if (process.platform === "darwin") {
       const icon = nativeImage.createFromPath(
-        path.join(__dirname, "../public/Averix-icon.png"),
+        path.join(__dirname, "../build/icon.png"),
       );
       if (!icon.isEmpty()) {
         app.dock.setIcon(icon);

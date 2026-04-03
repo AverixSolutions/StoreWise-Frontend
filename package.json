@@ -1,8 +1,8 @@
 {
-  "name": "storwise",
+  "name": "kynflow",
   "version": "0.1.0",
   "private": true,
-  "description": "StoreWise desktop inventory and billing application by Averix Solutions",
+  "description": "KYNFLOW desktop inventory and billing application by KYNSTACK",
   "author": "Krishna Kumar P S",
   "main": "electron/main.js",
   "scripts": {
@@ -44,14 +44,16 @@
     "wait-on": "^8.0.4"
   },
   "build": {
-    "appId": "com.storwise.app",
-    "productName": "Storwise",
+    "appId": "com.kynstack.kynflow",
+    "productName": "KYNFLOW",
+    "executableName": "KYNFLOW",
     "directories": {
       "output": "release"
     },
     "files": [
       "out/**/*",
       "electron/**/*",
+      "build/**/*",
       "package.json"
     ],
     "extraMetadata": {
@@ -61,13 +63,16 @@
       "node_modules/better-sqlite3/**"
     ],
     "mac": {
-      "category": "public.app-category.productivity"
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.icns"
     },
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "build/icon.ico"
     },
     "linux": {
-      "target": "AppImage"
+      "target": "AppImage",
+      "icon": "build/icon.png"
     }
   }
 }
