@@ -8,7 +8,7 @@ import {
   forwardRef,
 } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Search } from "lucide-react";
 import type React from "react";
 
 interface Option {
@@ -55,7 +55,7 @@ const SearchableDropdown = forwardRef<
       autoOpenOnFocus = true,
       buttonProps,
     },
-    ref
+    ref,
   ) => {
     const [isOpen, setIsOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
@@ -76,7 +76,7 @@ const SearchableDropdown = forwardRef<
       options.find((opt) => opt.value === value)?.label || placeholder;
 
     const filteredOptions = options.filter((opt) =>
-      opt.label.toLowerCase().includes(searchTerm.toLowerCase())
+      opt.label.toLowerCase().includes(searchTerm.toLowerCase()),
     );
 
     useEffect(() => {
@@ -99,9 +99,8 @@ const SearchableDropdown = forwardRef<
         if (
           (rootRef.current && rootRef.current.contains(t)) ||
           (menuRef.current && menuRef.current.contains(t))
-        ) {
+        )
           return;
-        }
         setIsOpen(false);
       }
       document.addEventListener("focusin", onFocusIn);
@@ -162,13 +161,13 @@ const SearchableDropdown = forwardRef<
       const btn = buttonRef.current;
       if (!btn) return;
       const rect = btn.getBoundingClientRect();
-      const maxHeight = Math.min(240, window.innerHeight - rect.bottom - 8);
+      const maxHeight = Math.min(260, window.innerHeight - rect.bottom - 8);
       setMenuStyle({
         position: "fixed",
         top: rect.bottom + 4,
         left: Math.max(
           8,
-          Math.min(rect.left, window.innerWidth - rect.width - 8)
+          Math.min(rect.left, window.innerWidth - rect.width - 8),
         ),
         width: rect.width,
         maxHeight,
@@ -180,14 +179,15 @@ const SearchableDropdown = forwardRef<
       if (!isOpen) return;
       recalcPosition();
       const onAnyScroll = () => recalcPosition();
-      const onResize = () => recalcPosition();
       window.addEventListener("scroll", onAnyScroll, true);
-      window.addEventListener("resize", onResize);
+      window.addEventListener("resize", recalcPosition);
       return () => {
         window.removeEventListener("scroll", onAnyScroll, true);
-        window.removeEventListener("resize", onResize);
+        window.removeEventListener("resize", recalcPosition);
       };
     }, [isOpen]);
+
+    const hasValue = !!value;
 
     return (
       <div className={`relative ${className}`} ref={rootRef}>
@@ -204,28 +204,27 @@ const SearchableDropdown = forwardRef<
             if (!handled) buttonProps?.onKeyDown?.(e);
           }}
           {...buttonProps}
-          className={
-            "w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 " +
-            "focus:ring-averix-red-light focus:border-transparent flex items-center " +
-            "justify-between bg-white hover:border-gray-400 transition-colors " +
-            (buttonProps?.className || "")
-          }
+          className={[
+            "w-full flex items-center justify-between rounded-xl border px-3.5 py-2.5",
+            "bg-white/80 text-sm outline-none transition",
+            "focus:border-cyan-400/60 focus:ring-4 focus:ring-cyan-400/10",
+            hasValue
+              ? "border-cyan-300/60 text-slate-900"
+              : "border-slate-200 text-slate-400",
+            buttonProps?.className || "",
+          ].join(" ")}
           role="combobox"
           aria-expanded={isOpen}
           aria-controls={isOpen ? "sd-menu" : undefined}
           aria-haspopup="listbox"
         >
           <span
-            className={`truncate text-left ${
-              value ? "text-gray-900" : "text-gray-500"
-            }`}
+            className={`truncate text-left text-sm ${hasValue ? "text-slate-900" : "text-slate-400"}`}
           >
             {selectedLabel}
           </span>
           <ChevronDown
-            className={`w-4 h-4 text-gray-500 transition-transform ml-2 ${
-              isOpen ? "rotate-180" : ""
-            }`}
+            className={`w-4 h-4 text-slate-400 transition-transform ml-2 shrink-0 ${isOpen ? "rotate-180" : ""}`}
           />
         </button>
 
@@ -235,79 +234,89 @@ const SearchableDropdown = forwardRef<
               ref={menuRef}
               onPointerDown={(e) => e.stopPropagation()}
               style={menuStyle}
-              className={
-                "bg-white border border-gray-200 rounded-md shadow-lg overflow-hidden " +
-                "max-h-60 flex flex-col z-[9999] " +
-                menuClassName
-              }
+              className={[
+                "overflow-hidden rounded-[16px] border border-slate-200 bg-white",
+                "shadow-[0_20px_50px_rgba(3,10,24,0.14)]",
+                "flex flex-col z-[9999]",
+                menuClassName,
+              ].join(" ")}
             >
-              <div className="sticky top-0 bg-white p-2 border-b border-gray-200">
-                <input
-                  ref={searchInputRef}
-                  type="text"
-                  placeholder="Search..."
-                  value={searchTerm}
-                  onChange={(e) => {
-                    setSearchTerm(e.target.value);
-                    setActive(0);
-                  }}
-                  className={
-                    "w-full border border-gray-300 rounded-md px-3 py-2 text-sm " +
-                    "focus:outline-none focus:ring-2 focus:ring-averix-red-light focus:border-transparent " +
-                    inputClassName
-                  }
-                  onKeyDown={(e) => {
-                    if (e.key === "ArrowDown") {
-                      e.preventDefault();
-                      setActive((a) =>
-                        Math.min(a + 1, Math.max(0, filteredOptions.length - 1))
-                      );
-                    } else if (e.key === "ArrowUp") {
-                      e.preventDefault();
-                      setActive((a) => Math.max(a - 1, 0));
-                    } else if (e.key === "Home") {
-                      e.preventDefault();
+              {/* Search input */}
+              <div className="sticky top-0 bg-white/95 backdrop-blur-sm px-3 pt-3 pb-2 border-b border-slate-100">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute inset-y-0 left-3 my-auto h-3.5 w-3.5 text-slate-400" />
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    placeholder="Search…"
+                    value={searchTerm}
+                    onChange={(e) => {
+                      setSearchTerm(e.target.value);
                       setActive(0);
-                    } else if (e.key === "End") {
-                      e.preventDefault();
-                      setActive(Math.max(0, filteredOptions.length - 1));
-                    } else if (e.key === "PageDown") {
-                      e.preventDefault();
-                      setActive((a) =>
-                        Math.min(
-                          a + 10,
-                          Math.max(0, filteredOptions.length - 1)
-                        )
-                      );
-                    } else if (e.key === "PageUp") {
-                      e.preventDefault();
-                      setActive((a) => Math.max(a - 10, 0));
-                    } else if (e.key === "Enter") {
-                      e.preventDefault();
-                      if (filteredOptions.length) {
-                        const opt =
-                          filteredOptions[active] ?? filteredOptions[0];
-                        onChange(opt.value);
+                    }}
+                    className={[
+                      "w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-8 pr-3 text-xs",
+                      "text-slate-900 placeholder:text-slate-400 outline-none",
+                      "focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/10 transition",
+                      inputClassName,
+                    ].join(" ")}
+                    onKeyDown={(e) => {
+                      if (e.key === "ArrowDown") {
+                        e.preventDefault();
+                        setActive((a) =>
+                          Math.min(
+                            a + 1,
+                            Math.max(0, filteredOptions.length - 1),
+                          ),
+                        );
+                      } else if (e.key === "ArrowUp") {
+                        e.preventDefault();
+                        setActive((a) => Math.max(a - 1, 0));
+                      } else if (e.key === "Home") {
+                        e.preventDefault();
+                        setActive(0);
+                      } else if (e.key === "End") {
+                        e.preventDefault();
+                        setActive(Math.max(0, filteredOptions.length - 1));
+                      } else if (e.key === "PageDown") {
+                        e.preventDefault();
+                        setActive((a) =>
+                          Math.min(
+                            a + 10,
+                            Math.max(0, filteredOptions.length - 1),
+                          ),
+                        );
+                      } else if (e.key === "PageUp") {
+                        e.preventDefault();
+                        setActive((a) => Math.max(a - 10, 0));
+                      } else if (e.key === "Enter") {
+                        e.preventDefault();
+                        if (filteredOptions.length) {
+                          const opt =
+                            filteredOptions[active] ?? filteredOptions[0];
+                          onChange(opt.value);
+                          setIsOpen(false);
+                          onEnter?.(e.shiftKey ? -1 : 1);
+                        } else if (allowCustom) {
+                          createFromSearch();
+                        }
+                      } else if (e.key === "Escape") {
+                        e.preventDefault();
                         setIsOpen(false);
-                        onEnter?.(e.shiftKey ? -1 : 1);
-                      } else if (allowCustom) {
-                        createFromSearch();
+                      } else if (e.key === "Tab") {
+                        setIsOpen(false);
                       }
-                    } else if (e.key === "Escape") {
-                      e.preventDefault();
-                      setIsOpen(false);
-                    } else if (e.key === "Tab") {
-                      setIsOpen(false);
-                    }
-                  }}
-                  role="combobox"
-                  aria-controls="sd-menu"
-                  aria-autocomplete="list"
-                  aria-expanded={true}
-                />
+                    }}
+                    role="combobox"
+                    aria-controls="sd-menu"
+                    aria-autocomplete="list"
+                    aria-expanded={true}
+                  />
+                </div>
               </div>
 
               <div id="sd-menu" role="listbox" className="overflow-y-auto">
+                {/* Clear option */}
                 {value && (
                   <button
                     type="button"
@@ -315,10 +324,7 @@ const SearchableDropdown = forwardRef<
                       onChange("");
                       setIsOpen(false);
                     }}
-                    className={
-                      "w-full text-left px-3 py-2 text-sm text-gray-500 hover:bg-gray-100 border-b border-gray-100 cursor-pointer " +
-                      optionClassName
-                    }
+                    className="w-full cursor-pointer border-b border-slate-100 px-3.5 py-2 text-left text-xs font-medium text-slate-400 transition hover:bg-slate-50"
                   >
                     Clear selection
                   </button>
@@ -336,15 +342,15 @@ const SearchableDropdown = forwardRef<
                         onChange(opt.value);
                         setIsOpen(false);
                       }}
-                      className={
-                        "w-full text-left px-3 py-2 text-sm transition-colors duration-150 cursor-pointer " +
-                        (i === active
-                          ? "bg-averix-red-light text-white font-medium "
+                      className={[
+                        "w-full cursor-pointer px-3.5 py-2.5 text-left text-sm transition-colors",
+                        i === active
+                          ? "bg-slate-900 text-white font-medium"
                           : value === opt.value
-                          ? "bg-averix-red-light/20 text-gray-900"
-                          : "text-gray-900 hover:bg-gray-100 ") +
-                        optionClassName
-                      }
+                            ? "bg-cyan-50 text-cyan-800 font-medium"
+                            : "text-slate-700 hover:bg-slate-50",
+                        optionClassName,
+                      ].join(" ")}
                       role="option"
                       aria-selected={i === active}
                       onKeyDown={(e) => {
@@ -360,12 +366,7 @@ const SearchableDropdown = forwardRef<
                     </button>
                   ))
                 ) : (
-                  <div
-                    className={
-                      "px-3 py-2 text-gray-400 text-sm text-center " +
-                      optionClassName
-                    }
-                  >
+                  <div className="px-3.5 py-4 text-center text-sm text-slate-400">
                     No results found
                   </div>
                 )}
@@ -374,21 +375,22 @@ const SearchableDropdown = forwardRef<
                   <button
                     type="button"
                     onClick={createFromSearch}
-                    className={
-                      "w-full text-left px-3 py-2 text-sm text-averix-red-dark hover:bg-averix-red-light/10 border-t border-gray-100 cursor-pointer " +
-                      optionClassName
-                    }
+                    className={[
+                      "w-full cursor-pointer border-t border-slate-100 px-3.5 py-2.5 text-left text-sm",
+                      "text-cyan-600 font-medium transition hover:bg-cyan-50",
+                      optionClassName,
+                    ].join(" ")}
                   >
-                    Use "{searchTerm.trim()}"
+                    Use &ldquo;{searchTerm.trim()}&rdquo;
                   </button>
                 )}
               </div>
             </div>,
-            document.body
+            document.body,
           )}
       </div>
     );
-  }
+  },
 );
 
 SearchableDropdown.displayName = "SearchableDropdown";

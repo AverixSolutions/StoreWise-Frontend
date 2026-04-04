@@ -1,6 +1,9 @@
 // src/components/products/ProductBatchesDrawer.tsx
 "use client";
+
 import { useEffect, useState } from "react";
+import { platform } from "@/platform";
+import { X, Boxes, Trash2, Plus } from "lucide-react";
 
 type Batch = {
   id: string;
@@ -16,34 +19,10 @@ type Batch = {
   deletedAt?: string | null;
 };
 
-// Type-safe API cast
-function getApi() {
-  return (window as any).electronAPI as {
-    listBatchesForProduct: (
-      productId: string,
-      includeDeleted?: boolean,
-    ) => Promise<{ success: boolean; rows: Batch[]; totalStock: number }>;
-    saveBatch: (payload: {
-      licenseId: string;
-      productId: string;
-      barcode?: string | null;
-      mrp?: number | null;
-      salePrice?: number | null;
-      costPrice?: number | null;
-      batchNo?: string | null;
-      mfgDate?: string | null;
-      expiryDate?: string | null;
-      receivedAt?: string;
-      deltaQty?: number;
-    }) => Promise<{ success: boolean; batch: Batch }>;
-    deleteBatch: (
-      batchId: string,
-    ) => Promise<{ success: boolean; deletedAt: string }>;
-    rebuildProductStock: (
-      productId: string,
-    ) => Promise<{ success: boolean; stock: number }>;
-  };
-}
+const fieldClass =
+  "w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 outline-none placeholder:text-slate-400 transition focus:border-cyan-400/60 focus:ring-4 focus:ring-cyan-400/10";
+const labelClass =
+  "mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400";
 
 export default function ProductBatchesDrawer({
   open,
@@ -64,8 +43,7 @@ export default function ProductBatchesDrawer({
 
   async function refresh() {
     if (!productId) return;
-    const api = getApi();
-    const res = await api.listBatchesForProduct(productId, false);
+    const res = await platform.listBatchesForProduct(productId, false);
     if (res?.success) {
       setRows(res.rows);
       setTotal(res.totalStock ?? 0);
@@ -78,7 +56,6 @@ export default function ProductBatchesDrawer({
 
   async function addOrAdjust(form: FormData) {
     if (!productId) return;
-    const api = getApi();
     setSaving(true);
     try {
       const payload = {
@@ -92,14 +69,20 @@ export default function ProductBatchesDrawer({
         mfgDate: form.get("mfgDate")?.toString() || null,
         expiryDate: form.get("expiryDate")?.toString() || null,
         receivedAt: form.get("receivedAt")?.toString() || undefined,
-        deltaQty: form.get("deltaQty") ? Number(form.get("deltaQty")) : 0,
+        stock: form.get("deltaQty") ? Number(form.get("deltaQty")) : 0,
       };
-      await api.saveBatch(payload);
 
-      await api.rebuildProductStock(productId);
+      const result = await platform.saveBatch(payload);
+      if (!result?.success) {
+        alert(`Failed to save batch: ${result?.error || "Unknown error"}`);
+        return;
+      }
 
+      await platform.rebuildProductStock?.(productId);
       await refresh();
       (document.getElementById("batch-form") as HTMLFormElement)?.reset();
+    } catch (err: any) {
+      alert(`Error: ${err?.message || "Failed to save batch"}`);
     } finally {
       setSaving(false);
     }
@@ -108,11 +91,11 @@ export default function ProductBatchesDrawer({
   async function onDelete(id: string) {
     if (!confirm("Delete this batch? Stock will be removed from totals."))
       return;
-    const api = getApi();
-    await api.deleteBatch(id);
-
-    if (productId) await api.rebuildProductStock(productId);
-
+    const result = await platform.deleteBatch?.(id);
+    if (!result?.success) {
+      alert(`Failed to delete batch: ${result?.error || "Unknown error"}`);
+      return;
+    }
     await refresh();
   }
 
@@ -120,346 +103,304 @@ export default function ProductBatchesDrawer({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4"
       onClick={onClose}
     >
+      {/* Sheet on mobile, centered panel on sm+ */}
       <div
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col"
+        className="w-full sm:max-w-3xl rounded-t-[28px] sm:rounded-[28px] bg-[linear-gradient(180deg,rgba(255,255,255,0.97),rgba(248,250,252,0.97))] shadow-[0_-10px_60px_rgba(3,10,24,0.18)] backdrop-blur flex flex-col max-h-[92dvh] sm:max-h-[90dvh] overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900">
-              Product Batches
-            </h2>
-            <p className="text-sm text-gray-600 mt-1">
-              {productName || productId}
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
-            title="Close"
-          >
-            <svg
-              className="w-6 h-6 text-gray-600"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
+        <div className="relative overflow-hidden rounded-t-[28px] bg-[linear-gradient(135deg,#091120_0%,#0f1a31_60%,#16213d_100%)] px-6 py-5 text-white shrink-0">
+          <div className="pointer-events-none absolute -left-8 top-0 h-24 w-24 rounded-full bg-cyan-400/15 blur-2xl" />
+          <div className="pointer-events-none absolute right-0 top-0 h-24 w-24 rounded-full bg-fuchsia-500/15 blur-2xl" />
+          <div className="relative flex items-start justify-between gap-4">
+            <div>
+              <div className="kyn-brand-pill mb-2 inline-flex items-center rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/80">
+                Batch Management
+              </div>
+              <h2 className="text-xl font-semibold tracking-[-0.04em] text-white">
+                {productName || "Product Batches"}
+              </h2>
+              {productName && (
+                <p className="mt-1 text-sm text-slate-400">{productId}</p>
+              )}
+            </div>
+            <button
+              onClick={onClose}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border border-white/15 bg-white/10 text-white transition hover:bg-white/20"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
-          </button>
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6 no-scrollbar">
-          {/* Total Stock Card */}
-          <div className="mb-6 p-4 rounded-xl bg-gradient-to-br from-averix-red-vivid to-averix-red-dark text-white shadow-lg">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm opacity-90">Total Stock</p>
-                <p className="text-3xl font-bold mt-1">{total}</p>
-              </div>
-              <div className="bg-white/20 rounded-full p-3">
-                <svg
-                  className="w-8 h-8"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
-                  />
-                </svg>
-              </div>
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto no-scrollbar p-5 sm:p-6 space-y-5">
+          {/* Total Stock KPI */}
+          <div className="flex items-center gap-5 rounded-[22px] border border-white/8 bg-[linear-gradient(135deg,#091120,#16213d)] p-5 text-white shadow-[0_10px_30px_rgba(5,10,20,0.14)]">
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl kyn-brand-chip">
+              <Boxes className="h-7 w-7 text-slate-900" />
+            </div>
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                Total Stock
+              </p>
+              <p className="mt-1 text-4xl font-semibold tracking-[-0.06em] text-white">
+                {total}
+              </p>
+            </div>
+            <div className="ml-auto text-right">
+              <p className="text-[11px] text-slate-400">Batches</p>
+              <p className="text-2xl font-semibold text-white">{rows.length}</p>
             </div>
           </div>
 
-          {/* Add/Adjust Form */}
-          <form
-            id="batch-form"
-            className="mb-6 border-2 border-gray-200 rounded-xl p-5 bg-gray-50"
-            onSubmit={(e) => {
-              e.preventDefault();
-              addOrAdjust(new FormData(e.currentTarget));
-            }}
-          >
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              Add / Adjust Batch
-            </h3>
+          {/* Add / Adjust form */}
+          <div className="rounded-[22px] border border-slate-200/80 bg-white/80 p-5 space-y-4">
+            <div className="flex items-center gap-2">
+              <div className="flex h-7 w-7 items-center justify-center rounded-xl kyn-brand-chip">
+                <Plus className="h-3.5 w-3.5 text-slate-800" />
+              </div>
+              <h3 className="text-sm font-semibold text-slate-900">
+                Add / Adjust Batch
+              </h3>
+            </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1.5">
-                  Batch Barcode
-                </label>
-                <input
-                  name="barcode"
-                  placeholder="Enter barcode"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-averix-red-vivid focus:border-transparent outline-none transition-all"
-                />
+            <form
+              id="batch-form"
+              onSubmit={(e) => {
+                e.preventDefault();
+                addOrAdjust(new FormData(e.currentTarget));
+              }}
+              className="space-y-4"
+            >
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>Batch Barcode</label>
+                  <input
+                    name="barcode"
+                    placeholder="Enter barcode"
+                    className={fieldClass}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Batch Number</label>
+                  <input
+                    name="batchNo"
+                    placeholder="Enter batch no."
+                    className={fieldClass}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>MRP (₹)</label>
+                  <div className="relative">
+                    <span className="pointer-events-none absolute inset-y-0 left-3.5 flex items-center text-sm text-slate-400">
+                      ₹
+                    </span>
+                    <input
+                      name="mrp"
+                      type="number"
+                      step="0.01"
+                      placeholder="0.00"
+                      className={`${fieldClass} pl-8`}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className={labelClass}>Sale Price (₹)</label>
+                  <div className="relative">
+                    <span className="pointer-events-none absolute inset-y-0 left-3.5 flex items-center text-sm text-slate-400">
+                      ₹
+                    </span>
+                    <input
+                      name="salePrice"
+                      type="number"
+                      step="0.01"
+                      placeholder="0.00"
+                      className={`${fieldClass} pl-8`}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className={labelClass}>Cost Price (₹)</label>
+                  <div className="relative">
+                    <span className="pointer-events-none absolute inset-y-0 left-3.5 flex items-center text-sm text-slate-400">
+                      ₹
+                    </span>
+                    <input
+                      name="costPrice"
+                      type="number"
+                      step="0.01"
+                      placeholder="0.00"
+                      className={`${fieldClass} pl-8`}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className={labelClass}>Manufacturing Date</label>
+                  <input name="mfgDate" type="date" className={fieldClass} />
+                </div>
+                <div>
+                  <label className={labelClass}>Expiry Date</label>
+                  <input name="expiryDate" type="date" className={fieldClass} />
+                </div>
+                <div>
+                  <label className={labelClass}>Received At</label>
+                  <input
+                    name="receivedAt"
+                    type="datetime-local"
+                    className={fieldClass}
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className={labelClass}>
+                    Quantity Change{" "}
+                    <span className="normal-case tracking-normal text-slate-400">
+                      (+ add, − reduce)
+                    </span>
+                  </label>
+                  <input
+                    name="deltaQty"
+                    type="number"
+                    step="1"
+                    placeholder="e.g. +100 or -50"
+                    required
+                    className={fieldClass}
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1.5">
-                  Batch Number
-                </label>
-                <input
-                  name="batchNo"
-                  placeholder="Enter batch no."
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-averix-red-vivid focus:border-transparent outline-none transition-all"
-                />
-              </div>
+              <button
+                type="submit"
+                disabled={saving}
+                className="w-full rounded-2xl bg-slate-900 py-3 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(15,23,42,0.18)] transition hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {saving ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <svg
+                      className="h-4 w-4 animate-spin"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                    >
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      />
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      />
+                    </svg>
+                    Saving…
+                  </span>
+                ) : (
+                  "Save Batch"
+                )}
+              </button>
+            </form>
+          </div>
 
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1.5">
-                  MRP (₹)
-                </label>
-                <input
-                  name="mrp"
-                  type="number"
-                  step="0.01"
-                  placeholder="0.00"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-averix-red-vivid focus:border-transparent outline-none transition-all"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1.5">
-                  Sale Price (₹)
-                </label>
-                <input
-                  name="salePrice"
-                  type="number"
-                  step="0.01"
-                  placeholder="0.00"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-averix-red-vivid focus:border-transparent outline-none transition-all"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1.5">
-                  Cost Price (₹)
-                </label>
-                <input
-                  name="costPrice"
-                  type="number"
-                  step="0.01"
-                  placeholder="0.00"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-averix-red-vivid focus:border-transparent outline-none transition-all"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1.5">
-                  Manufacturing Date
-                </label>
-                <input
-                  name="mfgDate"
-                  type="date"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-averix-red-vivid focus:border-transparent outline-none transition-all"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1.5">
-                  Expiry Date
-                </label>
-                <input
-                  name="expiryDate"
-                  type="date"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-averix-red-vivid focus:border-transparent outline-none transition-all"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1.5">
-                  Received At
-                </label>
-                <input
-                  name="receivedAt"
-                  type="datetime-local"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-averix-red-vivid focus:border-transparent outline-none transition-all"
-                />
-              </div>
-
-              <div className="md:col-span-2">
-                <label className="block text-xs font-medium text-gray-700 mb-1.5">
-                  Quantity Change{" "}
-                  <span className="text-gray-500">(+ to add, - to reduce)</span>
-                </label>
-                <input
-                  name="deltaQty"
-                  type="number"
-                  step="1"
-                  placeholder="e.g., +100 or -50"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-averix-red-vivid focus:border-transparent outline-none transition-all"
-                  required
-                />
+          {/* Existing batches */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="mb-1 inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                Existing Batches
               </div>
             </div>
 
-            <button
-              type="submit"
-              disabled={saving}
-              className="mt-5 w-full bg-gradient-to-r from-averix-red-vivid to-averix-red-dark text-white rounded-lg px-6 py-3 font-semibold hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
-            >
-              {saving ? (
-                <span className="flex items-center justify-center gap-2">
-                  <svg
-                    className="animate-spin h-5 w-5"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                  >
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    ></circle>
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    ></path>
-                  </svg>
-                  Saving...
-                </span>
-              ) : (
-                "Save Batch"
-              )}
-            </button>
-          </form>
-
-          {/* Batches List */}
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              Existing Batches
-            </h3>
-
             {rows.length === 0 ? (
-              <div className="text-center py-12 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
-                <svg
-                  className="w-16 h-16 mx-auto text-gray-400 mb-3"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"
-                  />
-                </svg>
-                <p className="text-gray-600 font-medium">No batches found</p>
-                <p className="text-sm text-gray-500 mt-1">
-                  Add your first batch using the form above
+              <div className="flex flex-col items-center justify-center rounded-[22px] border border-dashed border-slate-200 bg-slate-50/60 py-12 text-center">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-slate-200 bg-white">
+                  <Boxes className="h-7 w-7 text-slate-300" />
+                </div>
+                <p className="mt-3 text-sm font-medium text-slate-500">
+                  No batches yet
+                </p>
+                <p className="mt-1 text-xs text-slate-400">
+                  Add your first batch using the form above.
                 </p>
               </div>
             ) : (
-              <div className="space-y-3">
-                {rows.map((r) => (
-                  <div
-                    key={r.id}
-                    className="border border-gray-200 rounded-xl p-4 hover:shadow-md transition-shadow bg-white"
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="font-semibold text-gray-900">
-                            {r.batchNo || "No Batch #"}
-                          </span>
-                          <span className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded-full">
-                            {r.barcode || "No barcode"}
-                          </span>
-                        </div>
-
-                        <div className="grid grid-cols-3 gap-x-4 gap-y-2 text-sm">
-                          <div>
-                            <span className="text-gray-500">MRP:</span>{" "}
-                            <span className="font-medium text-gray-900">
-                              ₹{r.mrp ?? "—"}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-gray-500">Sale:</span>{" "}
-                            <span className="font-medium text-gray-900">
-                              ₹{r.salePrice ?? "—"}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-gray-500">Cost:</span>{" "}
-                            <span className="font-medium text-gray-900">
-                              ₹{r.costPrice ?? "—"}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-gray-500">Mfg:</span>{" "}
-                            <span className="font-medium text-gray-900">
-                              {r.mfgDate || "—"}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-gray-500">Exp:</span>{" "}
-                            <span className="font-medium text-gray-900">
-                              {r.expiryDate || "—"}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-gray-500">Received:</span>{" "}
-                            <span className="font-medium text-gray-900">
-                              {r.receivedAt
-                                ? new Date(r.receivedAt).toLocaleDateString()
-                                : "—"}
-                            </span>
-                          </div>
-                        </div>
+              rows.map((r) => (
+                <div
+                  key={r.id}
+                  className="rounded-[20px] border border-slate-200/80 bg-white/90 p-4"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2 mb-3">
+                        <span className="font-semibold text-slate-900 text-sm">
+                          {r.batchNo || "No Batch #"}
+                        </span>
+                        <span className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-0.5 font-mono text-xs text-slate-500">
+                          {r.barcode || "No barcode"}
+                        </span>
                       </div>
 
-                      <div className="flex items-center gap-3">
-                        <div className="text-center px-4 py-2 bg-averix-red-vivid/10 rounded-lg">
-                          <div className="text-xs text-gray-600">Stock</div>
-                          <div className="text-xl font-bold text-averix-red-dark">
-                            {r.stock}
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2 text-sm">
+                        {[
+                          {
+                            label: "MRP",
+                            value: r.mrp != null ? `₹${r.mrp}` : "—",
+                          },
+                          {
+                            label: "Sale",
+                            value:
+                              r.salePrice != null ? `₹${r.salePrice}` : "—",
+                          },
+                          {
+                            label: "Cost",
+                            value:
+                              r.costPrice != null ? `₹${r.costPrice}` : "—",
+                          },
+                          { label: "Mfg", value: r.mfgDate || "—" },
+                          { label: "Exp", value: r.expiryDate || "—" },
+                          {
+                            label: "Received",
+                            value: r.receivedAt
+                              ? new Date(r.receivedAt).toLocaleDateString()
+                              : "—",
+                          },
+                        ].map(({ label, value }) => (
+                          <div key={label}>
+                            <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                              {label}
+                            </span>
+                            <p className="mt-0.5 text-sm font-medium text-slate-800">
+                              {value}
+                            </p>
                           </div>
-                        </div>
-                        <button
-                          onClick={() => onDelete(r.id)}
-                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                          title="Delete batch"
-                        >
-                          <svg
-                            className="w-5 h-5"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                            />
-                          </svg>
-                        </button>
+                        ))}
                       </div>
                     </div>
+
+                    <div className="flex flex-col items-end gap-2 shrink-0">
+                      <div className="rounded-[14px] border border-slate-200 bg-slate-50 px-4 py-2 text-center">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                          Stock
+                        </p>
+                        <p className="mt-0.5 text-2xl font-semibold text-slate-900">
+                          {r.stock}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => onDelete(r.id)}
+                        className="flex h-8 w-8 items-center justify-center rounded-xl border border-rose-200 bg-rose-50 text-rose-500 transition hover:bg-rose-100"
+                        title="Delete batch"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
-                ))}
-              </div>
+                </div>
+              ))
             )}
           </div>
         </div>

@@ -30,7 +30,7 @@ export default function DashboardLayout({
       <div className="flex h-full">
         <Sidebar />
 
-        <div className="flex-1 p-3 md:p-3.5">
+        <div className="flex-1 p-1 pb-20 md:p-3.5 md:pb-24 lg:pb-3.5">
           <main className="h-full overflow-y-auto rounded-2xl border border-black/5 bg-[#f6f5ef] text-black shadow-[0_12px_40px_rgba(0,0,0,0.24)]">
             <div className="min-h-full p-5 md:p-6 lg:p-8">{children}</div>
           </main>

@@ -1,10 +1,11 @@
 // src/components/products/ProductFormModal.tsx
-
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { Plus, Trash2, Tag, Zap } from "lucide-react";
+import { Plus, Trash2, Tag, Zap, X } from "lucide-react";
 import Dropdown from "@/components/ui/Dropdown";
+import { platform } from "@/platform";
+import { getActiveLicenseId } from "@/lib/session/runtimeSession";
 
 interface Product {
   id: string;
@@ -22,11 +23,11 @@ interface Product {
 }
 
 interface BarcodeEntry {
-  id: string; // temp client id
-  barcode: string; // the actual barcode string
-  isGenerated: boolean; // was auto-generated from sequence
-  saved: boolean; // committed to DB (edit mode)
-  batchId?: string; // DB batch id if saved
+  id: string;
+  barcode: string;
+  isGenerated: boolean;
+  saved: boolean;
+  batchId?: string;
 }
 
 interface ProductFormModalProps {
@@ -35,6 +36,12 @@ interface ProductFormModalProps {
   onSuccess: () => void;
   editProduct?: Product | null;
 }
+
+const fieldClass =
+  "w-full rounded-xl border border-slate-200 bg-white/80 px-3.5 py-2.5 text-sm text-slate-900 outline-none placeholder:text-slate-400 transition focus:border-cyan-400/60 focus:ring-4 focus:ring-cyan-400/10";
+
+const labelClass =
+  "mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400";
 
 export default function ProductFormModal({
   isOpen,
@@ -52,16 +59,12 @@ export default function ProductFormModal({
   const [costPrice, setCostPrice] = useState("");
   const [salePrice, setSalePrice] = useState("");
 
-  // Barcode management
   const [barcodeEntries, setBarcodeEntries] = useState<BarcodeEntry[]>([]);
   const [customBarcodeInput, setCustomBarcodeInput] = useState("");
   const [barcodeError, setBarcodeError] = useState<string | null>(null);
   const [nextBarcodePreview, setNextBarcodePreview] = useState("00001");
 
-  const licenseId =
-    typeof window !== "undefined"
-      ? localStorage.getItem("licenseId") || "demo-license"
-      : "demo-license";
+  const licenseId = typeof window !== "undefined" ? getActiveLicenseId() : "";
 
   const nameRef = useRef<HTMLInputElement>(null);
   const brandRef = useRef<HTMLInputElement>(null);
@@ -117,9 +120,7 @@ export default function ProductFormModal({
 
   useEffect(() => {
     if (!isOpen) return;
-
     loadNextBarcodePreview();
-
     if (editProduct) {
       setCode(editProduct.code);
       setName(editProduct.name);
@@ -133,15 +134,15 @@ export default function ProductFormModal({
       loadExistingBarcodes(editProduct.id);
     } else {
       resetForm();
-      window.electronAPI.getNextCode(licenseId).then((nextCode: string) => {
-        setCode(nextCode);
-      });
+      platform
+        .getNextCode(licenseId)
+        .then((nextCode: string) => setCode(nextCode));
     }
   }, [isOpen, editProduct, licenseId]);
 
   async function loadNextBarcodePreview() {
     try {
-      const res = await (window as any).electronAPI.peekNextBarcode(licenseId);
+      const res = await platform.peekNextBarcode?.(licenseId);
       setNextBarcodePreview(res?.barcode || "00001");
     } catch {
       setNextBarcodePreview("00001");
@@ -149,10 +150,7 @@ export default function ProductFormModal({
   }
 
   async function loadExistingBarcodes(productId: string) {
-    const res = await (window as any).electronAPI.listBarcodesForProduct(
-      licenseId,
-      productId,
-    );
+    const res = await platform.listBarcodesForProduct?.(licenseId, productId);
     if (res?.success) {
       const entries: BarcodeEntry[] = (res.rows || []).map((b: any) => ({
         id: b.id,
@@ -179,32 +177,21 @@ export default function ProductFormModal({
     setBarcodeError(null);
   }
 
-  // Add a system-generated barcode (reserves from global sequence)
   async function addGeneratedBarcode() {
     setBarcodeError(null);
-
-    const res = await (window as any).electronAPI.reserveBarcodes(licenseId, 1);
+    const res = await platform.reserveBarcodes?.(licenseId, 1);
     if (!res?.success) {
       setBarcodeError("Failed to generate barcode");
       return;
     }
-
     const barcode = res.barcodes[0];
-
     setBarcodeEntries((prev) => [
       ...prev,
-      {
-        id: `temp-${Date.now()}`,
-        barcode,
-        isGenerated: true,
-        saved: false,
-      },
+      { id: `temp-${Date.now()}`, barcode, isGenerated: true, saved: false },
     ]);
-
     await loadNextBarcodePreview();
   }
 
-  // Add a custom barcode
   function addCustomBarcode() {
     const bc = customBarcodeInput.trim();
     if (!bc) {
@@ -228,19 +215,15 @@ export default function ProductFormModal({
     setCustomBarcodeInput("");
   }
 
-  // Remove a barcode entry (soft delete from DB if saved, else just remove from list)
   async function removeBarcode(entry: BarcodeEntry) {
     if (entry.saved && entry.batchId) {
       const ok = confirm(
         `Remove barcode ${entry.barcode}? This will delete the empty barcode entry if it has no stock.`,
       );
       if (!ok) return;
-      const res = await (window as any).electronAPI.deleteBarcode(
-        licenseId,
-        entry.batchId,
-      );
+      const res = await platform.deleteBarcode?.(licenseId, entry.batchId);
       if (!res?.success) {
-        alert("Failed to delete barcode");
+        alert(`Failed to delete barcode: ${res?.error || "Unknown error"}`);
         return;
       }
     }
@@ -249,7 +232,6 @@ export default function ProductFormModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
     try {
       const productData = {
         licenseId,
@@ -266,34 +248,41 @@ export default function ProductFormModal({
       };
 
       let productId = "";
-
       if (editProduct) {
-        await window.electronAPI.updateProduct(editProduct.id, productData);
+        const result = await platform.updateProduct(
+          editProduct.id,
+          productData,
+        );
+        if (!result?.success) throw new Error(result?.error || "Update failed");
         productId = editProduct.id;
       } else {
-        const result = await window.electronAPI.createProduct(productData);
+        const result = await platform.createProduct(productData);
+        if (!result?.success) throw new Error(result?.error || "Create failed");
         productId = result?.productId || "";
-
-        if (!productId) {
-          const p = await window.electronAPI.getProductByCode(licenseId, code);
-          productId = p?.id || "";
-        }
       }
 
-      // Save all unsaved barcode entries
       if (productId) {
         for (const entry of barcodeEntries) {
           if (!entry.saved && entry.barcode) {
-            await (window as any).electronAPI.createBarcodeForProduct({
+            const bcResult = await platform.createBarcodeForProduct?.({
               licenseId,
               productId,
               barcode: entry.barcode,
-              useGenerated: false, // already have the barcode string
+              useGenerated: false,
               costPrice: costPrice ? parseFloat(costPrice) : null,
               salePrice: salePrice ? parseFloat(salePrice) : null,
             });
+            if (!bcResult?.success)
+              throw new Error(
+                bcResult?.error || `Failed to save barcode ${entry.barcode}`,
+              );
           }
         }
+      }
+
+      if (!editProduct) {
+        const nextCode = await platform.getNextCode(licenseId);
+        setCode(nextCode);
       }
 
       alert(`✅ Product ${editProduct ? "updated" : "created"} successfully!`);
@@ -301,7 +290,6 @@ export default function ProductFormModal({
       onClose();
     } catch (error: any) {
       alert(`❌ ${error?.message || "Failed to save product."}`);
-      console.error("ProductFormModal error:", error);
     }
   };
 
@@ -323,330 +311,311 @@ export default function ProductFormModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4"
+      onClick={onClose}
       role="dialog"
       aria-modal="true"
     >
-      <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:p-0 bg-black/40 backdrop-blur-sm">
-        <div className="inline-block w-full max-w-2xl my-8 overflow-hidden text-left align-middle transform bg-white shadow-xl rounded-xl">
-          {/* Header */}
-          <div className="bg-gradient-to-r from-averix-red-dark to-averix-red-accent p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-white">
-                  {editProduct ? "Edit Item" : "Add New Item"}
-                </h2>
-                <p className="text-white opacity-90 text-sm">
-                  {editProduct
-                    ? "Update product information"
-                    : "Create a new product in your inventory"}
-                </p>
+      {/* Sheet on mobile, centered modal on sm+ */}
+      <div
+        className="w-full sm:max-w-2xl sm:rounded-[28px] rounded-t-[28px] bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.96))] shadow-[0_-10px_60px_rgba(3,10,24,0.18)] backdrop-blur overflow-hidden flex flex-col max-h-[92dvh] sm:max-h-[90dvh]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="relative overflow-hidden rounded-t-[28px] bg-[linear-gradient(135deg,#091120_0%,#0f1a31_60%,#16213d_100%)] px-6 py-5 text-white shrink-0">
+          <div className="pointer-events-none absolute -left-8 top-0 h-24 w-24 rounded-full bg-cyan-400/15 blur-2xl" />
+          <div className="pointer-events-none absolute right-0 top-0 h-24 w-24 rounded-full bg-fuchsia-500/15 blur-2xl" />
+          <div className="relative flex items-center justify-between gap-4">
+            <div>
+              <div className="kyn-brand-pill mb-2 inline-flex items-center rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/80">
+                {editProduct ? "Edit Item" : "New Item"}
               </div>
-              <button
-                type="button"
-                onClick={onClose}
-                className="text-white hover:text-gray-200 p-1"
-              >
-                <svg
-                  className="w-6 h-6"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-              </button>
+              <h2 className="text-xl font-semibold tracking-[-0.04em] text-white">
+                {editProduct ? "Update product" : "Add to catalog"}
+              </h2>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border border-white/15 bg-white/10 text-white transition hover:bg-white/20"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Scrollable body */}
+        <form
+          onSubmit={handleSubmit}
+          className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5 no-scrollbar"
+        >
+          {/* Item Code (read-only) */}
+          <div>
+            <label className={labelClass}>Item Code</label>
+            <input
+              type="text"
+              value={code}
+              readOnly
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 font-mono text-sm text-slate-500 outline-none"
+            />
+          </div>
+
+          {/* Name + Brand */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className={labelClass}>
+                Product Name <span className="text-rose-400">*</span>
+              </label>
+              <input
+                ref={nameRef}
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                onKeyDown={(e) => handleKeyDown(e, IDX.NAME)}
+                required
+                placeholder="Enter product name"
+                className={fieldClass}
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Brand</label>
+              <input
+                ref={brandRef}
+                type="text"
+                value={brand}
+                onChange={(e) => setBrand(e.target.value)}
+                onKeyDown={(e) => handleKeyDown(e, IDX.BRAND)}
+                placeholder="Enter brand"
+                className={fieldClass}
+              />
             </div>
           </div>
 
-          <form
-            onSubmit={handleSubmit}
-            className="p-6 space-y-4 max-h-[80vh] overflow-y-auto"
-          >
-            {/* Item Code */}
+          {/* Unit + Tax */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Item Code <span className="text-red-500">*</span>
+              <label className={labelClass}>
+                Unit <span className="text-rose-400">*</span>
               </label>
-              <input
-                type="text"
-                value={code}
-                readOnly
-                className="w-full border-2 border-gray-200 rounded-lg p-2.5 bg-gray-50 text-gray-600 font-mono text-lg"
+              <Dropdown
+                ref={unitRef}
+                value={unit}
+                onChange={setUnit}
+                options={unitOptions}
+                placeholder="Select unit"
+                onEnter={() => inputRefs[IDX.TAX].current?.focus()}
+                required
               />
             </div>
-
-            {/* Name and Brand */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Product Name <span className="text-red-500">*</span>
-                </label>
-                <input
-                  ref={nameRef}
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  onKeyDown={(e) => handleKeyDown(e, IDX.NAME)}
-                  required
-                  placeholder="Enter product name"
-                  className="w-full border-2 border-gray-200 rounded-lg p-2.5 focus:border-averix-red-dark focus:outline-none transition-colors"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Brand
-                </label>
-                <input
-                  ref={brandRef}
-                  type="text"
-                  value={brand}
-                  onChange={(e) => setBrand(e.target.value)}
-                  onKeyDown={(e) => handleKeyDown(e, IDX.BRAND)}
-                  placeholder="Enter brand name"
-                  className="w-full border-2 border-gray-200 rounded-lg p-2.5 focus:border-averix-red-dark focus:outline-none transition-colors"
-                />
-              </div>
+            <div>
+              <label className={labelClass}>
+                Tax Rate <span className="text-rose-400">*</span>
+              </label>
+              <Dropdown
+                ref={taxRef}
+                value={tax}
+                onChange={setTax}
+                options={taxOptions}
+                placeholder="Select tax"
+                onEnter={() => inputRefs[IDX.CATEGORY].current?.focus()}
+                required
+              />
             </div>
+          </div>
 
-            {/* Unit and Tax */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Unit <span className="text-red-500">*</span>
-                </label>
-                <Dropdown
-                  ref={unitRef}
-                  value={unit}
-                  onChange={setUnit}
-                  options={unitOptions}
-                  placeholder="Select unit"
-                  onEnter={() => inputRefs[IDX.TAX].current?.focus()}
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Tax Rate <span className="text-red-500">*</span>
-                </label>
-                <Dropdown
-                  ref={taxRef}
-                  value={tax}
-                  onChange={setTax}
-                  options={taxOptions}
-                  placeholder="Select tax rate"
-                  onEnter={() => inputRefs[IDX.CATEGORY].current?.focus()}
-                  required
-                />
-              </div>
+          {/* Category + HSN */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className={labelClass}>Category</label>
+              <input
+                ref={categoryRef}
+                type="text"
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                onKeyDown={(e) => handleKeyDown(e, IDX.CATEGORY)}
+                placeholder="Enter category"
+                className={fieldClass}
+              />
             </div>
-
-            {/* Category and HSN */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Category
-                </label>
-                <input
-                  ref={categoryRef}
-                  type="text"
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  onKeyDown={(e) => handleKeyDown(e, IDX.CATEGORY)}
-                  placeholder="Enter category"
-                  className="w-full border-2 border-gray-200 rounded-lg p-2.5 focus:border-averix-red-dark focus:outline-none transition-colors"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  HSN Code
-                </label>
-                <input
-                  ref={hsnRef}
-                  type="text"
-                  value={hsn}
-                  onChange={(e) => setHsn(e.target.value)}
-                  onKeyDown={(e) => handleKeyDown(e, IDX.HSN)}
-                  placeholder="Enter HSN code"
-                  className="w-full border-2 border-gray-200 rounded-lg p-2.5 focus:border-averix-red-dark focus:outline-none transition-colors"
-                />
-              </div>
+            <div>
+              <label className={labelClass}>HSN Code</label>
+              <input
+                ref={hsnRef}
+                type="text"
+                value={hsn}
+                onChange={(e) => setHsn(e.target.value)}
+                onKeyDown={(e) => handleKeyDown(e, IDX.HSN)}
+                placeholder="Enter HSN"
+                className={fieldClass}
+              />
             </div>
+          </div>
 
-            {/* Pricing */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Cost Price <span className="text-red-500">*</span>
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-2.5 text-gray-500">
-                    ₹
-                  </span>
-                  <input
-                    ref={costRef}
-                    type="number"
-                    value={costPrice}
-                    onChange={(e) => setCostPrice(e.target.value)}
-                    onKeyDown={(e) => handleKeyDown(e, IDX.COST)}
-                    required
-                    min="0"
-                    step="0.01"
-                    placeholder="0.00"
-                    className="w-full border-2 border-gray-200 rounded-lg p-2.5 pl-8 focus:border-averix-red-dark focus:outline-none transition-colors"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Sale Price
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-2.5 text-gray-500">
-                    ₹
-                  </span>
-                  <input
-                    ref={saleRef}
-                    type="number"
-                    value={salePrice}
-                    onChange={(e) => setSalePrice(e.target.value)}
-                    onKeyDown={(e) => handleKeyDown(e, IDX.SALE)}
-                    min="0"
-                    step="0.01"
-                    placeholder="0.00"
-                    className="w-full border-2 border-gray-200 rounded-lg p-2.5 pl-8 focus:border-averix-red-dark focus:outline-none transition-colors"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* ── BARCODE SECTION ── */}
-            <div className="border-2 border-dashed border-gray-200 rounded-xl p-4 space-y-3 bg-gray-50">
-              <div className="flex items-center gap-2">
-                <Tag className="w-4 h-4 text-averix-red-dark" />
-                <span className="text-sm font-semibold text-gray-800">
-                  Barcodes (Batches)
+          {/* Pricing */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className={labelClass}>
+                Cost Price <span className="text-rose-400">*</span>
+              </label>
+              <div className="relative">
+                <span className="pointer-events-none absolute inset-y-0 left-3.5 flex items-center text-sm text-slate-400">
+                  ₹
                 </span>
-                <span className="text-xs text-gray-500 ml-1">
-                  — optional, each barcode = a batch
-                </span>
+                <input
+                  ref={costRef}
+                  type="number"
+                  value={costPrice}
+                  onChange={(e) => setCostPrice(e.target.value)}
+                  onKeyDown={(e) => handleKeyDown(e, IDX.COST)}
+                  required
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                  className={`${fieldClass} pl-8`}
+                />
               </div>
+            </div>
+            <div>
+              <label className={labelClass}>Sale Price</label>
+              <div className="relative">
+                <span className="pointer-events-none absolute inset-y-0 left-3.5 flex items-center text-sm text-slate-400">
+                  ₹
+                </span>
+                <input
+                  ref={saleRef}
+                  type="number"
+                  value={salePrice}
+                  onChange={(e) => setSalePrice(e.target.value)}
+                  onKeyDown={(e) => handleKeyDown(e, IDX.SALE)}
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                  className={`${fieldClass} pl-8`}
+                />
+              </div>
+            </div>
+          </div>
 
-              {/* Existing + pending barcodes */}
-              {barcodeEntries.length > 0 && (
-                <div className="space-y-2">
-                  {barcodeEntries.map((entry) => (
-                    <div
-                      key={entry.id}
-                      className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2"
-                    >
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-semibold ${
-                          entry.isGenerated
-                            ? "bg-blue-100 text-blue-800"
-                            : "bg-purple-100 text-purple-800"
-                        }`}
-                      >
-                        {entry.barcode}
-                      </span>
-                      {entry.isGenerated && (
-                        <span className="text-xs text-gray-400 flex items-center gap-1">
-                          <Zap className="w-3 h-3" /> generated
-                        </span>
-                      )}
-                      {entry.saved && (
-                        <span className="text-xs text-green-600 ml-auto mr-1">
-                          saved
-                        </span>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => removeBarcode(entry)}
-                        className="ml-auto p-1 rounded hover:bg-red-50 text-red-500 hover:text-red-700 transition-colors"
-                        title="Remove barcode"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
+          {/* ── Barcode section ── */}
+          <div className="rounded-[18px] border border-dashed border-slate-200 bg-slate-50/60 p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="flex h-7 w-7 items-center justify-center rounded-xl kyn-brand-chip">
+                <Tag className="h-3.5 w-3.5 text-slate-700" />
+              </div>
+              <span className="text-sm font-semibold text-slate-800">
+                Barcodes
+              </span>
+              <span className="text-xs text-slate-400">
+                — each barcode = a batch
+              </span>
+            </div>
 
-              {/* Add actions */}
-              <div className="flex gap-2 items-center flex-wrap">
-                {/* Generate next system barcode */}
-                <button
-                  type="button"
-                  onClick={addGeneratedBarcode}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-medium hover:bg-blue-700 transition-colors"
-                >
-                  <Zap className="w-3.5 h-3.5" />
-                  Reserve {nextBarcodePreview}
-                </button>
-
-                {/* Custom barcode input */}
-                <div className="flex items-center gap-1 flex-1 min-w-[180px]">
-                  <input
-                    type="text"
-                    value={customBarcodeInput}
-                    onChange={(e) => {
-                      setCustomBarcodeInput(e.target.value);
-                      setBarcodeError(null);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        addCustomBarcode();
-                      }
-                    }}
-                    placeholder="Custom barcode (e.g. 90808909)"
-                    className="flex-1 h-8 px-2 border border-gray-300 rounded-lg text-xs focus:border-averix-red-dark focus:outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={addCustomBarcode}
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-gray-700 text-white text-xs hover:bg-gray-800 transition-colors"
+            {barcodeEntries.length > 0 && (
+              <div className="space-y-2">
+                {barcodeEntries.map((entry) => (
+                  <div
+                    key={entry.id}
+                    className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2"
                   >
-                    <Plus className="w-3.5 h-3.5" /> Add
-                  </button>
-                </div>
+                    <span
+                      className={`rounded-lg px-2 py-0.5 font-mono text-xs font-semibold ${
+                        entry.isGenerated
+                          ? "bg-cyan-100 text-cyan-800"
+                          : "bg-fuchsia-100 text-fuchsia-800"
+                      }`}
+                    >
+                      {entry.barcode}
+                    </span>
+                    {entry.isGenerated && (
+                      <span className="flex items-center gap-1 text-xs text-slate-400">
+                        <Zap className="h-3 w-3" /> generated
+                      </span>
+                    )}
+                    {entry.saved && (
+                      <span className="ml-auto mr-1 text-xs text-emerald-600">
+                        saved
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => removeBarcode(entry)}
+                      className="ml-auto flex h-6 w-6 items-center justify-center rounded-lg text-rose-400 transition hover:bg-rose-50 hover:text-rose-600"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
               </div>
+            )}
 
-              {barcodeError && (
-                <p className="text-xs text-red-600">{barcodeError}</p>
-              )}
-
-              {barcodeEntries.length === 0 && (
-                <p className="text-xs text-gray-400 italic">
-                  No barcodes added yet. On purchase, the next available global
-                  barcode preview will be suggested.
-                </p>
-              )}
-            </div>
-
-            {/* Submit */}
-            <div className="flex gap-3 pt-4 border-t border-gray-200">
+            <div className="flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={onClose}
-                className="flex-1 bg-gray-200 text-gray-800 font-semibold py-3 px-6 rounded-lg hover:bg-gray-300 transition-colors"
+                onClick={addGeneratedBarcode}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-cyan-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-cyan-700"
               >
-                Cancel
+                <Zap className="h-3.5 w-3.5" />
+                Reserve {nextBarcodePreview}
               </button>
-              <button
-                type="submit"
-                className="flex-1 bg-gradient-to-r from-averix-red-dark to-averix-red-accent text-white font-semibold py-3 px-6 rounded-lg hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-200"
-              >
-                {editProduct ? "Update Item" : "Save Item"}
-              </button>
+
+              <div className="flex flex-1 min-w-[180px] items-center gap-1.5">
+                <input
+                  type="text"
+                  value={customBarcodeInput}
+                  onChange={(e) => {
+                    setCustomBarcodeInput(e.target.value);
+                    setBarcodeError(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addCustomBarcode();
+                    }
+                  }}
+                  placeholder="Custom barcode"
+                  className="h-8 flex-1 rounded-xl border border-slate-200 bg-white px-2.5 text-xs text-slate-800 outline-none placeholder:text-slate-400 focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/10"
+                />
+                <button
+                  type="button"
+                  onClick={addCustomBarcode}
+                  className="inline-flex h-8 items-center gap-1 rounded-xl bg-slate-800 px-3 text-xs font-semibold text-white transition hover:bg-slate-700"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add
+                </button>
+              </div>
             </div>
-          </form>
-        </div>
+
+            {barcodeError && (
+              <p className="text-xs font-medium text-rose-500">
+                {barcodeError}
+              </p>
+            )}
+
+            {barcodeEntries.length === 0 && (
+              <p className="text-xs italic text-slate-400">
+                No barcodes added. On purchase, the next available barcode will
+                be suggested.
+              </p>
+            )}
+          </div>
+
+          {/* Actions */}
+          <div className="flex gap-3 pt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 rounded-2xl border border-slate-200 bg-white py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="flex-1 rounded-2xl bg-slate-900 py-3 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(15,23,42,0.18)] transition hover:bg-slate-800"
+            >
+              {editProduct ? "Update Item" : "Save Item"}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );

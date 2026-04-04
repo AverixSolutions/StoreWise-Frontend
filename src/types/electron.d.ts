@@ -37,7 +37,6 @@ declare global {
         error?: string;
       }>;
 
-      // NEW label printing APIs
       listLabelPrinters: (licenseId: string) => Promise<{
         success: boolean;
         rows?: Array<{
@@ -181,6 +180,24 @@ declare global {
         barcode?: string;
       } | null>;
 
+      getProductByBarcode: (
+        licenseId: string,
+        barcode: string,
+      ) => Promise<{
+        id: string;
+        code: string;
+        name: string;
+        brand?: string;
+        category?: string;
+        unit: string;
+        tax: string;
+        hsn?: string;
+        costPrice: number;
+        salePrice?: number;
+        stock: number;
+        barcode?: string;
+      } | null>;
+
       getProductByCode: (
         licenseId: string,
         code: string,
@@ -198,38 +215,6 @@ declare global {
         stock: number;
         barcode?: string;
       } | null>;
-
-      createPurchase: (
-        purchase: any,
-        items: any[],
-      ) => Promise<{
-        success: boolean;
-        purchaseId: string;
-        slNo: number;
-        totalAmount: number;
-      }>;
-
-      getPurchases: (
-        licenseId: string,
-        pagination?: { page?: number; pageSize?: number },
-      ) => Promise<{ purchases: any[]; total: number }>;
-
-      markPurchasesSynced: (
-        ids: string[],
-        serverSyncedAt?: string,
-      ) => Promise<{ success: boolean; syncedAt: string }>;
-
-      getDirtyProducts: (licenseId: string, limit?: number) => Promise<any[]>;
-
-      markProductsSynced: (
-        ids: string[],
-        serverSyncedAt?: string,
-      ) => Promise<{ success: boolean; syncedAt: string }>;
-
-      bulkUpsertProducts: (items: any[]) => Promise<any>;
-      getSyncState: (scope: string) => Promise<any>;
-      setSyncState: (scope: string, changes: any) => Promise<any>;
-      wipeLocalData: () => Promise<any>;
 
       listBarcodesForProduct: (
         licenseId: string,
@@ -249,6 +234,19 @@ declare global {
           stock: number;
         }>;
       }>;
+
+      listBatchesForProduct: (
+        productId: string,
+        includeDeleted?: boolean,
+      ) => Promise<any>;
+
+      saveBatch: (payload: any) => Promise<any>;
+
+      deleteBatch: (batchId: string) => Promise<any>;
+
+      rebuildProductStock: (productId: string) => Promise<any>;
+
+      getProductWithBatches: (productId: string) => Promise<any>;
 
       peekNextBarcode: (
         licenseId: string,
@@ -277,8 +275,54 @@ declare global {
       }>;
 
       deleteBarcode: (
+        licenseId: string,
         batchId: string,
       ) => Promise<{ success: boolean; error?: string }>;
+
+      createPurchase: (
+        purchase: any,
+        items: any[],
+      ) => Promise<{
+        success: boolean;
+        purchaseId: string;
+        slNo: number;
+        totalAmount: number;
+      }>;
+
+      getPurchases: (
+        licenseId: string,
+        pagination?: { page?: number; pageSize?: number },
+      ) => Promise<{ purchases: any[]; total: number }>;
+
+      markPurchasesSynced: (
+        ids: string[],
+        serverSyncedAt?: string,
+      ) => Promise<{ success: boolean; syncedAt: string }>;
+
+      getShopSettings: (licenseId: string) => Promise<any>;
+      saveShopSettings: (payload: any) => Promise<any>;
+
+      getSupplierCount: (
+        licenseId: string,
+        params?: { q?: string | null },
+      ) => Promise<{ count: number }>;
+
+      getAccountCount: (licenseId: string) => Promise<{ count: number }>;
+
+      getCustomerCount: (
+        licenseId: string,
+        params?: { q?: string | null },
+      ) => Promise<{ count: number }>;
+
+      getDirtyProducts: (licenseId: string, limit?: number) => Promise<any[]>;
+      markProductsSynced: (
+        ids: string[],
+        serverSyncedAt?: string,
+      ) => Promise<{ success: boolean; syncedAt: string }>;
+      bulkUpsertProducts: (items: any[]) => Promise<any>;
+      getSyncState: (scope: string) => Promise<any>;
+      setSyncState: (scope: string, changes: any) => Promise<any>;
+      wipeLocalData: () => Promise<any>;
     };
   }
 }

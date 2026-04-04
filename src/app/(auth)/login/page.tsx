@@ -14,7 +14,6 @@ export default function LoginPage() {
 
   useEffect(() => {
     const { token } = getCurrentUser();
-
     const timer = setTimeout(() => {
       if (token) {
         router.replace("/dashboard");
@@ -22,7 +21,6 @@ export default function LoginPage() {
         setCheckingAuth(false);
       }
     }, 1500);
-
     return () => clearTimeout(timer);
   }, [router]);
 
@@ -30,8 +28,8 @@ export default function LoginPage() {
 
   return (
     <main className="min-h-screen bg-kyn-bg text-kyn-text">
-      <div className="grid min-h-screen lg:grid-cols-2">
-        {/* Left brand section */}
+      <div className="min-h-screen lg:grid lg:grid-cols-2">
+        {/* Left brand section — hidden below lg */}
         <section className="hidden lg:flex flex-col justify-between border-r border-kyn-border bg-[radial-gradient(circle_at_top_left,rgba(32,183,255,0.12),transparent_30%),radial-gradient(circle_at_bottom_right,rgba(176,38,255,0.12),transparent_30%),linear-gradient(180deg,#050b17,#091121)] p-10 xl:p-14">
           <div>
             <Image
@@ -39,7 +37,7 @@ export default function LoginPage() {
               alt="KynFlow"
               width={220}
               height={60}
-              className="h-12 w-auto object-contain"
+              className="h-10 xl:h-12 w-auto object-contain"
               priority
             />
           </div>
@@ -49,7 +47,7 @@ export default function LoginPage() {
               KYNSTACK PRODUCT
             </div>
 
-            <h1 className="mt-6 text-4xl xl:text-5xl font-semibold leading-tight">
+            <h1 className="mt-6 text-3xl xl:text-5xl font-semibold leading-tight">
               Run your inventory,
               <span className="block kyn-brand-text">
                 billing and stock flow
@@ -57,7 +55,7 @@ export default function LoginPage() {
               in one system.
             </h1>
 
-            <p className="mt-5 max-w-lg text-base leading-7 text-kyn-text-muted">
+            <p className="mt-5 max-w-lg text-sm xl:text-base leading-7 text-kyn-text-muted">
               KynFlow is your unified desktop workspace for purchases, sales,
               returns, barcode workflows, stock tracking, reporting and billing.
             </p>
@@ -71,7 +69,6 @@ export default function LoginPage() {
                   Launch directly into your business operations dashboard.
                 </p>
               </div>
-
               <div className="kyn-card-soft p-4">
                 <p className="text-xs uppercase tracking-[0.16em] text-kyn-text-muted">
                   Offline Ready
@@ -95,23 +92,27 @@ export default function LoginPage() {
           </div>
         </section>
 
-        {/* Right login section */}
-        <section className="flex items-center justify-center px-6 py-10 sm:px-8 lg:px-12">
-          <div className="w-full max-w-md">
-            <div className="mb-8 flex justify-center lg:hidden">
+        {/* Right login section — full screen on mobile/tablet */}
+        <section className="flex min-h-screen lg:min-h-0 items-center justify-center bg-[linear-gradient(180deg,#050b17,#091121)] lg:bg-transparent px-4 py-10 sm:px-6 lg:px-12">
+          <div className="w-full max-w-sm sm:max-w-md">
+            {/* Logo — visible on mobile and tablet only */}
+            <div className="mb-8 flex flex-col items-center gap-3 lg:hidden">
               <Image
-                src="/branding/kynflow-logo-white.png"
+                src="/branding/kynflow-logo-white-nobg.png"
                 alt="KynFlow"
                 width={180}
                 height={50}
-                className="h-12 w-auto object-contain"
+                className="h-10 w-auto object-contain"
                 priority
               />
+              <p className="text-xs tracking-widest uppercase text-white/40">
+                Kynstack Product
+              </p>
             </div>
 
-            <div className="kyn-card p-8 sm:p-10">
+            <div className="kyn-card p-6 sm:p-8 lg:p-10">
               <div className="text-center">
-                <h2 className="text-3xl font-bold tracking-tight text-kyn-text">
+                <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-kyn-text">
                   Welcome back
                 </h2>
                 <p className="mt-2 text-sm leading-6 text-kyn-text-muted">
@@ -119,7 +120,7 @@ export default function LoginPage() {
                 </p>
               </div>
 
-              <div className="mt-8">
+              <div className="mt-6 sm:mt-8">
                 <LoginForm />
               </div>
 
@@ -127,6 +128,11 @@ export default function LoginPage() {
                 Secure local access for inventory and billing operations
               </div>
             </div>
+
+            {/* Bottom brand note on mobile */}
+            <p className="mt-6 text-center text-xs text-white/20 lg:hidden">
+              KynFlow by Kynstack
+            </p>
           </div>
         </section>
       </div>

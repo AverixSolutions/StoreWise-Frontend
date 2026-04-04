@@ -15,6 +15,11 @@ import {
   TriangleAlert,
   Wallet,
 } from "lucide-react";
+import { platform } from "@/platform";
+import {
+  getActiveLicenseId,
+  getActiveLicenseName,
+} from "@/lib/session/runtimeSession";
 
 type DashboardOverview = {
   shopName: string;
@@ -311,6 +316,7 @@ export default function DashboardPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [now, setNow] = useState<Date>(new Date());
   const [error, setError] = useState("");
+  const [webMode, setWebMode] = useState(false);
 
   const loadOverview = async (showRefreshState = true) => {
     const startedAt = Date.now();
@@ -325,20 +331,22 @@ export default function DashboardPage() {
         return;
       }
 
-      const licenseId = resolveLicenseId(user);
-      setLicenseName(user?.licenseName || user?.shopName || "");
+      const licenseId = getActiveLicenseId();
+      setLicenseName(getActiveLicenseName());
 
       if (!licenseId) {
         throw new Error("License ID is missing in the current session.");
       }
 
-      const api = (window as any)?.electronAPI;
-      if (!api?.getDashboardOverview) {
-        throw new Error("Dashboard IPC is not registered yet.");
+      const result = await platform.getDashboardOverview?.(licenseId, 7);
+      if (!result || !result.success) {
+        setWebMode(true);
+        setOverview(null);
+        setError("");
+        return;
       }
-
-      const data = await api.getDashboardOverview(licenseId, 7);
-      setOverview(data);
+      setWebMode(false);
+      setOverview(result.overview);
     } catch (err: any) {
       setError(err?.message || "Failed to load dashboard overview.");
     } finally {
@@ -410,6 +418,81 @@ export default function DashboardPage() {
   }, [overview]);
 
   if (loading) return <DashboardSkeleton />;
+
+  if (webMode) {
+    return (
+      <div className="space-y-4">
+        <section className="rounded-[28px] border border-white/10 bg-[linear-gradient(135deg,#091120_0%,#0f1a31_58%,#16213d_100%)] px-5 py-5 text-white shadow-[0_22px_50px_rgba(5,10,20,0.18)] md:px-6 md:py-6">
+          <div className="max-w-3xl">
+            <div className="kyn-brand-pill mb-3 inline-flex items-center rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/80">
+              KYNFLOW • WEB MODE
+            </div>
+            <h1 className="text-[28px] font-semibold tracking-[-0.05em] text-white md:text-[34px]">
+              Browser mode is active.
+            </h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
+              Login is working and your browser session is active. Desktop-only
+              dashboard analytics are not available here yet.
+            </p>
+            <div className="mt-4 text-sm text-slate-300">
+              <span className="text-white/60">Workspace:</span>{" "}
+              <span className="font-medium text-white">
+                {licenseName || "KYNFLOW Web"}
+              </span>
+            </div>
+          </div>
+        </section>
+        <section className="grid gap-4 md:grid-cols-2">
+          <div className="rounded-[24px] border border-slate-200/80 bg-white p-5 shadow-[0_18px_45px_rgba(3,10,24,0.08)]">
+            <h2 className="text-lg font-semibold text-slate-900">
+              What works now
+            </h2>
+            <ul className="mt-3 space-y-2 text-sm text-slate-600">
+              <li>• Browser login and token session</li>
+              <li>• Routing into dashboard shell</li>
+              <li>• Shop Settings via platform layer</li>
+              <li>• Local-first browser runtime path</li>
+            </ul>
+          </div>
+          <div className="rounded-[24px] border border-slate-200/80 bg-white p-5 shadow-[0_18px_45px_rgba(3,10,24,0.08)]">
+            <h2 className="text-lg font-semibold text-slate-900">
+              What is not wired yet
+            </h2>
+            <ul className="mt-3 space-y-2 text-sm text-slate-600">
+              <li>• Dashboard analytics aggregation</li>
+              <li>• Product list browser data</li>
+              <li>• Purchase and sales browser data</li>
+              <li>• Full online sync backend</li>
+            </ul>
+          </div>
+        </section>
+        <section className="rounded-[24px] border border-slate-200/80 bg-white p-5 shadow-[0_18px_45px_rgba(3,10,24,0.08)]">
+          <h2 className="text-lg font-semibold text-slate-900">
+            Next browser step
+          </h2>
+          <p className="mt-2 text-sm text-slate-600">
+            Start with Master → Shop Settings in browser mode.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => router.push("/dashboard/master")}
+              className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+            >
+              Open Master Settings
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push("/login")}
+              className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              Back to Login
+            </button>
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   if (error || !overview) {
     return (

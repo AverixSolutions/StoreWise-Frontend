@@ -5,6 +5,8 @@ const path = require("path");
 const express = require("express");
 const http = require("http");
 
+const isDev = process.env.NODE_ENV === "development";
+
 app.setName("KYNFLOW");
 
 let localServer = null;
@@ -96,19 +98,22 @@ async function createWindow() {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
     },
   });
 
   Menu.setApplicationMenu(null);
-  attachWindowDebug(mainWindow);
+
+  if (isDev) {
+    attachWindowDebug(mainWindow);
+  }
 
   mainWindow.once("ready-to-show", () => {
     mainWindow.maximize();
     mainWindow.show();
   });
 
-  if (process.env.NODE_ENV === "development") {
+  if (isDev) {
     await mainWindow.loadURL("http://localhost:3000");
     mainWindow.webContents.openDevTools({ mode: "detach" });
     return;
@@ -118,7 +123,6 @@ async function createWindow() {
   localServer = server;
 
   await mainWindow.loadURL(url);
-  mainWindow.webContents.openDevTools({ mode: "detach" });
 }
 
 app.whenReady().then(async () => {

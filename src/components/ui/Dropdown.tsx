@@ -31,7 +31,7 @@ const Dropdown = forwardRef<HTMLButtonElement, DropdownProps>(
       error = false,
       onEnter,
     },
-    ref
+    ref,
   ) => {
     const [isOpen, setIsOpen] = useState(false);
     const [highlightIndex, setHighlightIndex] = useState<number>(-1);
@@ -63,11 +63,10 @@ const Dropdown = forwardRef<HTMLButtonElement, DropdownProps>(
         }
         return;
       }
-
       if (e.key === "ArrowDown") {
         e.preventDefault();
         setHighlightIndex((prev) =>
-          prev < options.length - 1 ? prev + 1 : prev
+          prev < options.length - 1 ? prev + 1 : prev,
         );
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
@@ -76,9 +75,7 @@ const Dropdown = forwardRef<HTMLButtonElement, DropdownProps>(
         e.preventDefault();
         const option =
           highlightIndex >= 0 ? options[highlightIndex] : options[0];
-        if (option) {
-          onChange(option.value);
-        }
+        if (option) onChange(option.value);
         setIsOpen(false);
         setHighlightIndex(-1);
         onEnter?.();
@@ -92,34 +89,32 @@ const Dropdown = forwardRef<HTMLButtonElement, DropdownProps>(
       <div className={`relative w-full ${className}`} ref={dropdownRef}>
         {/* Trigger */}
         <button
-          ref={ref} // 👈 forward the ref here
+          ref={ref}
           type="button"
           onClick={() => {
             setIsOpen(!isOpen);
             setHighlightIndex(0);
           }}
           onKeyDown={handleKeyDown}
-          className={`w-full flex items-center justify-between border-2 rounded-lg px-3 py-3 bg-white focus:outline-none transition-colors ${
+          className={`w-full flex items-center justify-between rounded-xl border px-3.5 py-2.5 bg-white/80 text-sm outline-none transition focus:ring-4 ${
             error
-              ? "border-red-300 focus:border-red-500"
-              : "border-gray-200 focus:border-averix-red-dark"
+              ? "border-rose-300 focus:border-rose-400 focus:ring-rose-400/10"
+              : "border-slate-200 focus:border-cyan-400/60 focus:ring-cyan-400/10"
           }`}
         >
           <span
-            className={`${selectedOption ? "text-gray-800" : "text-gray-400"}`}
+            className={selectedOption ? "text-slate-900" : "text-slate-400"}
           >
             {selectedOption ? selectedOption.label : placeholder}
           </span>
           <ChevronDown
-            className={`ml-2 h-4 w-4 text-gray-500 transition-transform duration-200 ${
-              isOpen ? "rotate-180" : "rotate-0"
-            }`}
+            className={`ml-2 h-4 w-4 text-slate-400 transition-transform duration-200 ${isOpen ? "rotate-180" : "rotate-0"}`}
           />
         </button>
 
         {/* Dropdown list */}
         {isOpen && (
-          <div className="absolute mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden z-50 animate-in slide-in-from-top-2 duration-200">
+          <div className="absolute z-50 mt-1.5 w-full overflow-hidden rounded-[14px] border border-slate-200 bg-white shadow-[0_16px_40px_rgba(3,10,24,0.12)]">
             <div className="max-h-60 overflow-y-auto">
               {options.map((option, idx) => (
                 <button
@@ -131,12 +126,12 @@ const Dropdown = forwardRef<HTMLButtonElement, DropdownProps>(
                     setHighlightIndex(-1);
                     onEnter?.();
                   }}
-                  className={`w-full text-left px-3 py-3 cursor-pointer transition-colors ${
+                  className={`w-full cursor-pointer px-3.5 py-2.5 text-left text-sm transition-colors ${
                     idx === highlightIndex
-                      ? "bg-averix-red-dark text-white"
+                      ? "bg-slate-900 text-white"
                       : value === option.value
-                      ? "bg-averix-red-light text-white"
-                      : "text-gray-700 hover:bg-averix-red-light hover:text-white"
+                        ? "bg-cyan-50 text-cyan-800 font-medium"
+                        : "text-slate-700 hover:bg-slate-50"
                   }`}
                 >
                   {option.label}
@@ -147,7 +142,8 @@ const Dropdown = forwardRef<HTMLButtonElement, DropdownProps>(
         )}
       </div>
     );
-  }
+  },
 );
 
+Dropdown.displayName = "Dropdown";
 export default Dropdown;

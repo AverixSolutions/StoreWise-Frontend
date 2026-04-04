@@ -1,7 +1,9 @@
 // src/components/master/ShopSettingsPanel.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { platform } from "@/platform";
+import { getActiveLicenseId } from "@/lib/session/runtimeSession";
 
 type FormState = {
   shopName: string;
@@ -16,6 +18,12 @@ type FormState = {
   gstin: string;
   footerNote: string;
   authorizedSignatory: string;
+};
+
+type SyncInfo = {
+  syncStatus?: string;
+  lastSyncedAt?: string | null;
+  warning?: string;
 };
 
 const initialState: FormState = {
@@ -33,24 +41,49 @@ const initialState: FormState = {
   authorizedSignatory: "Authorized Signature",
 };
 
+function syncStatusLabel(status?: string) {
+  switch (status) {
+    case "SYNCED":
+      return {
+        label: "Synced",
+        className: "text-emerald-700 bg-emerald-50 border-emerald-200",
+      };
+    case "PENDING":
+      return {
+        label: "Sync pending",
+        className: "text-amber-700 bg-amber-50 border-amber-200",
+      };
+    case "SYNC_FAILED":
+      return {
+        label: "Sync failed",
+        className: "text-rose-700 bg-rose-50 border-rose-200",
+      };
+    case "LOCAL_ONLY":
+    default:
+      return {
+        label: "Saved locally",
+        className: "text-slate-600 bg-slate-50 border-slate-200",
+      };
+  }
+}
+
 export default function ShopSettingsPanel() {
   const [form, setForm] = useState<FormState>(initialState);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [syncInfo, setSyncInfo] = useState<SyncInfo>({});
 
-  const licenseId =
-    typeof window !== "undefined"
-      ? localStorage.getItem("licenseId") || "demo-license"
-      : "demo-license";
+  const licenseId = useMemo(() => getActiveLicenseId(), []);
 
   useEffect(() => {
-    (async () => {
-      try {
-        const res = await (window as any).electronAPI.getShopSettings(
-          licenseId,
-        );
+    let cancelled = false;
 
-        if (res?.success && res.settings) {
+    async function loadSettings() {
+      setLoading(true);
+      try {
+        const res = await platform.getShopSettings(licenseId);
+
+        if (!cancelled && res?.success && res.settings) {
           setForm({
             shopName: res.settings.shopName || "",
             logoDataUrl: res.settings.logoDataUrl || null,
@@ -66,22 +99,30 @@ export default function ShopSettingsPanel() {
             authorizedSignatory:
               res.settings.authorizedSignatory || "Authorized Signature",
           });
+          setSyncInfo({
+            syncStatus: res.settings.syncStatus,
+            lastSyncedAt: res.settings.lastSyncedAt,
+          });
         }
       } catch (err) {
         console.error("Failed to load shop settings", err);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
-    })();
+    }
+
+    loadSettings();
+    return () => {
+      cancelled = true;
+    };
   }, [licenseId]);
 
   function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
-  async function handleLogoChange(file: File | null) {
+  function handleLogoChange(file: File | null) {
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = () => {
       setField("logoDataUrl", String(reader.result || ""));
@@ -90,6 +131,10 @@ export default function ShopSettingsPanel() {
   }
 
   async function handleSave() {
+    if (!licenseId) {
+      alert("Active license not found. Please log in again.");
+      return;
+    }
     if (!form.shopName.trim()) {
       alert("Shop name is required");
       return;
@@ -97,13 +142,19 @@ export default function ShopSettingsPanel() {
 
     setSaving(true);
     try {
-      const res = await (window as any).electronAPI.saveShopSettings({
-        licenseId,
-        ...form,
-      });
+      const res = await platform.saveShopSettings({ licenseId, ...form });
 
       if (res?.success) {
-        alert("Shop settings saved successfully");
+        setSyncInfo({
+          syncStatus: res.settings?.syncStatus,
+          lastSyncedAt: res.settings?.lastSyncedAt,
+          warning: res.warning,
+        });
+        if (res.warning) {
+          alert(res.warning);
+        } else {
+          alert("Shop settings saved successfully");
+        }
       } else {
         alert(res?.error || "Failed to save shop settings");
       }
@@ -121,6 +172,10 @@ export default function ShopSettingsPanel() {
       </div>
     );
   }
+
+  const { label: syncLabel, className: syncClass } = syncStatusLabel(
+    syncInfo.syncStatus,
+  );
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-6">
@@ -294,6 +349,19 @@ export default function ShopSettingsPanel() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Sync status strip */}
+      <div className={`rounded-lg border px-4 py-3 text-sm ${syncClass}`}>
+        <div className="font-medium">Sync status: {syncLabel}</div>
+        {syncInfo.lastSyncedAt && (
+          <div className="mt-1 opacity-80">
+            Last synced: {new Date(syncInfo.lastSyncedAt).toLocaleString()}
+          </div>
+        )}
+        {syncInfo.warning && (
+          <div className="mt-1 text-amber-700">{syncInfo.warning}</div>
+        )}
       </div>
 
       <div className="pt-2">

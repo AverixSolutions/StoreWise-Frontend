@@ -30,7 +30,7 @@ export default function BarcodePrintCenterButton({
         onClick={() => setOpen(true)}
         className={
           className ||
-          "inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
+          "inline-flex items-center gap-2 rounded-2xl border border-white/15 bg-white/[0.07] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(0,0,0,0.16)] transition hover:bg-white/[0.12]"
         }
       >
         <Tags className="h-4 w-4" />

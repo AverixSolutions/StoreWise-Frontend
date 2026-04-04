@@ -7,6 +7,9 @@ import ProductFormModal from "@/components/products/ProductFormModal";
 import ProductBatchesDrawer from "@/components/products/ProductBatchesDrawer";
 import SearchableDropdown from "@/components/ui/SearchableDropdown";
 import BarcodePrintCenterButton from "@/components/barcodes/BarcodePrintCenterButton";
+import { platform } from "@/platform";
+import { getActiveLicenseId } from "@/lib/session/runtimeSession";
+import { Package, Plus, ScanBarcode, X } from "lucide-react";
 
 interface Product {
   id: string;
@@ -25,7 +28,7 @@ interface Product {
 
 export default function ItemsPage() {
   const [isClient, setIsClient] = useState(false);
-  const [licenseId, setLicenseId] = useState("demo-license");
+  const [licenseId, setLicenseId] = useState("");
   const [shopName, setShopName] = useState("My Shop");
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -36,7 +39,7 @@ export default function ItemsPage() {
   const [categoryFilter, setCategoryFilter] = useState("");
 
   const [categories, setCategories] = useState<string[]>([]);
-  const [products, setProducts] = useState<string[]>([]);
+  const [productNames, setProductNames] = useState<string[]>([]);
 
   const [batchOpen, setBatchOpen] = useState(false);
   const [batchProductId, setBatchProductId] = useState<string | null>(null);
@@ -46,20 +49,16 @@ export default function ItemsPage() {
 
   useEffect(() => {
     setIsClient(true);
-
-    if (typeof window !== "undefined") {
-      setLicenseId(localStorage.getItem("licenseId") || "demo-license");
-      setShopName(localStorage.getItem("shopName") || "My Shop");
-    }
+    setLicenseId(getActiveLicenseId());
+    setShopName(localStorage.getItem("shopName") || "My Shop");
   }, []);
 
   useEffect(() => {
-    if (!isClient) return;
-
-    window.electronAPI
+    if (!isClient || !licenseId) return;
+    platform
       .getProducts(licenseId, { page: 1, pageSize: 1000 })
       .then((result: any) => {
-        setProducts(result.products.map((p: any) => p.name));
+        setProductNames(result.products.map((p: any) => p.name));
         setCategories(
           Array.from(
             new Set(
@@ -69,7 +68,8 @@ export default function ItemsPage() {
             ),
           ),
         );
-      });
+      })
+      .catch(console.error);
   }, [refreshTrigger, licenseId, isClient]);
 
   const handleAddProduct = () => {
@@ -103,7 +103,6 @@ export default function ItemsPage() {
 
   useEffect(() => {
     if (!isClient) return;
-
     const handleShortcut = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "n") {
         e.preventDefault();
@@ -114,114 +113,115 @@ export default function ItemsPage() {
         handleAddProduct();
       }
     };
-
     window.addEventListener("keydown", handleShortcut);
-    return () => {
-      window.removeEventListener("keydown", handleShortcut);
-    };
+    return () => window.removeEventListener("keydown", handleShortcut);
   }, [isClient]);
 
   if (!isClient) return null;
 
+  const hasFilters = nameFilter || categoryFilter;
+
   return (
-    <main className="min-h-screen bg-gray-50 py-6">
-      <div className="max-w-7xl mx-auto px-6">
-        <div className="flex items-center justify-between mb-6">
+    <div className="space-y-4">
+      {/* ── Hero Header ── */}
+      <section className="relative overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(135deg,#091120_0%,#0f1a31_58%,#16213d_100%)] px-5 py-5 text-white shadow-[0_22px_50px_rgba(5,10,20,0.18)] md:px-6 md:py-6">
+        <div className="pointer-events-none absolute -left-12 top-0 h-32 w-32 rounded-full bg-cyan-400/12 blur-3xl" />
+        <div className="pointer-events-none absolute right-0 top-0 h-36 w-36 rounded-full bg-fuchsia-500/12 blur-3xl" />
+
+        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">
-              Items Management
+            <div className="kyn-brand-pill mb-3 inline-flex items-center rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/80">
+              KYNFLOW • ITEMS MANAGEMENT
+            </div>
+            <h1 className="text-[26px] font-semibold tracking-[-0.05em] text-white md:text-[32px]">
+              Inventory catalog.{" "}
+              <span className="kyn-brand-text">Products in control.</span>
             </h1>
-            <p className="text-gray-600 mt-1">Manage your inventory products</p>
+            <p className="mt-2 text-sm leading-6 text-slate-300">
+              Manage your products, pricing, batches and barcode assignments.
+            </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
             <BarcodePrintCenterButton
               licenseId={licenseId}
               defaultShopName={shopName}
               buttonText="Print Barcodes"
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              className="inline-flex items-center gap-2 rounded-2xl border border-white/15 bg-white/[0.07] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(0,0,0,0.16)] transition hover:bg-white/[0.12]"
             />
-
             <button
               onClick={handleAddProduct}
-              className="bg-gradient-to-r from-averix-red-dark to-averix-red-accent text-white font-semibold py-2.5 px-6 rounded-lg hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-200 flex items-center cursor-pointer"
+              className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-2.5 text-sm font-semibold text-slate-900 shadow-[0_10px_24px_rgba(255,255,255,0.12)] transition hover:bg-slate-50"
             >
-              <svg
-                className="w-5 h-5 mr-2"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M12 6v6m0 0v6m0-6h6m-6 0H6"
-                />
-              </svg>
+              <Plus className="h-4 w-4" />
               Add Product
             </button>
           </div>
         </div>
+      </section>
 
-        <div className="flex gap-4 mb-6">
+      {/* ── Filters ── */}
+      <section className="flex flex-wrap items-center gap-3">
+        <div className="min-w-[200px] flex-1">
           <SearchableDropdown
             value={nameFilter}
             onChange={setNameFilter}
-            options={products.map((p) => ({ value: p, label: p }))}
+            options={productNames.map((p) => ({ value: p, label: p }))}
             placeholder="Filter by product name"
           />
-
+        </div>
+        <div className="min-w-[180px] flex-1">
           <SearchableDropdown
             value={categoryFilter}
             onChange={setCategoryFilter}
             options={categories.map((c) => ({ value: c, label: c }))}
             placeholder="Filter by category"
           />
-
-          {(nameFilter || categoryFilter) && (
-            <button
-              onClick={() => {
-                setNameFilter("");
-                setCategoryFilter("");
-              }}
-              className="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300 text-gray-700 cursor-pointer"
-            >
-              Clear
-            </button>
-          )}
         </div>
+        {hasFilters && (
+          <button
+            onClick={() => {
+              setNameFilter("");
+              setCategoryFilter("");
+            }}
+            className="inline-flex items-center gap-1.5 rounded-2xl border border-kyn-border bg-kyn-surface px-3 py-2.5 text-sm font-medium text-kyn-text-muted transition hover:text-kyn-text"
+          >
+            <X className="h-3.5 w-3.5" />
+            Clear
+          </button>
+        )}
+      </section>
 
-        <ProductsTable
-          onAdd={handleAddProduct}
-          onEdit={handleEditProduct}
-          onDelete={handleDeleteProduct}
-          onManageBatches={(p) => openBatches(p.id, p.name)}
-          refreshTrigger={refreshTrigger}
-          nameFilter={nameFilter}
-          categoryFilter={categoryFilter}
-        />
+      {/* ── Table ── */}
+      <ProductsTable
+        onAdd={handleAddProduct}
+        onEdit={handleEditProduct}
+        onDelete={handleDeleteProduct}
+        onManageBatches={(p) => openBatches(p.id, p.name)}
+        refreshTrigger={refreshTrigger}
+        nameFilter={nameFilter}
+        categoryFilter={categoryFilter}
+      />
 
-        <ProductFormModal
-          isOpen={isModalOpen}
-          onClose={handleModalClose}
-          onSuccess={handleFormSuccess}
-          editProduct={editProduct}
-        />
+      <ProductFormModal
+        isOpen={isModalOpen}
+        onClose={handleModalClose}
+        onSuccess={handleFormSuccess}
+        editProduct={editProduct}
+      />
 
-        <ProductBatchesDrawer
-          open={batchOpen}
-          onClose={() => {
-            setBatchOpen(false);
-            setBatchProductId(null);
-            setBatchProductName(undefined);
-            setRefreshTrigger((x) => x + 1);
-          }}
-          productId={batchProductId}
-          productName={batchProductName}
-          licenseId={licenseId}
-        />
-      </div>
-    </main>
+      <ProductBatchesDrawer
+        open={batchOpen}
+        onClose={() => {
+          setBatchOpen(false);
+          setBatchProductId(null);
+          setBatchProductName(undefined);
+          setRefreshTrigger((x) => x + 1);
+        }}
+        productId={batchProductId}
+        productName={batchProductName}
+        licenseId={licenseId}
+      />
+    </div>
   );
 }

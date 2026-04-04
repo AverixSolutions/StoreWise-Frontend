@@ -5,7 +5,9 @@ import { useState, useEffect } from "react";
 import Pagination from "../ui/Pagination";
 import TableSkeleton from "../ui/TableSkeleton";
 import EmptyState from "../ui/EmptyState";
-import { PackagePlus, Edit2, Trash2, Layers, Printer } from "lucide-react";
+import { PackagePlus, Edit2, Trash2, Layers } from "lucide-react";
+import { platform } from "@/platform";
+import { getActiveLicenseId } from "@/lib/session/runtimeSession";
 
 interface Product {
   id: string;
@@ -31,6 +33,22 @@ interface ProductsTableProps {
   categoryFilter?: string;
 }
 
+function Surface({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.86),rgba(248,250,252,0.78))] shadow-[0_18px_45px_rgba(3,10,24,0.08)] backdrop-blur ${className}`}
+    >
+      {children}
+    </div>
+  );
+}
+
 export default function ProductsTable({
   onAdd,
   onEdit,
@@ -42,27 +60,24 @@ export default function ProductsTable({
 }: ProductsTableProps) {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
-
   const [page, setPage] = useState(1);
   const [pageSize] = useState(10);
   const [total, setTotal] = useState(0);
 
   const loadProducts = async () => {
+    setLoading(true);
     try {
-      const licenseId = localStorage.getItem("licenseId") || "demo-license";
-
+      const licenseId = getActiveLicenseId();
       let result: { products: Product[]; total: number };
+
       if (nameFilter || categoryFilter) {
-        result = await window.electronAPI.getFilteredProducts(
+        result = await platform.getFilteredProducts(
           licenseId,
           { name: nameFilter || null, category: categoryFilter || null },
           { page, pageSize },
         );
       } else {
-        result = await window.electronAPI.getProducts(licenseId, {
-          page,
-          pageSize,
-        });
+        result = await platform.getProducts(licenseId, { page, pageSize });
       }
 
       setProducts(result.products);
@@ -85,152 +100,140 @@ export default function ProductsTable({
   const handleDelete = async (id: string, name: string) => {
     if (window.confirm(`Are you sure you want to delete "${name}"?`)) {
       try {
-        await window.electronAPI.deleteProduct(id);
+        const result = await platform.deleteProduct(id);
+        if (!result?.success)
+          throw new Error((result as any)?.error || "Delete failed");
         onDelete(id);
         loadProducts();
-      } catch (error) {
-        alert("Failed to delete product");
-        console.error("Error deleting product:", error);
+      } catch (error: any) {
+        alert(`Failed to delete product: ${error?.message || "Unknown error"}`);
       }
     }
   };
 
-  if (loading) {
-    return <TableSkeleton columns={10} rows={6} />;
-  }
+  if (loading) return <TableSkeleton columns={10} rows={6} />;
 
   if (products.length === 0) {
     return (
-      <EmptyState
-        title="No Products Found"
-        description="Add your first product to get started with your inventory."
-        icon={<PackagePlus size={32} />}
-        action={
-          <button
-            onClick={onAdd}
-            className="mt-4 bg-averix-red-dark text-white px-6 py-3 rounded-lg hover:bg-averix-red-accent transition-colors font-medium"
-          >
-            Add Product
-          </button>
-        }
-      />
+      <Surface className="flex flex-col items-center justify-center py-16 px-6 text-center">
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-slate-200/80 bg-[linear-gradient(135deg,rgba(32,183,255,0.10),rgba(176,38,255,0.10))]">
+          <PackagePlus className="h-8 w-8 text-slate-500" />
+        </div>
+        <h3 className="mt-4 text-lg font-semibold text-slate-900">
+          No Products Found
+        </h3>
+        <p className="mt-1 text-sm text-slate-500">
+          Add your first product to start building your inventory catalog.
+        </p>
+        <button
+          onClick={onAdd}
+          className="mt-6 inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
+        >
+          Add Product
+        </button>
+      </Surface>
     );
   }
 
   return (
-    <div className="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="w-full">
+    <Surface className="overflow-hidden">
+      {/* ── Desktop table ── */}
+      <div className="hidden md:block overflow-x-auto">
+        <table className="w-full min-w-[900px]">
           <thead>
-            <tr className="bg-gradient-to-r from-averix-red-dark to-averix-red-accent">
+            <tr className="border-b border-slate-200/80 bg-white/60">
               {[
-                { key: "code", label: "Code", width: "w-24" },
-                { key: "name", label: "Product Name", width: "w-48" },
-                { key: "brand", label: "Brand", width: "w-32" },
-                { key: "category", label: "Category", width: "w-32" },
-                { key: "barcode", label: "Barcode", width: "w-36" },
-                { key: "unit", label: "Unit", width: "w-20" },
-                { key: "cost", label: "Cost Price", width: "w-28" },
-                { key: "sale", label: "Sale Price", width: "w-28" },
-                { key: "stock", label: "Stock", width: "w-20" },
-                { key: "actions", label: "Actions", width: "w-32" },
-              ].map((col) => (
+                "Code",
+                "Product Name",
+                "Brand",
+                "Category",
+                "Barcode",
+                "Unit",
+                "Cost",
+                "Sale",
+                "Stock",
+                "Actions",
+              ].map((h) => (
                 <th
-                  key={col.key}
-                  className={`${col.width} px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wide`}
+                  key={h}
+                  className="px-5 py-3.5 text-left text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400"
                 >
-                  {col.label}
+                  {h}
                 </th>
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
-            {products.map((product, idx) => (
+          <tbody className="divide-y divide-slate-100/80">
+            {products.map((product) => (
               <tr
                 key={product.id}
-                className={`transition-all duration-200 hover:bg-blue-50/30 ${
-                  idx % 2 === 0 ? "bg-white" : "bg-gray-50/30"
-                }`}
+                className="group transition-colors hover:bg-white/70"
               >
-                <td className="px-6 py-4">
-                  <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-gray-100 text-gray-800 text-xs font-mono font-medium">
+                <td className="px-5 py-3.5">
+                  <span className="rounded-lg border border-slate-200 bg-white px-2 py-1 font-mono text-[11px] text-slate-600">
                     {product.code}
                   </span>
                 </td>
-                <td className="px-6 py-4">
-                  <div className="font-medium text-gray-900 text-sm">
+                <td className="px-5 py-3.5">
+                  <span className="text-sm font-medium text-slate-900">
                     {product.name}
-                  </div>
-                </td>
-                <td className="px-6 py-4">
-                  <span className="text-gray-600 text-sm">
-                    {product.brand || "—"}
                   </span>
                 </td>
-                <td className="px-6 py-4">
-                  <span className="text-gray-600 text-sm">
-                    {product.category || "—"}
-                  </span>
+                <td className="px-5 py-3.5 text-sm text-slate-500">
+                  {product.brand || "—"}
                 </td>
-                <td className="px-6 py-4">
-                  <span className="text-gray-500 text-xs font-mono">
-                    {product.barcode || "—"}
-                  </span>
+                <td className="px-5 py-3.5 text-sm text-slate-500">
+                  {product.category || "—"}
                 </td>
-                <td className="px-6 py-4">
-                  <span className="inline-flex items-center px-2 py-1 rounded-md bg-blue-100 text-blue-800 text-xs font-medium">
+                <td className="px-5 py-3.5 font-mono text-xs text-slate-400">
+                  {product.barcode || "—"}
+                </td>
+                <td className="px-5 py-3.5">
+                  <span className="rounded-full border border-cyan-200 bg-cyan-50 px-2.5 py-0.5 text-[11px] font-semibold text-cyan-700">
                     {product.unit}
                   </span>
                 </td>
-                <td className="px-6 py-4">
-                  <span className="text-gray-900 font-medium text-sm">
-                    ₹{product.costPrice.toFixed(2)}
-                  </span>
+                <td className="px-5 py-3.5 text-sm font-medium text-slate-900">
+                  ₹{product.costPrice.toFixed(2)}
                 </td>
-                <td className="px-6 py-4">
-                  <span className="text-green-700 font-medium text-sm">
-                    {product.salePrice
-                      ? `₹${product.salePrice.toFixed(2)}`
-                      : "—"}
-                  </span>
+                <td className="px-5 py-3.5 text-sm font-semibold text-emerald-600">
+                  {product.salePrice ? `₹${product.salePrice.toFixed(2)}` : "—"}
                 </td>
-                <td className="px-6 py-4">
+                <td className="px-5 py-3.5">
                   <span
-                    className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium ${
-                      product.stock <= 5
-                        ? "bg-red-100 text-red-800"
-                        : product.stock <= 20
-                          ? "bg-yellow-100 text-yellow-800"
-                          : "bg-green-100 text-green-800"
+                    className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+                      product.stock <= 0
+                        ? "bg-rose-100 text-rose-700"
+                        : product.stock <= 5
+                          ? "bg-amber-100 text-amber-700"
+                          : "bg-emerald-100 text-emerald-700"
                     }`}
                   >
                     {product.stock}
                   </span>
                 </td>
-                <td className="px-6 py-4">
-                  <div className="flex items-center gap-2">
+                <td className="px-5 py-3.5">
+                  <div className="flex items-center gap-1.5">
                     <button
                       onClick={() => onManageBatches(product)}
-                      className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-purple-50 text-purple-600 hover:bg-purple-100 hover:scale-105 transition-all duration-200"
                       title="Manage Batches"
+                      className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-fuchsia-500 transition hover:border-fuchsia-200 hover:bg-fuchsia-50"
                     >
-                      <Layers className="w-4 h-4" />
+                      <Layers className="h-3.5 w-3.5" />
                     </button>
-
                     <button
                       onClick={() => onEdit(product)}
-                      className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 hover:scale-105 transition-all duration-200"
-                      title="Edit Product"
+                      title="Edit"
+                      className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-cyan-600 transition hover:border-cyan-200 hover:bg-cyan-50"
                     >
-                      <Edit2 className="w-4 h-4" />
+                      <Edit2 className="h-3.5 w-3.5" />
                     </button>
-
                     <button
                       onClick={() => handleDelete(product.id, product.name)}
-                      className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 hover:scale-105 transition-all duration-200"
-                      title="Delete Product"
+                      title="Delete"
+                      className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-rose-500 transition hover:border-rose-200 hover:bg-rose-50"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>
                 </td>
@@ -239,12 +242,98 @@ export default function ProductsTable({
           </tbody>
         </table>
       </div>
-      <Pagination
-        page={page}
-        total={total}
-        pageSize={pageSize}
-        onPageChange={setPage}
-      />
-    </div>
+
+      {/* ── Mobile card list ── */}
+      <div className="block md:hidden divide-y divide-slate-100/80">
+        {products.map((product) => (
+          <div key={product.id} className="px-4 py-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="rounded-lg border border-slate-200 bg-white px-2 py-0.5 font-mono text-[10px] text-slate-500">
+                    {product.code}
+                  </span>
+                  <span className="rounded-full border border-cyan-200 bg-cyan-50 px-2 py-0.5 text-[10px] font-semibold text-cyan-700">
+                    {product.unit}
+                  </span>
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                      product.stock <= 0
+                        ? "bg-rose-100 text-rose-700"
+                        : product.stock <= 5
+                          ? "bg-amber-100 text-amber-700"
+                          : "bg-emerald-100 text-emerald-700"
+                    }`}
+                  >
+                    {product.stock} in stock
+                  </span>
+                </div>
+                <p className="mt-2 text-[15px] font-semibold text-slate-900 leading-tight">
+                  {product.name}
+                </p>
+                {(product.brand || product.category) && (
+                  <p className="mt-0.5 text-xs text-slate-400">
+                    {[product.brand, product.category]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                )}
+                <div className="mt-2 flex items-center gap-3 text-sm">
+                  <span className="text-slate-500">
+                    Cost{" "}
+                    <span className="font-medium text-slate-900">
+                      ₹{product.costPrice.toFixed(2)}
+                    </span>
+                  </span>
+                  {product.salePrice && (
+                    <span className="text-slate-500">
+                      Sale{" "}
+                      <span className="font-semibold text-emerald-600">
+                        ₹{product.salePrice.toFixed(2)}
+                      </span>
+                    </span>
+                  )}
+                </div>
+                {product.barcode && (
+                  <p className="mt-1 font-mono text-[10px] text-slate-400">
+                    {product.barcode}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex flex-col items-end gap-1.5">
+                <button
+                  onClick={() => onManageBatches(product)}
+                  className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-fuchsia-500 transition hover:border-fuchsia-200 hover:bg-fuchsia-50"
+                >
+                  <Layers className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={() => onEdit(product)}
+                  className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-cyan-600 transition hover:border-cyan-200 hover:bg-cyan-50"
+                >
+                  <Edit2 className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={() => handleDelete(product.id, product.name)}
+                  className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-white text-rose-500 transition hover:border-rose-200 hover:bg-rose-50"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="border-t border-slate-100/80">
+        <Pagination
+          page={page}
+          total={total}
+          pageSize={pageSize}
+          onPageChange={setPage}
+        />
+      </div>
+    </Surface>
   );
 }

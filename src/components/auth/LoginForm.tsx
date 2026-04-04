@@ -33,11 +33,11 @@ export default function LoginForm() {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
+    <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5">
       <div>
         <label
           htmlFor="userId"
-          className="mb-2 block text-sm font-medium text-white/90"
+          className="mb-1.5 block text-sm font-medium text-white/90"
         >
           User ID
         </label>
@@ -48,18 +48,17 @@ export default function LoginForm() {
           onChange={(e) => setUserId(e.target.value)}
           placeholder="Enter user ID"
           autoComplete="username"
-          className="w-full rounded-xl border border-white/10 bg-[#0a1222] px-4 py-3 text-white outline-none placeholder:text-[#8ea3c7] transition focus:border-[#20b7ff]/60 focus:ring-4 focus:ring-[#20b7ff]/10"
+          className="w-full rounded-xl border border-white/10 bg-[#0a1222] px-4 py-3 text-sm sm:text-base text-white outline-none placeholder:text-[#8ea3c7] transition focus:border-[#20b7ff]/60 focus:ring-4 focus:ring-[#20b7ff]/10"
         />
       </div>
 
       <div>
         <label
           htmlFor="password"
-          className="mb-2 block text-sm font-medium text-white/90"
+          className="mb-1.5 block text-sm font-medium text-white/90"
         >
           Password
         </label>
-
         <div className="relative">
           <input
             id="password"
@@ -68,9 +67,8 @@ export default function LoginForm() {
             onChange={(e) => setPassword(e.target.value)}
             placeholder="Enter password"
             autoComplete="current-password"
-            className="w-full rounded-xl border border-white/10 bg-[#0a1222] px-4 py-3 pr-12 text-white outline-none placeholder:text-[#8ea3c7] transition focus:border-[#20b7ff]/60 focus:ring-4 focus:ring-[#20b7ff]/10"
+            className="w-full rounded-xl border border-white/10 bg-[#0a1222] px-4 py-3 pr-12 text-sm sm:text-base text-white outline-none placeholder:text-[#8ea3c7] transition focus:border-[#20b7ff]/60 focus:ring-4 focus:ring-[#20b7ff]/10"
           />
-
           <button
             type="button"
             onClick={() => setShowPassword((prev) => !prev)}
@@ -92,7 +90,7 @@ export default function LoginForm() {
       <button
         type="submit"
         disabled={loading}
-        className="w-full rounded-xl bg-gradient-to-r from-[#20b7ff] to-[#b026ff] py-3 font-semibold text-white shadow-[0_10px_30px_rgba(32,183,255,0.22)] transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
+        className="w-full rounded-xl bg-gradient-to-r from-[#20b7ff] to-[#b026ff] py-3 text-sm sm:text-base font-semibold text-white shadow-[0_10px_30px_rgba(32,183,255,0.22)] transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
       >
         {loading ? "Signing in..." : "Sign in"}
       </button>

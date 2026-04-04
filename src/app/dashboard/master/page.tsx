@@ -1,5 +1,6 @@
-// src/app/master/page.tsx
+// src/app/dashboard/master/page.tsx
 "use client";
+
 import { useState, useEffect } from "react";
 import {
   Users,
@@ -11,6 +12,8 @@ import {
   ArrowLeft,
   Printer,
 } from "lucide-react";
+import { platform } from "@/platform";
+import { getActiveLicenseId } from "@/lib/session/runtimeSession";
 import SuppliersTable from "@/components/suppliers/SuppliersTable";
 import CustomersTable from "@/components/customers/CustomersTable";
 import AccountMaster from "@/components/accounts/AccountMaster";
@@ -35,7 +38,6 @@ const masterSections = [
     description: "Manage supplier information and contacts",
     icon: Truck,
     color: "bg-blue-500",
-    hoverColor: "hover:bg-blue-600",
     count: 0,
   },
   {
@@ -44,7 +46,6 @@ const masterSections = [
     description: "Manage customer database",
     icon: Users,
     color: "bg-green-500",
-    hoverColor: "hover:bg-green-600",
     count: 0,
   },
   {
@@ -53,7 +54,6 @@ const masterSections = [
     description: "Create groups and ledger accounts",
     icon: Settings,
     color: "bg-indigo-500",
-    hoverColor: "hover:bg-indigo-600",
     count: 0,
   },
   {
@@ -62,7 +62,6 @@ const masterSections = [
     description: "GST slabs, splits & posting heads",
     icon: Percent,
     color: "bg-rose-500",
-    hoverColor: "hover:bg-rose-600",
     count: 0,
   },
   {
@@ -71,7 +70,6 @@ const masterSections = [
     description: "Product categories and classifications",
     icon: Package,
     color: "bg-purple-500",
-    hoverColor: "hover:bg-purple-600",
     count: 0,
   },
   {
@@ -80,7 +78,6 @@ const masterSections = [
     description: "Manage shop profile, logo, GST and print details",
     icon: Building2,
     color: "bg-orange-500",
-    hoverColor: "hover:bg-orange-600",
     count: 1,
   },
   {
@@ -89,10 +86,11 @@ const masterSections = [
     description: "Configure printers and print templates",
     icon: Printer,
     color: "bg-cyan-500",
-    hoverColor: "hover:bg-cyan-600",
     count: 0,
   },
 ];
+
+const webSafeSections: MasterSection[] = ["shopSettings"];
 
 export default function MasterPage() {
   const [currentSection, setCurrentSection] =
@@ -100,26 +98,28 @@ export default function MasterPage() {
   const [supplierCount, setSupplierCount] = useState<number>(0);
   const [customerCount, setCustomerCount] = useState<number>(0);
 
+  const runtime = platform.getRuntimeInfo();
+  const isWeb = runtime.runtime === "web";
+
   useEffect(() => {
     if (currentSection !== "dashboard") return;
-    const licenseId = localStorage.getItem("licenseId") || "demo-license";
+
+    const licenseId = getActiveLicenseId();
+    if (!licenseId) {
+      setSupplierCount(0);
+      setCustomerCount(0);
+      return;
+    }
+
     (async () => {
       try {
-        const { count: supCnt } = await (
-          window as any
-        ).electronAPI.getSupplierCount(licenseId, { q: "" });
-        setSupplierCount(Number(supCnt || 0));
-
-        const { count: accCnt } = await (
-          window as any
-        ).electronAPI.getAccountCount(licenseId);
-
-        const { count: custCnt } = await (
-          window as any
-        ).electronAPI.getCustomerCount(licenseId, { q: "" });
-        setCustomerCount(Number(custCnt || 0));
+        const counts = await platform.getMasterCounts(licenseId);
+        setSupplierCount(counts.supplierCount);
+        setCustomerCount(counts.customerCount);
       } catch (e) {
         console.error("master counts failed", e);
+        setSupplierCount(0);
+        setCustomerCount(0);
       }
     })();
   }, [currentSection]);
@@ -133,6 +133,12 @@ export default function MasterPage() {
         <p className="text-gray-600">
           Manage all your master data from one centralized location
         </p>
+        {isWeb && (
+          <div className="mt-3 inline-flex items-center rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+            Browser mode — only Shop Settings is available. Other sections
+            require the desktop app.
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -144,30 +150,52 @@ export default function MasterPage() {
               : section.id === "customers"
                 ? customerCount
                 : section.count;
+
+          const disabled = isWeb && !webSafeSections.includes(section.id);
+
           return (
             <div
               key={section.id}
-              onClick={() => setCurrentSection(section.id)}
-              className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer group"
+              onClick={() => {
+                if (disabled) return;
+                setCurrentSection(section.id);
+              }}
+              className={`bg-white rounded-xl border border-gray-200 p-6 shadow-sm transition-all duration-200 group
+                ${
+                  disabled
+                    ? "opacity-40 cursor-not-allowed"
+                    : "hover:shadow-md cursor-pointer"
+                }`}
             >
               <div className="flex items-start justify-between mb-4">
                 <div
-                  className={`p-3 rounded-lg ${section.color} text-white group-hover:scale-110 transition-transform duration-200`}
+                  className={`p-3 rounded-lg ${section.color} text-white ${!disabled ? "group-hover:scale-110" : ""} transition-transform duration-200`}
                 >
                   <IconComponent className="w-6 h-6" />
                 </div>
-                <span className="text-2xl font-bold text-gray-400">
-                  {count}
-                </span>
+                <div className="text-right">
+                  <span className="text-2xl font-bold text-gray-400">
+                    {count}
+                  </span>
+                  {disabled && (
+                    <div className="text-[10px] text-amber-600 font-medium mt-1">
+                      Desktop only
+                    </div>
+                  )}
+                </div>
               </div>
 
-              <h3 className="text-lg font-semibold text-gray-900 mb-2 group-hover:text-averix-red-dark transition-colors">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">
                 {section.title}
               </h3>
               <p className="text-gray-600 text-sm">{section.description}</p>
 
               <div className="mt-4 pt-4 border-t border-gray-100">
-                <span className="text-sm text-gray-500">Click to manage</span>
+                <span className="text-sm text-gray-500">
+                  {disabled
+                    ? "Not available in browser mode"
+                    : "Click to manage"}
+                </span>
               </div>
             </div>
           );
@@ -226,7 +254,6 @@ export default function MasterPage() {
             </p>
           </div>
         );
-
       default:
         return renderDashboard();
     }
@@ -245,7 +272,6 @@ export default function MasterPage() {
           </button>
         </div>
       )}
-
       {renderSectionContent()}
     </main>
   );
