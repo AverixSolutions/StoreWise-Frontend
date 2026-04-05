@@ -6,6 +6,8 @@ import type {
   ProductInput,
   BatchSavePayload,
   ShopSettingsPayload,
+  BatchUpdatePayload,
+  BatchMutationResult,
 } from "../types";
 import {
   getWebShopSettings,
@@ -30,6 +32,7 @@ import {
   webCreateBarcodeForProduct,
   webDeleteBarcode,
   webDeleteBatch,
+  webUpdateBatch,
   webRebuildProductStock,
 } from "./products";
 
@@ -88,6 +91,9 @@ export const webPlatform: PlatformAPI = {
     webListBatchesForProduct(productId, includeDeleted),
 
   saveBatch: (payload: BatchSavePayload) => webSaveBatch(payload),
+
+  updateBatch: (payload: BatchUpdatePayload): Promise<BatchMutationResult> =>
+    webUpdateBatch(payload),
 
   peekNextBarcode: (licenseId: string) => webPeekNextBarcode(licenseId),
   reserveBarcodes: (licenseId: string, count: number) =>

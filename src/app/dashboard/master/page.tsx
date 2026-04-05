@@ -4,13 +4,13 @@
 import { useState, useEffect } from "react";
 import {
   Users,
-  Package,
   Building2,
   Truck,
   Settings,
   Percent,
   ArrowLeft,
   Printer,
+  Tag,
 } from "lucide-react";
 import { platform } from "@/platform";
 import { getActiveLicenseId } from "@/lib/session/runtimeSession";
@@ -20,12 +20,13 @@ import AccountMaster from "@/components/accounts/AccountMaster";
 import TaxSettings from "@/components/tax/TaxSettings";
 import ShopSettingsPanel from "@/components/master/ShopSettingsPanel";
 import LabelPrintSettings from "@/components/master/LabelPrintSettings";
+import BrandsCategoriesManager from "@/components/master/BrandsCategoriesManager";
 
 type MasterSection =
   | "dashboard"
   | "suppliers"
   | "customers"
-  | "categories"
+  | "brandCategory"
   | "shopSettings"
   | "accounts"
   | "tax"
@@ -65,11 +66,11 @@ const masterSections = [
     count: 0,
   },
   {
-    id: "categories" as MasterSection,
-    title: "Categories",
-    description: "Product categories and classifications",
-    icon: Package,
-    color: "bg-purple-500",
+    id: "brandCategory" as MasterSection,
+    title: "Brands & Categories",
+    description: "Add, rename and delete brands and categories",
+    icon: Tag,
+    color: "bg-fuchsia-500",
     count: 0,
   },
   {
@@ -90,7 +91,7 @@ const masterSections = [
   },
 ];
 
-const webSafeSections: MasterSection[] = ["shopSettings"];
+const webSafeSections: MasterSection[] = ["shopSettings", "brandCategory"];
 
 export default function MasterPage() {
   const [currentSection, setCurrentSection] =
@@ -135,8 +136,8 @@ export default function MasterPage() {
         </p>
         {isWeb && (
           <div className="mt-3 inline-flex items-center rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
-            Browser mode — only Shop Settings is available. Other sections
-            require the desktop app.
+            Browser mode — only Shop Settings and Brands & Categories are
+            available. Other sections require the desktop app.
           </div>
         )}
       </div>
@@ -242,17 +243,11 @@ export default function MasterPage() {
         return <ShopSettingsPanel />;
       case "labelPrint":
         return <LabelPrintSettings />;
-      case "categories":
+      case "brandCategory":
         return (
-          <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
-            <Package className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              Categories Management
-            </h3>
-            <p className="text-gray-600">
-              Category management feature coming soon...
-            </p>
-          </div>
+          <BrandsCategoriesManager
+            onBackToMaster={() => setCurrentSection("dashboard")}
+          />
         );
       default:
         return renderDashboard();
@@ -260,8 +255,8 @@ export default function MasterPage() {
   };
 
   return (
-    <main className="p-6 min-h-screen bg-gray-50">
-      {currentSection !== "dashboard" && (
+    <main className="">
+      {/* {currentSection !== "dashboard" && (
         <div className="mb-6">
           <button
             onClick={() => setCurrentSection("dashboard")}
@@ -271,7 +266,7 @@ export default function MasterPage() {
             Back to Master Dashboard
           </button>
         </div>
-      )}
+      )} */}
       {renderSectionContent()}
     </main>
   );

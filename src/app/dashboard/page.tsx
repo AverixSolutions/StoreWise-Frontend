@@ -20,48 +20,7 @@ import {
   getActiveLicenseId,
   getActiveLicenseName,
 } from "@/lib/session/runtimeSession";
-
-type DashboardOverview = {
-  shopName: string;
-  kpis: {
-    itemCount: number;
-    liveBatchCount: number;
-    stockQty: number;
-    inventoryCostValue: number;
-    inventorySaleValue: number;
-    todaySalesCount: number;
-    todaySalesAmount: number;
-    todayPurchaseCount: number;
-    todayPurchaseAmount: number;
-    sales30Count: number;
-    sales30Amount: number;
-    purchases30Count: number;
-    purchases30Amount: number;
-    customerCount: number;
-    supplierCount: number;
-    receivableAmount: number;
-    payableAmount: number;
-    zeroStockCount: number;
-    lowStockCount: number;
-  };
-  series: Array<{ day: string; sales: number; purchases: number }>;
-  topProducts: Array<{
-    productId: string;
-    name: string;
-    soldQty: number;
-    revenue: number;
-  }>;
-  lowStockItems: Array<{ id: string; name: string; stock: number }>;
-  recentActivity: Array<{
-    id: string;
-    slNo?: number;
-    name: string;
-    amount: number;
-    date: string;
-    type: "SALE" | "PURCHASE";
-  }>;
-  lastUpdatedAt: string;
-};
+import type { DashboardOverview } from "@/platform/types";
 
 function compactNumber(value: number) {
   return new Intl.NumberFormat("en-IN", {

@@ -160,7 +160,7 @@ function registerProductHandlers() {
       product.costPrice,
       product.salePrice,
       0,
-      null, // IMPORTANT: product itself does NOT auto-own a barcode
+      null,
       now,
       now,
     );
@@ -184,18 +184,24 @@ function registerProductHandlers() {
       const products = db
         .prepare(
           `
-      SELECT
-        p.id, p.code, p.name, p.brand, p.category, p.unit, p.tax, p.hsn,
-        p.costPrice, p.salePrice,
-        COALESCE(SUM(CASE WHEN COALESCE(b.deletedAt,'')='' THEN b.stock ELSE 0 END), 0) AS stock,
-        p.barcode, p.createdAt
-      FROM products p
-      LEFT JOIN product_batches b ON b.productId = p.id
-      WHERE p.licenseId = ? AND COALESCE(p.deletedAt,'') = ''
-      GROUP BY p.id
-      ORDER BY p.codeNumber ASC
-      LIMIT ? OFFSET ?
-      `,
+    SELECT
+  p.id, p.code, p.name, p.brand, p.category, p.unit, p.tax, p.hsn,
+  p.costPrice, p.salePrice,
+  COALESCE(SUM(CASE WHEN COALESCE(b.deletedAt,'')='' THEN b.stock ELSE 0 END), 0) AS stock,
+  (
+    SELECT COUNT(*)
+    FROM product_batches pb
+    WHERE pb.productId = p.id
+      AND COALESCE(pb.deletedAt,'') = ''
+  ) AS batchCount,
+  p.barcode, p.createdAt
+FROM products p
+LEFT JOIN product_batches b ON b.productId = p.id
+WHERE p.licenseId = ? AND COALESCE(p.deletedAt,'') = ''
+GROUP BY p.id
+ORDER BY p.codeNumber ASC
+LIMIT ? OFFSET ?
+    `,
         )
         .all(licenseId, pageSize, offset);
 
@@ -208,6 +214,7 @@ function registerProductHandlers() {
       return { products, total };
     },
   );
+
   ipcMain.handle(
     "get-filtered-products",
     (event, licenseId, filters, { page = 1, pageSize = 10 } = {}) => {
@@ -218,9 +225,15 @@ function registerProductHandlers() {
         where.push(`p.name LIKE ?`);
         params.push(`%${filters.name}%`);
       }
+
       if (filters?.category) {
         where.push(`p.category = ?`);
         params.push(filters.category);
+      }
+
+      if (filters?.brand) {
+        where.push(`p.brand = ?`);
+        params.push(filters.brand);
       }
 
       const offset = (page - 1) * pageSize;
@@ -228,26 +241,30 @@ function registerProductHandlers() {
       const rows = db
         .prepare(
           `
-      SELECT
-        p.id, p.code, p.name, p.brand, p.category, p.unit, p.tax, p.hsn,
-        p.costPrice, p.salePrice,
-        COALESCE(SUM(CASE WHEN COALESCE(b.deletedAt,'')='' THEN b.stock ELSE 0 END), 0) AS stock,
-        p.barcode, p.createdAt
-      FROM products p
-      LEFT JOIN product_batches b ON b.productId = p.id
-      WHERE ${where.join(" AND ")}
-      GROUP BY p.id
-      ORDER BY p.codeNumber ASC
-      LIMIT ? OFFSET ?
-      `,
+SELECT
+  p.id, p.code, p.name, p.brand, p.category, p.unit, p.tax, p.hsn,
+  p.costPrice, p.salePrice,
+  COALESCE(SUM(CASE WHEN COALESCE(b.deletedAt,'')='' THEN b.stock ELSE 0 END), 0) AS stock,
+  (
+    SELECT COUNT(*)
+    FROM product_batches pb
+    WHERE pb.productId = p.id
+      AND COALESCE(pb.deletedAt,'') = ''
+  ) AS batchCount,
+  p.barcode, p.createdAt
+FROM products p
+LEFT JOIN product_batches b ON b.productId = p.id
+WHERE ${where.join(" AND ")}
+GROUP BY p.id
+ORDER BY p.codeNumber ASC
+LIMIT ? OFFSET ?
+    `,
         )
         .all(...params, pageSize, offset);
 
       const total = db
         .prepare(
-          `SELECT COUNT(*) AS count FROM products p WHERE ${where.join(
-            " AND ",
-          )}`,
+          `SELECT COUNT(*) AS count FROM products p WHERE ${where.join(" AND ")}`,
         )
         .get(...params).count;
 
@@ -512,10 +529,11 @@ function registerProductHandlers() {
   );
 
   ipcMain.handle("product.batch:save", (e, payload) => {
-    // expects { licenseId, productId, barcode?, mrp?, salePrice?, costPrice?, batchNo?, mfgDate?, expiryDate?, receivedAt?, deltaQty? }
     if (!payload?.licenseId || !payload?.productId) {
       return { success: false, error: "licenseId & productId required" };
     }
+
+    const deltaQty = Number(payload?.deltaQty ?? payload?.stock ?? 0);
 
     const batch = findOrCreateBatch({
       licenseId: payload.licenseId,
@@ -531,7 +549,6 @@ function registerProductHandlers() {
       stock: 0,
     });
 
-    // update optional mutable fields
     db.prepare(
       `
       UPDATE product_batches
@@ -547,18 +564,124 @@ function registerProductHandlers() {
       ts: nowISO(),
     });
 
-    if (payload.deltaQty) {
+    if (deltaQty !== 0) {
       bumpBatchAndProductStock({
         batchId: batch.id,
         productId: payload.productId,
-        deltaQty: Number(payload.deltaQty),
+        deltaQty,
       });
     }
 
     const fresh = db
       .prepare(`SELECT * FROM product_batches WHERE id=?`)
       .get(batch.id);
+
     return { success: true, batch: fresh };
+  });
+
+  ipcMain.handle("product.batch:update", (e, payload) => {
+    if (!payload?.id) {
+      return { success: false, error: "batchId required" };
+    }
+
+    const existing = db
+      .prepare(
+        `
+      SELECT *
+      FROM product_batches
+      WHERE id = ? AND COALESCE(deletedAt,'') = ''
+      LIMIT 1
+      `,
+      )
+      .get(payload.id);
+
+    if (!existing) {
+      return { success: false, error: "NOT_FOUND" };
+    }
+
+    const barcode =
+      payload.barcode === undefined
+        ? existing.barcode
+        : payload.barcode || null;
+    const mrp = payload.mrp === undefined ? existing.mrp : payload.mrp;
+    const salePrice =
+      payload.salePrice === undefined ? existing.salePrice : payload.salePrice;
+    const costPrice =
+      payload.costPrice === undefined ? existing.costPrice : payload.costPrice;
+    const batchNo =
+      payload.batchNo === undefined
+        ? existing.batchNo
+        : payload.batchNo || null;
+    const mfgDate =
+      payload.mfgDate === undefined
+        ? existing.mfgDate
+        : payload.mfgDate || null;
+    const expiryDate =
+      payload.expiryDate === undefined
+        ? existing.expiryDate
+        : payload.expiryDate || null;
+    const receivedAt =
+      payload.receivedAt === undefined
+        ? existing.receivedAt
+        : payload.receivedAt || null;
+
+    if (barcode) {
+      const conflict = db
+        .prepare(
+          `
+        SELECT id
+        FROM product_batches
+        WHERE licenseId = ?
+          AND COALESCE(deletedAt,'') = ''
+          AND barcode = ?
+          AND id <> ?
+        LIMIT 1
+        `,
+        )
+        .get(existing.licenseId, barcode, existing.id);
+
+      if (conflict) {
+        return {
+          success: false,
+          error: `Barcode ${barcode} is already used by another batch`,
+        };
+      }
+    }
+
+    const ts = nowISO();
+
+    db.prepare(
+      `
+    UPDATE product_batches
+    SET barcode = @barcode,
+        mrp = @mrp,
+        salePrice = @salePrice,
+        costPrice = @costPrice,
+        batchNo = @batchNo,
+        mfgDate = @mfgDate,
+        expiryDate = @expiryDate,
+        receivedAt = @receivedAt,
+        updatedAt = @updatedAt
+    WHERE id = @id
+    `,
+    ).run({
+      id: existing.id,
+      barcode,
+      mrp,
+      salePrice,
+      costPrice,
+      batchNo,
+      mfgDate,
+      expiryDate,
+      receivedAt,
+      updatedAt: ts,
+    });
+
+    const batch = db
+      .prepare(`SELECT * FROM product_batches WHERE id = ?`)
+      .get(existing.id);
+
+    return { success: true, batch };
   });
 
   ipcMain.handle("product.batch:delete", (e, { batchId }) => {

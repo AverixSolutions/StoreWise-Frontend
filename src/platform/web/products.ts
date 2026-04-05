@@ -203,15 +203,30 @@ export async function webGetProduct(
   return p?.deletedAt ? null : (p ?? null);
 }
 
+async function attachBatchCounts(products: WebProduct[]) {
+  const allBatches = await idbGetAll<WebBatch>(STORES.PRODUCT_BATCHES);
+
+  return products.map((product) => ({
+    ...product,
+    batchCount: allBatches.filter(
+      (batch) => batch.productId === product.id && !batch.deletedAt,
+    ).length,
+  }));
+}
+
 export async function webGetProducts(
   licenseId: string,
   pagination?: Pagination,
-): Promise<{ products: WebProduct[]; total: number }> {
+): Promise<{
+  products: (WebProduct & { batchCount: number })[];
+  total: number;
+}> {
   const all = await idbGetAllByIndex<WebProduct>(
     STORES.PRODUCTS,
     "licenseId",
     licenseId,
   );
+
   const live = all
     .filter((p) => !p.deletedAt)
     .sort((a, b) => a.codeNumber - b.codeNumber);
@@ -220,8 +235,11 @@ export async function webGetProducts(
   const pageSize = pagination?.pageSize ?? 10;
   const offset = (page - 1) * pageSize;
 
+  const paged = live.slice(offset, offset + pageSize);
+  const productsWithBatchCount = await attachBatchCounts(paged);
+
   return {
-    products: live.slice(offset, offset + pageSize),
+    products: productsWithBatchCount,
     total: live.length,
   };
 }
@@ -230,20 +248,29 @@ export async function webGetFilteredProducts(
   licenseId: string,
   filters: ProductFilters,
   pagination?: Pagination,
-): Promise<{ products: WebProduct[]; total: number }> {
+): Promise<{
+  products: (WebProduct & { batchCount: number })[];
+  total: number;
+}> {
   const all = await idbGetAllByIndex<WebProduct>(
     STORES.PRODUCTS,
     "licenseId",
     licenseId,
   );
+
   let live = all.filter((p) => !p.deletedAt);
 
   if (filters.name) {
     const q = filters.name.toLowerCase();
     live = live.filter((p) => p.name.toLowerCase().includes(q));
   }
+
   if (filters.category) {
     live = live.filter((p) => p.category === filters.category);
+  }
+
+  if (filters.brand) {
+    live = live.filter((p) => p.brand === filters.brand);
   }
 
   live.sort((a, b) => a.codeNumber - b.codeNumber);
@@ -252,8 +279,11 @@ export async function webGetFilteredProducts(
   const pageSize = pagination?.pageSize ?? 10;
   const offset = (page - 1) * pageSize;
 
+  const paged = live.slice(offset, offset + pageSize);
+  const productsWithBatchCount = await attachBatchCounts(paged);
+
   return {
-    products: live.slice(offset, offset + pageSize),
+    products: productsWithBatchCount,
     total: live.length,
   };
 }
@@ -309,20 +339,35 @@ export async function webReserveBarcodes(
 export async function webListBarcodesForProduct(
   licenseId: string,
   productId: string,
-): Promise<{ success: boolean; rows: WebBatch[] }> {
-  const batches = await idbGetAllByIndex<WebBatch>(
-    STORES.PRODUCT_BATCHES,
-    "productId",
-    productId,
-  );
-  const live = batches
-    .filter((b) => !b.deletedAt && b.licenseId === licenseId)
-    .sort((a, b) => {
-      if (a.stock > 0 && b.stock <= 0) return -1;
-      if (b.stock > 0 && a.stock <= 0) return 1;
-      return (b.receivedAt ?? "").localeCompare(a.receivedAt ?? "");
-    });
-  return { success: true, rows: live };
+): Promise<{ success: boolean; rows: WebBatch[]; error?: string }> {
+  try {
+    const batches = await idbGetAllByIndex<WebBatch>(
+      STORES.PRODUCT_BATCHES,
+      "productId",
+      productId,
+    );
+
+    const rows = batches
+      .filter(
+        (b) =>
+          !b.deletedAt &&
+          b.licenseId === licenseId &&
+          !!String(b.barcode ?? "").trim(),
+      )
+      .sort((a, b) => {
+        if ((a.stock || 0) > 0 && (b.stock || 0) <= 0) return -1;
+        if ((b.stock || 0) > 0 && (a.stock || 0) <= 0) return 1;
+        return (b.receivedAt ?? "").localeCompare(a.receivedAt ?? "");
+      });
+
+    return { success: true, rows };
+  } catch (err: any) {
+    return {
+      success: false,
+      rows: [],
+      error: String(err?.message || err),
+    };
+  }
 }
 
 export async function webCreateBarcodeForProduct(payload: {
@@ -469,60 +514,205 @@ export async function webSaveBatch(
       return { success: false, error: "licenseId & productId required" };
     }
 
-    // Find existing batch by identity fields
-    const all = await idbGetAllByIndex<WebBatch>(
+    const deltaQty = Number(payload.stock ?? 0);
+    if (!Number.isFinite(deltaQty)) {
+      return { success: false, error: "Invalid stock value" };
+    }
+
+    const normalizedBarcode = payload.barcode?.trim() || null;
+    const normalizedBatchNo = payload.batchNo?.trim() || null;
+    const normalizedMfgDate = payload.mfgDate?.trim() || null;
+    const normalizedExpiryDate = payload.expiryDate?.trim() || null;
+    const now = new Date().toISOString();
+
+    const productBatches = await idbGetAllByIndex<WebBatch>(
       STORES.PRODUCT_BATCHES,
       "productId",
       payload.productId,
     );
-    const existing = all.find(
+
+    const existing = productBatches.find(
       (b) =>
         !b.deletedAt &&
-        b.barcode === (payload.barcode ?? null) &&
+        b.barcode === normalizedBarcode &&
         b.mrp === (payload.mrp ?? null) &&
         b.salePrice === (payload.salePrice ?? null) &&
-        b.batchNo === (payload.batchNo ?? null) &&
-        b.mfgDate === (payload.mfgDate ?? null) &&
-        b.expiryDate === (payload.expiryDate ?? null),
+        b.batchNo === normalizedBatchNo &&
+        b.mfgDate === normalizedMfgDate &&
+        b.expiryDate === normalizedExpiryDate,
     );
 
-    const now = new Date().toISOString();
+    if (normalizedBarcode) {
+      const licenseBatches = await idbGetAllByIndex<WebBatch>(
+        STORES.PRODUCT_BATCHES,
+        "licenseId",
+        payload.licenseId,
+      );
+
+      const barcodeConflict = licenseBatches.find(
+        (b) =>
+          !b.deletedAt &&
+          b.barcode === normalizedBarcode &&
+          b.id !== existing?.id,
+      );
+
+      if (barcodeConflict) {
+        return {
+          success: false,
+          error: `Barcode ${normalizedBarcode} is already used by another batch`,
+        };
+      }
+    }
 
     if (existing) {
-      const deltaQty = Number(payload.stock ?? 0);
+      const nextStock = Number(existing.stock || 0) + deltaQty;
+      if (nextStock < 0) {
+        return {
+          success: false,
+          error: "Cannot reduce batch stock below 0",
+        };
+      }
+
       const updated: WebBatch = {
         ...existing,
+        barcode: normalizedBarcode,
+        mrp: payload.mrp ?? existing.mrp,
+        salePrice: payload.salePrice ?? existing.salePrice,
         costPrice: payload.costPrice ?? existing.costPrice,
-        receivedAt: payload.receivedAt ?? existing.receivedAt,
-        stock: existing.stock + deltaQty,
+        batchNo: normalizedBatchNo,
+        mfgDate: normalizedMfgDate,
+        expiryDate: normalizedExpiryDate,
+        receivedAt: payload.receivedAt ?? existing.receivedAt ?? now,
+        stock: nextStock,
         updatedAt: now,
       };
+
       await idbPut(STORES.PRODUCT_BATCHES, updated);
       await rebuildProductStock(payload.productId);
+
       return { success: true, batch: updated };
+    }
+
+    if (deltaQty < 0) {
+      return {
+        success: false,
+        error: "Cannot create a new batch with negative stock",
+      };
     }
 
     const batch: WebBatch = {
       id: payload.id || newId(),
-      licenseId: payload.licenseId!,
+      licenseId: payload.licenseId,
       productId: payload.productId,
-      barcode: payload.barcode ?? null,
+      barcode: normalizedBarcode,
       mrp: payload.mrp ?? null,
       salePrice: payload.salePrice ?? null,
       costPrice: payload.costPrice ?? null,
-      batchNo: payload.batchNo ?? null,
-      mfgDate: payload.mfgDate ?? null,
-      expiryDate: payload.expiryDate ?? null,
+      batchNo: normalizedBatchNo,
+      mfgDate: normalizedMfgDate,
+      expiryDate: normalizedExpiryDate,
       receivedAt: payload.receivedAt ?? now,
-      stock: Number(payload.stock ?? 0),
+      stock: deltaQty,
       isSystemGeneratedBarcode: 0,
       createdAt: now,
       updatedAt: now,
       deletedAt: null,
     };
+
     await idbPut(STORES.PRODUCT_BATCHES, batch);
     await rebuildProductStock(payload.productId);
+
     return { success: true, batch };
+  } catch (err: any) {
+    return { success: false, error: String(err?.message || err) };
+  }
+}
+
+export async function webUpdateBatch(payload: {
+  id: string;
+  licenseId: string;
+  productId: string;
+  barcode?: string | null;
+  mrp?: number | null;
+  salePrice?: number | null;
+  costPrice?: number | null;
+  batchNo?: string | null;
+  mfgDate?: string | null;
+  expiryDate?: string | null;
+  receivedAt?: string | null;
+}): Promise<{ success: boolean; batch?: WebBatch; error?: string }> {
+  try {
+    const existing = await idbGetByKey<WebBatch>(
+      STORES.PRODUCT_BATCHES,
+      payload.id,
+    );
+    if (!existing || existing.deletedAt) {
+      return { success: false, error: "NOT_FOUND" };
+    }
+
+    const normalizedBarcode =
+      payload.barcode === undefined
+        ? existing.barcode
+        : payload.barcode?.trim() || null;
+    const normalizedBatchNo =
+      payload.batchNo === undefined
+        ? existing.batchNo
+        : payload.batchNo?.trim() || null;
+    const normalizedMfgDate =
+      payload.mfgDate === undefined
+        ? existing.mfgDate
+        : payload.mfgDate?.trim() || null;
+    const normalizedExpiryDate =
+      payload.expiryDate === undefined
+        ? existing.expiryDate
+        : payload.expiryDate?.trim() || null;
+
+    if (normalizedBarcode) {
+      const licenseBatches = await idbGetAllByIndex<WebBatch>(
+        STORES.PRODUCT_BATCHES,
+        "licenseId",
+        existing.licenseId,
+      );
+
+      const barcodeConflict = licenseBatches.find(
+        (b) =>
+          !b.deletedAt &&
+          b.barcode === normalizedBarcode &&
+          b.id !== existing.id,
+      );
+
+      if (barcodeConflict) {
+        return {
+          success: false,
+          error: `Barcode ${normalizedBarcode} is already used by another batch`,
+        };
+      }
+    }
+
+    const updated: WebBatch = {
+      ...existing,
+      barcode: normalizedBarcode,
+      mrp: payload.mrp === undefined ? existing.mrp : payload.mrp,
+      salePrice:
+        payload.salePrice === undefined
+          ? existing.salePrice
+          : payload.salePrice,
+      costPrice:
+        payload.costPrice === undefined
+          ? existing.costPrice
+          : payload.costPrice,
+      batchNo: normalizedBatchNo,
+      mfgDate: normalizedMfgDate,
+      expiryDate: normalizedExpiryDate,
+      receivedAt:
+        payload.receivedAt === undefined
+          ? existing.receivedAt
+          : payload.receivedAt || null,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await idbPut(STORES.PRODUCT_BATCHES, updated);
+    return { success: true, batch: updated };
   } catch (err: any) {
     return { success: false, error: String(err?.message || err) };
   }

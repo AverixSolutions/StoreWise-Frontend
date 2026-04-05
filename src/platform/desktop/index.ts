@@ -6,6 +6,15 @@ import type {
   ProductInput,
   BatchSavePayload,
   ShopSettingsPayload,
+  ProductSummary,
+  ProductListResult,
+  ProductLookupResult,
+  BatchListResult,
+  BarcodeListResult,
+  UnitCode,
+  TaxCode,
+  BatchUpdatePayload,
+  BatchMutationResult,
 } from "../types";
 
 function requireElectronAPI() {
@@ -13,6 +22,75 @@ function requireElectronAPI() {
     throw new Error("Electron API is not available in this runtime");
   }
   return window.electronAPI;
+}
+
+const VALID_UNITS: UnitCode[] = ["KG", "NOS", "LTR", "MTR"];
+const VALID_TAXES: TaxCode[] = ["NT", "P5", "P12", "P18", "P28"];
+
+function toUnitCode(value: unknown): UnitCode {
+  return VALID_UNITS.includes(value as UnitCode) ? (value as UnitCode) : "NOS";
+}
+
+function toTaxCode(value: unknown): TaxCode {
+  return VALID_TAXES.includes(value as TaxCode) ? (value as TaxCode) : "P5";
+}
+
+function mapProductSummary(row: any): ProductSummary {
+  return {
+    id: row.id,
+    code: row.code,
+    name: row.name,
+    brand: row.brand ?? null,
+    category: row.category ?? null,
+    barcode: row.barcode ?? null,
+    batchCount: Number(row.batchCount ?? 0),
+    unit: toUnitCode(row.unit),
+    tax: toTaxCode(row.tax),
+    hsn: row.hsn ?? null,
+    costPrice: Number(row.costPrice ?? 0),
+    salePrice: row.salePrice ?? null,
+    stock: Number(row.stock ?? 0),
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    deletedAt: row.deletedAt ?? null,
+    licenseId: row.licenseId,
+    codeNumber: row.codeNumber,
+  };
+}
+
+function mapProductLookup(row: any): ProductLookupResult {
+  return {
+    ...mapProductSummary(row),
+    batchId: row.batchId,
+    batchMrp: row.batchMrp ?? null,
+    batchSalePrice: row.batchSalePrice ?? null,
+    batchCostPrice: row.batchCostPrice ?? null,
+    batchNo: row.batchNo ?? null,
+    mfgDate: row.mfgDate ?? null,
+    expiryDate: row.expiryDate ?? null,
+    batchStock: row.batchStock ?? undefined,
+  };
+}
+
+function mapBatchRow(row: any) {
+  return {
+    id: row.id,
+    licenseId: row.licenseId,
+    productId: row.productId,
+    barcode: row.barcode ?? null,
+    mrp: row.mrp ?? null,
+    salePrice: row.salePrice ?? null,
+    costPrice: row.costPrice ?? null,
+    batchNo: row.batchNo ?? null,
+    mfgDate: row.mfgDate ?? null,
+    expiryDate: row.expiryDate ?? null,
+    receivedAt: row.receivedAt ?? null,
+    stock: Number(row.stock ?? 0),
+    isSystemGeneratedBarcode: row.isSystemGeneratedBarcode,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    deletedAt: row.deletedAt ?? null,
+  };
 }
 
 export const desktopPlatform: PlatformAPI = {
@@ -52,28 +130,50 @@ export const desktopPlatform: PlatformAPI = {
     return requireElectronAPI().getNextCode(licenseId);
   },
 
-  getProducts: (licenseId: string, pagination?: Pagination) => {
-    return requireElectronAPI().getProducts(licenseId, pagination);
+  getProducts: async (
+    licenseId: string,
+    pagination?: Pagination,
+  ): Promise<ProductListResult> => {
+    const result = await requireElectronAPI().getProducts(
+      licenseId,
+      pagination,
+    );
+    return {
+      products: (result?.products || []).map(mapProductSummary),
+      total: Number(result?.total || 0),
+    };
   },
 
-  getFilteredProducts: (
+  getFilteredProducts: async (
     licenseId: string,
     filters: ProductFilters,
     pagination?: Pagination,
-  ) => {
-    return requireElectronAPI().getFilteredProducts(
+  ): Promise<ProductListResult> => {
+    const result = await requireElectronAPI().getFilteredProducts(
       licenseId,
       filters,
       pagination,
     );
+    return {
+      products: (result?.products || []).map(mapProductSummary),
+      total: Number(result?.total || 0),
+    };
   },
 
-  getProduct: (productId: string) => {
-    return requireElectronAPI().getProduct(productId);
+  getProduct: async (productId: string): Promise<ProductSummary | null> => {
+    const row = await requireElectronAPI().getProduct(productId);
+    return row ? mapProductSummary(row) : null;
   },
 
-  getProductByBarcode: (licenseId: string, barcode: string) => {
-    return requireElectronAPI().getProductByBarcode(licenseId, barcode);
+  getProductByBarcode: async (
+    licenseId: string,
+    barcode: string,
+  ): Promise<ProductLookupResult | null> => {
+    const row = await requireElectronAPI().getProductByBarcode(
+      licenseId,
+      barcode,
+    );
+    return row ? mapProductLookup(row) : null;
   },
 
   createProduct: (product: ProductInput) => {
@@ -88,15 +188,28 @@ export const desktopPlatform: PlatformAPI = {
     return requireElectronAPI().deleteProduct(productId);
   },
 
-  listBatchesForProduct: (productId: string, includeDeleted = false) => {
-    return requireElectronAPI().listBatchesForProduct(
+  listBatchesForProduct: async (
+    productId: string,
+    includeDeleted = false,
+  ): Promise<BatchListResult> => {
+    const result = await requireElectronAPI().listBatchesForProduct(
       productId,
       includeDeleted,
     );
+    return {
+      success: !!result?.success,
+      rows: (result?.rows || []).map(mapBatchRow),
+      totalStock: Number(result?.totalStock || 0),
+      error: result?.error,
+    };
   },
 
   saveBatch: (payload: BatchSavePayload) => {
     return requireElectronAPI().saveBatch(payload);
+  },
+
+  updateBatch: (payload: BatchUpdatePayload): Promise<BatchMutationResult> => {
+    return requireElectronAPI().updateBatch(payload);
   },
 
   peekNextBarcode: (licenseId: string) => {
@@ -107,8 +220,18 @@ export const desktopPlatform: PlatformAPI = {
     return requireElectronAPI().reserveBarcodes(licenseId, count);
   },
 
-  listBarcodesForProduct: (licenseId: string, productId: string) => {
-    return requireElectronAPI().listBarcodesForProduct(licenseId, productId);
+  listBarcodesForProduct: async (
+    licenseId: string,
+    productId: string,
+  ): Promise<BarcodeListResult> => {
+    const result = await requireElectronAPI().listBarcodesForProduct(
+      licenseId,
+      productId,
+    );
+    return {
+      success: !!result?.success,
+      rows: (result?.rows || []).map(mapBatchRow),
+    };
   },
 
   createBarcodeForProduct: (payload: any) => {
@@ -118,6 +241,7 @@ export const desktopPlatform: PlatformAPI = {
   deleteBarcode: (licenseId: string, batchId: string) => {
     return requireElectronAPI().deleteBarcode(licenseId, batchId);
   },
+
   deleteBatch: (batchId: string) => {
     return requireElectronAPI().deleteBatch(batchId);
   },

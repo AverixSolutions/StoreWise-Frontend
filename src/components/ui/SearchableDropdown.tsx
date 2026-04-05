@@ -72,8 +72,9 @@ const SearchableDropdown = forwardRef<
       else (ref as any).current = buttonRef.current;
     }, [ref]);
 
+    const selectedOption = options.find((opt) => opt.value === value);
     const selectedLabel =
-      options.find((opt) => opt.value === value)?.label || placeholder;
+      selectedOption?.label || (value?.trim() ? value.trim() : placeholder);
 
     const filteredOptions = options.filter((opt) =>
       opt.label.toLowerCase().includes(searchTerm.toLowerCase()),

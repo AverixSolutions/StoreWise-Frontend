@@ -122,7 +122,11 @@ declare global {
 
       getFilteredProducts: (
         licenseId: string,
-        filters: { name?: string | null; category?: string | null },
+        filters: {
+          name?: string | null;
+          category?: string | null;
+          brand?: string | null;
+        },
         pagination?: { page?: number; pageSize?: number },
       ) => Promise<{
         products: Array<{
@@ -241,6 +245,20 @@ declare global {
       ) => Promise<any>;
 
       saveBatch: (payload: any) => Promise<any>;
+
+      updateBatch: (payload: {
+        id: string;
+        licenseId: string;
+        productId: string;
+        barcode?: string | null;
+        mrp?: number | null;
+        salePrice?: number | null;
+        costPrice?: number | null;
+        batchNo?: string | null;
+        mfgDate?: string | null;
+        expiryDate?: string | null;
+        receivedAt?: string | null;
+      }) => Promise<any>;
 
       deleteBatch: (batchId: string) => Promise<any>;
 

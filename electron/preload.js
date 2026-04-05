@@ -52,12 +52,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
   listBatchesForProduct: (productId, includeDeleted = false) =>
     ipcRenderer.invoke("product.batch:list", { productId, includeDeleted }),
   saveBatch: (payload) => ipcRenderer.invoke("product.batch:save", payload),
+  updateBatch: (payload) => ipcRenderer.invoke("product.batch:update", payload),
   deleteBatch: (batchId) =>
     ipcRenderer.invoke("product.batch:delete", { batchId }),
   rebuildProductStock: (productId) =>
     ipcRenderer.invoke("product:rebuild-stock", productId),
 
-  // Optional richer fetch
+  // richer fetch
   getProductWithBatches: (productId) =>
     ipcRenderer.invoke("product:getWithBatches", productId),
 

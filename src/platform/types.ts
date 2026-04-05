@@ -1,4 +1,8 @@
 // src/platform/types.ts
+
+export type UnitCode = "KG" | "NOS" | "LTR" | "MTR";
+export type TaxCode = "NT" | "P5" | "P12" | "P18" | "P28";
+
 export type Pagination = {
   page?: number;
   pageSize?: number;
@@ -7,8 +11,10 @@ export type Pagination = {
 export type ProductFilters = {
   name?: string | null;
   category?: string | null;
+  brand?: string | null;
 };
 
+// WRITE MODEL
 export type ProductInput = {
   licenseId: string;
   code: string;
@@ -16,8 +22,8 @@ export type ProductInput = {
   name: string;
   brand: string | null;
   category: string | null;
-  unit: string;
-  tax: string;
+  unit: UnitCode;
+  tax: TaxCode;
   hsn?: string | null;
   costPrice: number;
   salePrice: number | null;
@@ -25,9 +31,66 @@ export type ProductInput = {
   barcode?: string | null;
 };
 
+// READ/LIST MODEL
+export type ProductSummary = {
+  id: string;
+  code: string;
+  name: string;
+  brand?: string | null;
+  category?: string | null;
+  barcode?: string | null;
+  batchCount?: number;
+  unit: UnitCode;
+  tax: TaxCode;
+  hsn?: string | null;
+  costPrice: number;
+  salePrice?: number | null;
+  stock: number;
+  createdAt?: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
+  licenseId?: string;
+  codeNumber?: number;
+};
+
+export type ProductLookupResult = ProductSummary & {
+  batchId?: string;
+  batchMrp?: number | null;
+  batchSalePrice?: number | null;
+  batchCostPrice?: number | null;
+  batchNo?: string | null;
+  mfgDate?: string | null;
+  expiryDate?: string | null;
+  batchStock?: number;
+};
+
+export type ProductListResult = {
+  products: ProductSummary[];
+  total: number;
+};
+
+export type BatchRow = {
+  id: string;
+  licenseId?: string;
+  productId?: string;
+  barcode?: string | null;
+  mrp?: number | null;
+  salePrice?: number | null;
+  costPrice?: number | null;
+  batchNo?: string | null;
+  mfgDate?: string | null;
+  expiryDate?: string | null;
+  receivedAt?: string | null;
+  stock: number;
+  isSystemGeneratedBarcode?: number;
+  createdAt?: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
+};
+
 export type BatchSavePayload = {
   id?: string;
-  licenseId?: string;
+  licenseId: string;
   productId: string;
   barcode?: string | null;
   mrp?: number | null;
@@ -38,6 +101,69 @@ export type BatchSavePayload = {
   expiryDate?: string | null;
   stock?: number;
   receivedAt?: string | null;
+};
+
+export type BatchUpdatePayload = {
+  id: string;
+  licenseId: string;
+  productId: string;
+  barcode?: string | null;
+  mrp?: number | null;
+  salePrice?: number | null;
+  costPrice?: number | null;
+  batchNo?: string | null;
+  mfgDate?: string | null;
+  expiryDate?: string | null;
+  receivedAt?: string | null;
+};
+
+export type MutationResult = {
+  success: boolean;
+  error?: string;
+};
+
+export type CreateProductResult = MutationResult & {
+  productId?: string;
+};
+
+export type BatchMutationResult = MutationResult & {
+  batch?: BatchRow;
+  stock?: number;
+};
+
+export type BatchListResult = MutationResult & {
+  rows: BatchRow[];
+  totalStock: number;
+};
+
+export type BarcodePeekResult = MutationResult & {
+  barcode?: string;
+  number?: number;
+};
+
+export type BarcodeReserveResult = MutationResult & {
+  barcodes?: string[];
+};
+
+export type BarcodeListResult = MutationResult & {
+  rows: BatchRow[];
+};
+
+export type BarcodeCreatePayload = {
+  licenseId: string;
+  productId: string;
+  barcode?: string;
+  useGenerated?: boolean;
+  mrp?: number | null;
+  salePrice?: number | null;
+  costPrice?: number | null;
+};
+
+export type BarcodeMutationResult = MutationResult & {
+  batch?: BatchRow;
+  barcode?: string;
+  code?: string;
+  reused?: boolean;
 };
 
 export type ShopSettingsPayload = {
@@ -90,45 +216,73 @@ export type MasterCounts = {
   accountCount: number;
 };
 
+export type DashboardOverview = {
+  shopName: string;
+  kpis: {
+    itemCount: number;
+    liveBatchCount: number;
+    stockQty: number;
+    inventoryCostValue: number;
+    inventorySaleValue: number;
+    todaySalesCount: number;
+    todaySalesAmount: number;
+    todayPurchaseCount: number;
+    todayPurchaseAmount: number;
+    sales30Count: number;
+    sales30Amount: number;
+    purchases30Count: number;
+    purchases30Amount: number;
+    customerCount: number;
+    supplierCount: number;
+    receivableAmount: number;
+    payableAmount: number;
+    zeroStockCount: number;
+    lowStockCount: number;
+  };
+  series: Array<{ day: string; sales: number; purchases: number }>;
+  topProducts: Array<{
+    productId: string;
+    name: string;
+    soldQty: number;
+    revenue: number;
+  }>;
+  lowStockItems: Array<{ id: string; name: string; stock: number }>;
+  recentActivity: Array<{
+    id: string;
+    slNo?: number;
+    name: string;
+    amount: number;
+    date: string;
+    type: "SALE" | "PURCHASE";
+  }>;
+  lastUpdatedAt: string;
+};
+
 export type DashboardOverviewResult =
-  | { success: true; overview: any }
+  | { success: true; overview: DashboardOverview }
   | { success: false; unsupported?: boolean; error?: string };
-
-// ADD THESE
-export type MutationResult = {
-  success: boolean;
-  error?: string;
-};
-
-export type CreateProductResult = MutationResult & {
-  productId?: string;
-};
-
-export type BarcodeMutationResult = MutationResult & {
-  batch?: any;
-  barcode?: string;
-  code?: string;
-};
 
 export type PlatformAPI = {
   getNextCode: (licenseId: string) => Promise<string>;
 
-  getProducts: (licenseId: string, pagination?: Pagination) => Promise<any>;
+  getProducts: (
+    licenseId: string,
+    pagination?: Pagination,
+  ) => Promise<ProductListResult>;
 
   getFilteredProducts: (
     licenseId: string,
     filters: ProductFilters,
     pagination?: Pagination,
-  ) => Promise<any>;
+  ) => Promise<ProductListResult>;
 
-  getProduct: (productId: string) => Promise<any | null>;
+  getProduct: (productId: string) => Promise<ProductSummary | null>;
 
   getProductByBarcode: (
     licenseId: string,
     barcode: string,
-  ) => Promise<any | null>;
+  ) => Promise<ProductLookupResult | null>;
 
-  // FIX THESE THREE
   createProduct: (product: ProductInput) => Promise<CreateProductResult>;
 
   updateProduct: (
@@ -141,9 +295,11 @@ export type PlatformAPI = {
   listBatchesForProduct: (
     productId: string,
     includeDeleted?: boolean,
-  ) => Promise<any>;
+  ) => Promise<BatchListResult>;
 
-  saveBatch: (payload: BatchSavePayload) => Promise<any>;
+  saveBatch: (payload: BatchSavePayload) => Promise<BatchMutationResult>;
+
+  updateBatch: (payload: BatchUpdatePayload) => Promise<BatchMutationResult>;
 
   getShopSettings: (licenseId: string) => Promise<GetShopSettingsResult>;
 
@@ -151,9 +307,7 @@ export type PlatformAPI = {
     payload: ShopSettingsPayload,
   ) => Promise<SaveShopSettingsResult>;
 
-  syncShopSettings?: (
-    licenseId: string,
-  ) => Promise<SaveShopSettingsResult | any>;
+  syncShopSettings?: (licenseId: string) => Promise<SaveShopSettingsResult>;
 
   getRuntimeInfo: () => RuntimeInfo;
 
@@ -164,22 +318,21 @@ export type PlatformAPI = {
     days?: number,
   ) => Promise<DashboardOverviewResult>;
 
-  // Barcode / Batch extras
-  peekNextBarcode?: (
-    licenseId: string,
-  ) => Promise<{ success: boolean; barcode: string; number: number }>;
+  peekNextBarcode?: (licenseId: string) => Promise<BarcodePeekResult>;
 
   reserveBarcodes?: (
     licenseId: string,
     count: number,
-  ) => Promise<{ success: boolean; barcodes: string[] }>;
+  ) => Promise<BarcodeReserveResult>;
 
   listBarcodesForProduct?: (
     licenseId: string,
     productId: string,
-  ) => Promise<{ success: boolean; rows: any[] }>;
+  ) => Promise<BarcodeListResult>;
 
-  createBarcodeForProduct?: (payload: any) => Promise<BarcodeMutationResult>;
+  createBarcodeForProduct?: (
+    payload: BarcodeCreatePayload,
+  ) => Promise<BarcodeMutationResult>;
 
   deleteBarcode?: (
     licenseId: string,

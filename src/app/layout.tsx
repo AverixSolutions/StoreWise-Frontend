@@ -2,6 +2,7 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
+import { ToastProvider } from "@/components/ui/ToastProvider";
 
 const inter = localFont({
   src: "../assets/fonts/InterVariable.woff2",
@@ -54,7 +55,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={inter.variable}>
-      <body className="h-full antialiased">{children}</body>
+      <body className="h-full antialiased">
+        <ToastProvider>{children}</ToastProvider>
+      </body>
     </html>
   );
 }

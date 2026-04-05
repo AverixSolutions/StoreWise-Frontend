@@ -34,54 +34,113 @@ export default function ConfirmModal({
   if (!mounted || !isOpen) return null;
 
   const body = (
-    <div className="fixed inset-0 z-[999] flex items-center justify-center px-4">
+    <div
+      className="fixed inset-0 z-[999] flex items-center justify-center px-4"
+      onClick={(e) => e.stopPropagation()}
+    >
+      {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-[rgba(3,8,20,0.62)] backdrop-blur-[3px]"
+        className="absolute inset-0 bg-[rgba(4,8,20,0.72)] backdrop-blur-[6px]"
         onClick={onCancel}
       />
 
-      <div className="relative w-full max-w-md overflow-hidden rounded-[28px] border border-white/10 bg-[#f6f5ef] text-slate-900 shadow-[0_24px_80px_rgba(0,0,0,0.38)]">
+      {/* Modal card */}
+      <div
+        className="relative w-full max-w-md overflow-hidden rounded-[24px] shadow-[0_32px_80px_rgba(0,0,0,0.56),0_0_0_1px_rgba(93,135,201,0.18)]"
+        style={{ background: "var(--kyn-surface)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Top brand line */}
         <div className="absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,rgba(32,183,255,0),rgba(32,183,255,0.9),rgba(176,38,255,0.9),rgba(176,38,255,0))]" />
 
-        <div className="border-b border-black/6 px-5 py-4 sm:px-6">
-          <div className="mb-2 inline-flex items-center rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-            KYNSTACK
+        {/* Subtle inner glow */}
+        <div className="absolute inset-x-0 top-0 h-32 bg-[radial-gradient(ellipse_at_top,rgba(32,183,255,0.07),transparent_70%)] pointer-events-none" />
+
+        {/* Header */}
+        <div
+          className="border-b px-5 py-4 sm:px-6"
+          style={{ borderColor: "var(--kyn-border)" }}
+        >
+          <div
+            className="mb-2.5 inline-flex items-center gap-1.5 rounded-full border px-3 py-1"
+            style={{
+              borderColor: "rgba(93,135,201,0.22)",
+              background: "rgba(32,183,255,0.07)",
+            }}
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-[var(--kyn-primary)] opacity-80" />
+            <span
+              className="text-[10px] font-semibold uppercase tracking-[0.18em]"
+              style={{ color: "var(--kyn-primary)" }}
+            >
+              KYNFLOW
+            </span>
           </div>
 
-          <h3 className="text-base font-semibold tracking-[-0.02em] text-slate-900 sm:text-lg">
+          <h3
+            className="text-base font-semibold tracking-[-0.02em] sm:text-lg"
+            style={{ color: "var(--kyn-text)" }}
+          >
             {title}
           </h3>
         </div>
 
+        {/* Body */}
         <div className="px-5 py-5 sm:px-6">
-          <p className="whitespace-pre-line text-sm leading-6 text-slate-600">
+          <p
+            className="whitespace-pre-line text-sm leading-6"
+            style={{ color: "var(--kyn-text-muted)" }}
+          >
             {message}
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-black/6 px-5 py-4 sm:px-6">
+        {/* Footer */}
+        <div
+          className="flex flex-wrap items-center justify-end gap-2 border-t px-5 py-4 sm:px-6"
+          style={{ borderColor: "var(--kyn-border)" }}
+        >
+          {/* Cancel */}
           <button
             type="button"
             onClick={onCancel}
-            className="h-10 rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50 cursor-pointer"
+            className="h-10 rounded-xl border px-4 text-sm font-medium transition hover:brightness-110 cursor-pointer"
+            style={{
+              borderColor: "var(--kyn-border)",
+              background: "var(--kyn-surface-2)",
+              color: "var(--kyn-text-soft)",
+            }}
           >
             {cancelText}
           </button>
 
+          {/* Secondary (optional) */}
           {secondaryText && onSecondary && (
             <button
               type="button"
               onClick={onSecondary}
-              className="h-10 rounded-xl border border-amber-300 bg-amber-50 px-4 text-sm font-medium text-amber-700 transition hover:bg-amber-100 cursor-pointer"
+              className="h-10 rounded-xl border px-4 text-sm font-medium transition hover:brightness-110 cursor-pointer"
+              style={{
+                borderColor: "rgba(245,158,11,0.35)",
+                background: "rgba(245,158,11,0.1)",
+                color: "var(--kyn-warning)",
+              }}
             >
               {secondaryText}
             </button>
           )}
 
+          {/* Confirm */}
           <button
             type="button"
             onClick={onConfirm}
-            className="h-10 rounded-xl border border-white/20 bg-[linear-gradient(135deg,#20b7ff_0%,#b026ff_100%)] px-4 text-sm font-semibold text-white shadow-[0_10px_26px_rgba(32,183,255,0.24)] transition hover:brightness-110 cursor-pointer"
+            className="h-10 rounded-xl px-4 text-sm font-semibold text-white transition hover:brightness-110 cursor-pointer"
+            style={{
+              background:
+                "linear-gradient(135deg, var(--kyn-brand-start) 0%, var(--kyn-brand-end) 100%)",
+              boxShadow: "0 8px 24px var(--kyn-glow-primary)",
+              border: "1px solid rgba(255,255,255,0.12)",
+            }}
           >
             {confirmText}
           </button>
