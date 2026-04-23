@@ -226,12 +226,9 @@ export default function ProductBatchesDrawer({
   if (!open) return null;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4"
-      onClick={onClose}
-    >
+    <div className="fixed inset-0 z-[260] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4">
       <div
-        className="w-full sm:max-w-2xl lg:max-w-[760px] rounded-t-[24px] sm:rounded-[24px] bg-[linear-gradient(180deg,rgba(255,255,255,0.97),rgba(248,250,252,0.97))] shadow-[0_-10px_50px_rgba(3,10,24,0.16)] backdrop-blur flex flex-col max-h-[92dvh] sm:max-h-[88dvh] overflow-hidden"
+        className="w-full rounded-t-[24px] sm:max-w-2xl lg:max-w-[760px] sm:rounded-[24px] bg-[linear-gradient(180deg,rgba(255,255,255,0.97),rgba(248,250,252,0.97))] shadow-[0_-10px_50px_rgba(3,10,24,0.16)] backdrop-blur flex flex-col max-h-[94dvh] sm:max-h-[88dvh] overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* ── Header ── */}
@@ -259,7 +256,7 @@ export default function ProductBatchesDrawer({
         {/* ── Scrollable content ── */}
         <div
           ref={scrollAreaRef}
-          className="flex-1 overflow-y-auto no-scrollbar px-3 py-3 sm:px-4 sm:py-3 space-y-3"
+          className="flex-1 overflow-y-auto no-scrollbar px-3 pt-3 pb-[calc(5.5rem+env(safe-area-inset-bottom))] sm:px-4 sm:py-3 space-y-3"
         >
           {/* Total Stock KPI */}
           <div className="flex items-center gap-3 rounded-[16px] border border-white/8 bg-[linear-gradient(135deg,#091120,#16213d)] px-3.5 py-3 text-white shadow-[0_6px_18px_rgba(5,10,20,0.12)]">

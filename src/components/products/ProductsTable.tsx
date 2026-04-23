@@ -5,14 +5,8 @@ import { useState, useEffect } from "react";
 import TableSkeleton from "../ui/TableSkeleton";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import { useToast } from "@/components/ui/ToastProvider";
-import {
-  PackagePlus,
-  Edit2,
-  Trash2,
-  Layers,
-  ChevronLeft,
-  ChevronRight,
-} from "lucide-react";
+import Pagination from "@/components/ui/Pagination";
+import { PackagePlus, Edit2, Trash2, Layers, Eye } from "lucide-react";
 import { platform } from "@/platform";
 import { getActiveLicenseId } from "@/lib/session/runtimeSession";
 import type { ProductListResult, ProductSummary } from "@/platform/types";
@@ -24,6 +18,7 @@ interface ProductsTableProps {
   onEdit: (product: Product) => void;
   onDelete: (id: string) => void;
   onManageBatches: (product: Product) => void;
+  onView: (product: Product) => void;
   refreshTrigger: number;
   nameFilter?: string;
   categoryFilter?: string;
@@ -66,99 +61,12 @@ function StockBadge({ stock }: { stock: number }) {
   );
 }
 
-function Pagination({
-  page,
-  total,
-  pageSize,
-  onPageChange,
-}: {
-  page: number;
-  total: number;
-  pageSize: number;
-  onPageChange: (p: number) => void;
-}) {
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  if (totalPages <= 1) return null;
-
-  // Build page numbers array with ellipsis like the screenshot
-  const getPages = () => {
-    const pages: (number | "…")[] = [];
-    if (totalPages <= 7) {
-      for (let i = 1; i <= totalPages; i++) pages.push(i);
-      return pages;
-    }
-    pages.push(1);
-    if (page > 3) pages.push("…");
-    for (
-      let i = Math.max(2, page - 1);
-      i <= Math.min(totalPages - 1, page + 1);
-      i++
-    ) {
-      pages.push(i);
-    }
-    if (page < totalPages - 2) pages.push("…");
-    pages.push(totalPages);
-    return pages;
-  };
-
-  const btnBase =
-    "flex h-8 min-w-[32px] items-center justify-center rounded-lg px-2.5 text-sm font-medium transition select-none";
-
-  return (
-    <div className="flex flex-col items-center justify-between gap-3 border-t border-slate-100 px-4 py-3 sm:flex-row">
-      <span className="text-xs text-slate-400">
-        Showing {Math.min((page - 1) * pageSize + 1, total)}–
-        {Math.min(page * pageSize, total)} of{" "}
-        <span className="font-semibold text-slate-600">{total}</span> items
-      </span>
-      <div className="flex items-center gap-1">
-        <button
-          onClick={() => onPageChange(page - 1)}
-          disabled={page === 1}
-          className={`${btnBase} gap-1 border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40`}
-        >
-          <ChevronLeft className="h-3.5 w-3.5" />
-          Prev
-        </button>
-
-        {getPages().map((p, i) =>
-          p === "…" ? (
-            <span key={`ellipsis-${i}`} className="px-1 text-slate-400">
-              …
-            </span>
-          ) : (
-            <button
-              key={p}
-              onClick={() => onPageChange(p as number)}
-              className={`${btnBase} ${
-                p === page
-                  ? "bg-[#1e3a5f] text-white shadow-sm"
-                  : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-              }`}
-            >
-              {p}
-            </button>
-          ),
-        )}
-
-        <button
-          onClick={() => onPageChange(page + 1)}
-          disabled={page === totalPages}
-          className={`${btnBase} gap-1 border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40`}
-        >
-          Next
-          <ChevronRight className="h-3.5 w-3.5" />
-        </button>
-      </div>
-    </div>
-  );
-}
-
 export default function ProductsTable({
   onAdd,
   onEdit,
   onDelete,
   onManageBatches,
+  onView,
   refreshTrigger,
   nameFilter = "",
   categoryFilter = "",
@@ -302,7 +210,9 @@ export default function ProductsTable({
               {HEADERS.map((h) => (
                 <th
                   key={h}
-                  className="px-3.5 py-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80 first:pl-5 last:pr-5"
+                  className={`px-3.5 py-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80 first:pl-5 last:pr-20 ${
+                    h === "Actions" ? "text-right" : "text-left"
+                  }`}
                 >
                   {h}
                 </th>
@@ -337,7 +247,7 @@ export default function ProductsTable({
                     "—"
                   )}
                 </td>
-                <td className="px-3.5 py-2.5 font-mono text-[11px] text-slate-400">
+                <td className="px-3.5 py-2.5 font-mono text-[11px] text-slate-600 pl-0 md:pl-8">
                   {product.batchCount ?? 0}
                 </td>
                 <td className="px-3.5 py-2.5">
@@ -357,28 +267,38 @@ export default function ProductsTable({
                 <td className="px-3.5 py-2.5">
                   <StockBadge stock={product.stock} />
                 </td>
-                <td className="py-2.5 pl-3.5 pr-5">
+                <td className="py-2.5 pl-5 pr-0">
                   <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => onView(product)}
+                      title="View"
+                      className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 cursor-pointer"
+                    >
+                      <Eye className="h-3 w-3" />
+                    </button>
+
                     <button
                       onClick={() => onManageBatches(product)}
                       title="Batches"
-                      className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-fuchsia-500 transition hover:border-fuchsia-200 hover:bg-fuchsia-50"
+                      className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-fuchsia-500 transition hover:border-fuchsia-200 hover:bg-fuchsia-50 cursor-pointer"
                     >
                       <Layers className="h-3 w-3" />
                     </button>
+
                     <button
                       onClick={() => onEdit(product)}
                       title="Edit"
-                      className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-cyan-600 transition hover:border-cyan-200 hover:bg-cyan-50"
+                      className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-cyan-600 transition hover:border-cyan-200 hover:bg-cyan-50 cursor-pointer"
                     >
                       <Edit2 className="h-3 w-3" />
                     </button>
+
                     <button
                       onClick={() =>
                         handleDeleteClick(product.id, product.name)
                       }
                       title="Delete"
-                      className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-rose-500 transition hover:border-rose-200 hover:bg-rose-50"
+                      className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-rose-500 transition hover:border-rose-200 hover:bg-rose-50 cursor-pointer"
                     >
                       <Trash2 className="h-3 w-3" />
                     </button>
@@ -401,64 +321,46 @@ export default function ProductsTable({
         {products.map((product) => (
           <div
             key={product.id}
-            className="px-4 py-3.5 hover:bg-slate-50/60 transition-colors"
+            className="px-4 py-3 hover:bg-slate-50/60 transition-colors"
           >
-            <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center justify-between gap-3">
               <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
-                  <span className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] text-slate-400">
-                    {product.code}
-                  </span>
-                  <span className="rounded-full border border-cyan-200 bg-cyan-50 px-1.5 py-0.5 text-[10px] font-semibold text-cyan-700">
-                    {product.unit}
-                  </span>
-                  <StockBadge stock={product.stock} />
-                </div>
-                <p className="text-[14px] font-semibold text-slate-900 leading-snug">
+                <p className="truncate text-[14px] font-semibold text-slate-900 leading-snug">
                   {product.name}
                 </p>
-                {(product.brand || product.category) && (
-                  <p className="mt-0.5 text-[11px] text-slate-400">
-                    {[product.brand, product.category]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </p>
-                )}
-                <div className="mt-1.5 flex items-center gap-3 text-xs">
-                  <span className="text-slate-400">
-                    Cost{" "}
-                    <span className="font-semibold text-slate-700">
-                      ₹{product.costPrice.toFixed(2)}
-                    </span>
-                  </span>
-                  {product.salePrice && (
-                    <span className="text-slate-400">
-                      Sale{" "}
-                      <span className="font-semibold text-emerald-600">
-                        ₹{product.salePrice.toFixed(2)}
-                      </span>
-                    </span>
-                  )}
-                </div>
               </div>
-              <div className="flex flex-col items-end gap-1 shrink-0">
+
+              <div className="flex items-center gap-2.5 shrink-0">
+                <button
+                  onClick={() => onView(product)}
+                  title="View"
+                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600"
+                >
+                  <Eye className="h-4 w-4" />
+                </button>
+
                 <button
                   onClick={() => onManageBatches(product)}
-                  className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-fuchsia-500"
+                  title="Batches"
+                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-fuchsia-500"
                 >
-                  <Layers className="h-3 w-3" />
+                  <Layers className="h-4 w-4" />
                 </button>
+
                 <button
                   onClick={() => onEdit(product)}
-                  className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-cyan-600"
+                  title="Edit"
+                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-cyan-600"
                 >
-                  <Edit2 className="h-3 w-3" />
+                  <Edit2 className="h-4 w-4" />
                 </button>
+
                 <button
                   onClick={() => handleDeleteClick(product.id, product.name)}
-                  className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-rose-500"
+                  title="Delete"
+                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-rose-500"
                 >
-                  <Trash2 className="h-3 w-3" />
+                  <Trash2 className="h-4 w-4" />
                 </button>
               </div>
             </div>
@@ -471,6 +373,7 @@ export default function ProductsTable({
         total={total}
         pageSize={pageSize}
         onPageChange={setPage}
+        itemLabel="products"
       />
       <ConfirmModal
         isOpen={!!deleteTarget}

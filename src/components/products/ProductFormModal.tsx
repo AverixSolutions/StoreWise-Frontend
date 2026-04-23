@@ -1,4 +1,3 @@
-// src/components/products/ProductFormModal.tsx
 "use client";
 
 import { useEffect, useState, useRef } from "react";
@@ -12,6 +11,8 @@ import {
   ClipboardPaste,
   CheckCircle2,
   AlertCircle,
+  Sparkles,
+  FolderTree,
 } from "lucide-react";
 import Dropdown from "@/components/ui/Dropdown";
 import SearchableDropdown from "@/components/ui/SearchableDropdown";
@@ -22,6 +23,7 @@ import type {
   ProductSummary,
   UnitCode,
   TaxCode,
+  CategoryRecord,
 } from "@/platform/types";
 import { useToast } from "../ui/ToastProvider";
 
@@ -39,6 +41,10 @@ interface BulkRow {
   name: string;
   brand?: string;
   category?: string;
+  subcategory?: string;
+  productName?: string;
+  model?: string;
+  size?: string;
   unit: UnitCode;
   tax: TaxCode;
   hsn?: string;
@@ -55,7 +61,73 @@ interface ProductFormModalProps {
   editProduct?: Product | null;
   existingCategories?: string[];
   existingBrands?: string[];
+  categoryRecords?: CategoryRecord[];
 }
+
+// ── Picker option type ───────────────────────────────────────────────────────
+
+type PickerOption = {
+  id: string;
+  name: string;
+  parentId: string | null;
+  parentName: string | null;
+  isSubcategory: boolean;
+};
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function buildPickerOptions(categories: CategoryRecord[]): PickerOption[] {
+  const childIds = new Set(
+    categories.filter((c) => c.parentId).map((c) => c.parentId!),
+  );
+
+  const standalone = categories
+    .filter((c) => !c.parentId && !childIds.has(c.id))
+    .map(
+      (c): PickerOption => ({
+        id: c.id,
+        name: c.name,
+        parentId: null,
+        parentName: null,
+        isSubcategory: false,
+      }),
+    )
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  const subcats = categories
+    .filter((c) => c.parentId)
+    .map((c): PickerOption => {
+      const parent = categories.find((p) => p.id === c.parentId);
+      return {
+        id: c.id,
+        name: c.name,
+        parentId: c.parentId,
+        parentName: parent?.name ?? "",
+        isSubcategory: true,
+      };
+    })
+    .sort(
+      (a, b) =>
+        (a.parentName ?? "").localeCompare(b.parentName ?? "") ||
+        a.name.localeCompare(b.name),
+    );
+
+  return [...standalone, ...subcats];
+}
+
+function buildAutoName(
+  brand: string,
+  productName: string,
+  model: string,
+  size: string,
+): string {
+  return [brand, productName, model, size]
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .join(" ");
+}
+
+// ── Constants ─────────────────────────────────────────────────────────────────
 
 const fieldClass =
   "w-full rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400 transition focus:border-cyan-400/60 focus:ring-4 focus:ring-cyan-400/10";
@@ -63,9 +135,11 @@ const fieldClass =
 const labelClass =
   "mb-1 block text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400";
 
-const BULK_FORMAT = `name,brand,category,unit,tax,hsn,costPrice,salePrice
-Sugar 1KG,Generic,Grocery,KG,NT,,50,60
-Rice Basmati,India Gate,Grocery,KG,P5,1006,80,95`;
+const BULK_FORMAT = `name,brand,category,subcategory,productName,model,size,unit,tax,hsn,costPrice,salePrice
+Apple iPhone,Apple,Electronics,Smartphones,iPhone,14 Pro,128GB,NOS,P18,8517,75000,89999
+Colgate Toothpaste,Colgate,Health,Dental Care,Toothpaste,MaxFresh,150g,NOS,P12,3306,60,85`;
+
+// ── Component ─────────────────────────────────────────────────────────────────
 
 export default function ProductFormModal({
   isOpen,
@@ -74,27 +148,43 @@ export default function ProductFormModal({
   editProduct,
   existingCategories = [],
   existingBrands = [],
+  categoryRecords = [],
 }: ProductFormModalProps) {
   const { showToast } = useToast();
 
+  // ── Basic product fields ──
   const [code, setCode] = useState<string>("00001");
-  const [name, setName] = useState("");
+  const [productName, setProductName] = useState("");
   const [brand, setBrand] = useState("");
-  const [category, setCategory] = useState("");
+  const [model, setModel] = useState("");
+  const [size, setSize] = useState("");
+  const [name, setName] = useState(""); // auto-generated item name
+  const [nameAutoMode, setNameAutoMode] = useState(true);
+
+  // ── Category / subcategory ──
+  const [allCategories, setAllCategories] =
+    useState<CategoryRecord[]>(categoryRecords);
+  const [pickerSelectedId, setPickerSelectedId] = useState<string>("");
+  const [category, setCategory] = useState(""); // parent category string (derived)
+  const [subcategory, setSubcategory] = useState(""); // subcategory string (derived)
+
+  // ── Other product fields ──
   const [unit, setUnit] = useState<UnitCode>("NOS");
   const [tax, setTax] = useState<TaxCode>("P5");
   const [hsn, setHsn] = useState("");
   const [costPrice, setCostPrice] = useState("");
   const [salePrice, setSalePrice] = useState("");
 
+  // ── Barcode state ──
   const [barcodeEntries, setBarcodeEntries] = useState<BarcodeEntry[]>([]);
   const [customBarcodeInput, setCustomBarcodeInput] = useState("");
   const [barcodeError, setBarcodeError] = useState<string | null>(null);
   const [nextBarcodePreview, setNextBarcodePreview] = useState("00001");
+
   const [saveMode, setSaveMode] = useState<"close" | "addAnother">("close");
   const [activeTab, setActiveTab] = useState<"single" | "bulk">("single");
 
-  // Bulk state
+  // ── Bulk state ──
   const [bulkText, setBulkText] = useState("");
   const [bulkRows, setBulkRows] = useState<BulkRow[]>([]);
   const [bulkParsed, setBulkParsed] = useState(false);
@@ -104,34 +194,44 @@ export default function ProductFormModal({
 
   const licenseId = typeof window !== "undefined" ? getActiveLicenseId() : "";
 
-  const nameRef = useRef<HTMLInputElement>(null);
+  // ── Refs ──
+  const productNameRef = useRef<HTMLInputElement>(null);
   const brandRef = useRef<HTMLButtonElement>(null);
+  const modelRef = useRef<HTMLInputElement>(null);
+  const sizeRef = useRef<HTMLInputElement>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
   const unitRef = useRef<HTMLButtonElement>(null);
   const taxRef = useRef<HTMLButtonElement>(null);
-  const categoryRef = useRef<HTMLButtonElement>(null);
   const hsnRef = useRef<HTMLInputElement>(null);
   const costRef = useRef<HTMLInputElement>(null);
   const saleRef = useRef<HTMLInputElement>(null);
 
+  // ── Keyboard navigation ───────────────────────────────────────────────────
+
   const IDX = {
-    NAME: 0,
+    PRODUCT_NAME: 0,
     BRAND: 1,
-    UNIT: 2,
-    TAX: 3,
-    CATEGORY: 4,
-    HSN: 5,
-    COST: 6,
-    SALE: 7,
+    MODEL: 2,
+    SIZE: 3,
+    NAME: 4,
+    UNIT: 5,
+    TAX: 6,
+    HSN: 7,
+    COST: 8,
+    SALE: 9,
   } as const;
+
   const inputRefs = [
-    nameRef,
-    brandRef,
-    unitRef,
-    taxRef,
-    categoryRef,
-    hsnRef,
-    costRef,
-    saleRef,
+    productNameRef, // 0
+    brandRef, // 1
+    modelRef, // 2
+    sizeRef, // 3
+    nameRef, // 4
+    unitRef, // 5
+    taxRef, // 6
+    hsnRef, // 7
+    costRef, // 8
+    saleRef, // 9
   ];
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLElement>, index: number) {
@@ -152,23 +252,125 @@ export default function ProductFormModal({
     }
   }
 
+  // ── Picker options derived from categories ──
+  const pickerOptions = buildPickerOptions(allCategories);
+  const standaloneOptions = pickerOptions.filter((o) => !o.isSubcategory);
+
+  const parentCategoriesWithChildren = allCategories.filter(
+    (c) => !c.parentId && pickerOptions.some((o) => o.parentId === c.id),
+  );
+
+  const hasCategoryMaster = allCategories.length > 0;
+  const selectedPickerOption =
+    pickerOptions.find((o) => o.id === pickerSelectedId) ?? null;
+
+  const parentCategoryOptions = allCategories
+    .filter((c) => !c.parentId)
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  const matchedTypedParent =
+    parentCategoryOptions.find(
+      (row) => normalizeText(row.name) === normalizeText(category),
+    ) ?? null;
+
+  const subcategoryOptionsForTypedParent = matchedTypedParent
+    ? allCategories
+        .filter((row) => row.parentId === matchedTypedParent.id)
+        .sort((a, b) => a.name.localeCompare(b.name))
+    : [];
+
+  const typedCategoryHasChildren = subcategoryOptionsForTypedParent.length > 0;
+
+  // ── Auto-generate name ──────────────────────────────────────────────────────
+
   useEffect(() => {
-    if (isOpen) requestAnimationFrame(() => nameRef.current?.focus());
+    if (!nameAutoMode) return;
+    const generated = buildAutoName(brand, productName, model, size);
+    setName(generated);
+  }, [brand, productName, model, size, nameAutoMode]);
+
+  // ── Category picker handler ──────────────────────────────────────────────────
+
+  function handlePickerChange(id: string) {
+    setPickerSelectedId(id);
+    if (!id) {
+      setCategory("");
+      setSubcategory("");
+      return;
+    }
+    const opt = pickerOptions.find((o) => o.id === id);
+    if (!opt) return;
+    if (opt.isSubcategory) {
+      setCategory(opt.parentName ?? "");
+      setSubcategory(opt.name);
+    } else {
+      setCategory(opt.name);
+      setSubcategory("");
+    }
+  }
+
+  // ── Load categories on open ─────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!isOpen || !licenseId) return;
+    platform
+      .listCategories(licenseId)
+      .then((res) => {
+        if (res.success) setAllCategories(res.rows);
+      })
+      .catch(() => {});
+  }, [isOpen, licenseId]);
+
+  // ── Sync prop categories ────────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (categoryRecords.length > 0) setAllCategories(categoryRecords);
+  }, [categoryRecords]);
+
+  // ── Open / edit setup ───────────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (isOpen) {
+      requestAnimationFrame(() => productNameRef.current?.focus());
+    }
   }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
     loadNextBarcodePreview();
+
     if (editProduct) {
+      const initialProductName = editProduct.productName ?? "";
+      const initialBrand = editProduct.brand ?? "";
+      const initialModel = editProduct.model ?? "";
+      const initialSize = editProduct.size ?? "";
+      const generatedExistingName = buildAutoName(
+        initialBrand,
+        initialProductName,
+        initialModel,
+        initialSize,
+      );
+
       setCode(editProduct.code);
+      setProductName(initialProductName);
+      setBrand(initialBrand);
+      setModel(initialModel);
+      setSize(initialSize);
       setName(editProduct.name);
-      setBrand(editProduct.brand || "");
-      setCategory(editProduct.category || "");
+      setNameAutoMode(editProduct.name.trim() === generatedExistingName.trim());
+
+      // Restore category/subcategory
+      restorePickerFromStrings(
+        editProduct.category ?? "",
+        editProduct.subcategory ?? "",
+        pickerOptions,
+      );
+
       setUnit(editProduct.unit);
       setTax(editProduct.tax);
-      setHsn(editProduct.hsn || "");
+      setHsn(editProduct.hsn ?? "");
       setCostPrice(editProduct.costPrice.toString());
-      setSalePrice(editProduct.salePrice?.toString() || "");
+      setSalePrice(editProduct.salePrice?.toString() ?? "");
       loadExistingBarcodes(editProduct.id);
     } else {
       resetForm();
@@ -176,7 +378,18 @@ export default function ProductFormModal({
         .getNextCode(licenseId)
         .then((nextCode: string) => setCode(nextCode));
     }
-  }, [isOpen, editProduct, licenseId]);
+  }, [isOpen, editProduct]);
+
+  // When categories load, re-apply picker for edit mode
+  useEffect(() => {
+    if (!isOpen || !editProduct || allCategories.length === 0) return;
+    const opts = buildPickerOptions(allCategories);
+    restorePickerFromStrings(
+      editProduct.category ?? "",
+      editProduct.subcategory ?? "",
+      opts,
+    );
+  }, [allCategories, isOpen, editProduct]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -188,10 +401,247 @@ export default function ProductFormModal({
     }
   }, [isOpen]);
 
+  // ── Helpers ──────────────────────────────────────────────────────────────────
+
+  function restorePickerFromStrings(
+    catStr: string,
+    subStr: string,
+    opts: PickerOption[],
+  ) {
+    if (subStr) {
+      const match = opts.find(
+        (o) => o.isSubcategory && o.name === subStr && o.parentName === catStr,
+      );
+      if (match) {
+        setPickerSelectedId(match.id);
+      } else {
+        setPickerSelectedId("");
+      }
+      setCategory(catStr);
+      setSubcategory(subStr);
+    } else if (catStr) {
+      const match = opts.find((o) => !o.isSubcategory && o.name === catStr);
+      if (match) {
+        setPickerSelectedId(match.id);
+      } else {
+        setPickerSelectedId("");
+      }
+      setCategory(catStr);
+      setSubcategory("");
+    } else {
+      setPickerSelectedId("");
+      setCategory("");
+      setSubcategory("");
+    }
+  }
+
+  function normalizeText(value?: string | null) {
+    return (value ?? "").trim().toLowerCase();
+  }
+
+  async function ensureBrandMaster(brandName?: string | null) {
+    const trimmedBrand = brandName?.trim();
+    if (!trimmedBrand) return;
+
+    const brandList = await platform.listBrands(licenseId);
+    if (!brandList.success) {
+      throw new Error(brandList.error || "Failed to load brand master");
+    }
+
+    const exists = brandList.rows.some(
+      (row) => normalizeText(row.name) === normalizeText(trimmedBrand),
+    );
+
+    if (exists) return;
+
+    const saved = await platform.saveBrand({
+      licenseId,
+      name: trimmedBrand,
+    });
+
+    if (!saved.success) {
+      throw new Error(saved.error || "Failed to save brand to master");
+    }
+  }
+
+  async function ensureCategoryMaster(
+    categoryName?: string | null,
+    subcategoryName?: string | null,
+  ) {
+    const trimmedCategory = categoryName?.trim();
+    const trimmedSubcategory = subcategoryName?.trim();
+
+    if (!trimmedCategory) return;
+
+    let categoryList = await platform.listCategories(licenseId);
+    if (!categoryList.success) {
+      throw new Error(categoryList.error || "Failed to load category master");
+    }
+
+    let rows = categoryList.rows;
+
+    let parent = rows.find(
+      (row) =>
+        !row.parentId &&
+        normalizeText(row.name) === normalizeText(trimmedCategory),
+    );
+
+    if (!parent) {
+      const savedParent = await platform.saveCategory({
+        licenseId,
+        name: trimmedCategory,
+        parentId: null,
+      });
+
+      if (!savedParent.success) {
+        throw new Error(
+          savedParent.error || "Failed to save category to master",
+        );
+      }
+
+      categoryList = await platform.listCategories(licenseId);
+      if (!categoryList.success) {
+        throw new Error(
+          categoryList.error || "Failed to refresh category master",
+        );
+      }
+
+      rows = categoryList.rows;
+      parent = rows.find(
+        (row) =>
+          !row.parentId &&
+          normalizeText(row.name) === normalizeText(trimmedCategory),
+      );
+
+      if (!parent) {
+        throw new Error("Saved category could not be resolved");
+      }
+    }
+
+    if (trimmedSubcategory) {
+      const child = rows.find(
+        (row) =>
+          row.parentId === parent!.id &&
+          normalizeText(row.name) === normalizeText(trimmedSubcategory),
+      );
+
+      if (!child) {
+        const savedChild = await platform.saveCategory({
+          licenseId,
+          name: trimmedSubcategory,
+          parentId: parent.id,
+        });
+
+        if (!savedChild.success) {
+          throw new Error(
+            savedChild.error || "Failed to save subcategory to master",
+          );
+        }
+
+        const refreshed = await platform.listCategories(licenseId);
+        if (refreshed.success) {
+          setAllCategories(refreshed.rows);
+        }
+        return;
+      }
+    }
+
+    setAllCategories(rows);
+  }
+
+  async function ensureMastersForProduct(values: {
+    brand?: string | null;
+    category?: string | null;
+    subcategory?: string | null;
+  }) {
+    await ensureBrandMaster(values.brand);
+    await ensureCategoryMaster(values.category, values.subcategory);
+  }
+
+  function resolveBulkCategorySelection(row: BulkRow): {
+    category: string | null;
+    subcategory: string | null;
+    error?: string;
+  } {
+    const rawCategory = row.category?.trim() ?? "";
+    const rawSubcategory = row.subcategory?.trim() ?? "";
+
+    if (!rawCategory) {
+      return {
+        category: null,
+        subcategory: null,
+        error: "Category is required",
+      };
+    }
+
+    // No master yet → allow typed values directly
+    if (!hasCategoryMaster) {
+      return {
+        category: rawCategory,
+        subcategory: rawSubcategory || null,
+      };
+    }
+
+    const parents = allCategories.filter((c) => !c.parentId);
+    const children = allCategories.filter((c) => !!c.parentId);
+
+    const matchedParent =
+      parents.find(
+        (parent) => normalizeText(parent.name) === normalizeText(rawCategory),
+      ) ?? null;
+
+    // New parent category in bulk → allow it
+    if (!matchedParent) {
+      return {
+        category: rawCategory,
+        subcategory: rawSubcategory || null,
+      };
+    }
+
+    const existingChildren = children.filter(
+      (child) => child.parentId === matchedParent.id,
+    );
+
+    // Existing parent with children → subcategory required
+    if (existingChildren.length > 0) {
+      if (!rawSubcategory) {
+        return {
+          category: null,
+          subcategory: null,
+          error: `Subcategory is required for ${matchedParent.name}`,
+        };
+      }
+
+      const matchedChild = existingChildren.find(
+        (child) => normalizeText(child.name) === normalizeText(rawSubcategory),
+      );
+
+      // Existing child
+      if (matchedChild) {
+        return {
+          category: matchedParent.name,
+          subcategory: matchedChild.name,
+        };
+      }
+
+      // New child under existing parent → allow it
+      return {
+        category: matchedParent.name,
+        subcategory: rawSubcategory,
+      };
+    }
+
+    // Existing direct category with no children
+    return {
+      category: matchedParent.name,
+      subcategory: rawSubcategory || null,
+    };
+  }
+
   async function loadNextBarcodePreview() {
     try {
       const res = await platform.peekNextBarcode?.(licenseId);
-      setNextBarcodePreview(res?.barcode || "00001");
+      setNextBarcodePreview(res?.barcode ?? "00001");
     } catch {
       setNextBarcodePreview("00001");
     }
@@ -216,9 +666,15 @@ export default function ProductFormModal({
   }
 
   function resetForm() {
-    setName("");
+    setProductName("");
     setBrand("");
+    setModel("");
+    setSize("");
+    setName("");
+    setNameAutoMode(true);
+    setPickerSelectedId("");
     setCategory("");
+    setSubcategory("");
     setUnit("NOS");
     setTax("P5");
     setHsn("");
@@ -228,6 +684,8 @@ export default function ProductFormModal({
     setCustomBarcodeInput("");
     setBarcodeError(null);
   }
+
+  // ── Barcodes ──────────────────────────────────────────────────────────────────
 
   async function addGeneratedBarcode() {
     setBarcodeError(null);
@@ -290,13 +748,36 @@ export default function ProductFormModal({
     setBarcodeEntries((prev) => prev.filter((e) => e.id !== entry.id));
   }
 
+  // ── Submit ────────────────────────────────────────────────────────────────────
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      if (!licenseId)
-        throw new Error("No active license found. Login again before saving.");
+      if (!licenseId) throw new Error("No active license found. Login again.");
+
+      const trimmedProductName = productName.trim();
       const trimmedName = name.trim();
-      if (!trimmedName) throw new Error("Product name is required");
+      const trimmedBrand = brand.trim();
+      const trimmedCategory = category.trim();
+      const trimmedSubcategory = subcategory.trim();
+
+      if (!trimmedProductName) throw new Error("Product name is required");
+      if (!trimmedName) throw new Error("Item name is required");
+
+      if (!trimmedCategory) {
+        throw new Error("Category is required");
+      }
+
+      if (
+        hasCategoryMaster &&
+        typedCategoryHasChildren &&
+        !trimmedSubcategory
+      ) {
+        throw new Error(
+          `Subcategory is required for ${matchedTypedParent?.name ?? trimmedCategory}`,
+        );
+      }
+
       const parsedCostPrice = costPrice ? parseFloat(costPrice) : 0;
       const parsedSalePrice = salePrice ? parseFloat(salePrice) : null;
       if (Number.isNaN(parsedCostPrice) || parsedCostPrice < 0)
@@ -306,6 +787,7 @@ export default function ProductFormModal({
         (Number.isNaN(parsedSalePrice) || parsedSalePrice < 0)
       )
         throw new Error("Invalid sale price");
+
       const seen = new Set<string>();
       for (const entry of barcodeEntries) {
         const value = entry.barcode.trim();
@@ -314,19 +796,31 @@ export default function ProductFormModal({
           throw new Error(`Duplicate barcode in form: ${value}`);
         seen.add(value);
       }
+
+      await ensureMastersForProduct({
+        brand: trimmedBrand || null,
+        category: trimmedCategory || null,
+        subcategory: trimmedSubcategory || null,
+      });
+
       const productData: ProductInput = {
         licenseId,
         code,
         codeNumber: parseInt(code, 10),
         name: trimmedName,
-        brand: brand.trim() || null,
-        category: category.trim() || null,
+        brand: trimmedBrand || null,
+        category: trimmedCategory || null,
+        subcategory: trimmedSubcategory || null,
+        productName: trimmedProductName || null,
+        model: model.trim() || null,
+        size: size.trim() || null,
         unit,
         tax,
         hsn: hsn.trim() || null,
         costPrice: parsedCostPrice,
         salePrice: parsedSalePrice,
       };
+
       let productId = "";
       if (editProduct) {
         const result = await platform.updateProduct(
@@ -340,7 +834,9 @@ export default function ProductFormModal({
         if (!result?.success) throw new Error(result?.error || "Create failed");
         productId = result.productId || "";
       }
+
       if (!productId) throw new Error("Product id missing after save");
+
       for (const entry of barcodeEntries) {
         const value = entry.barcode.trim();
         if (entry.saved || !value) continue;
@@ -355,6 +851,7 @@ export default function ProductFormModal({
         if (!bcResult?.success)
           throw new Error(bcResult?.error || `Failed to save barcode ${value}`);
       }
+
       showToast(
         "success",
         `Product ${editProduct ? "updated" : "created"} successfully.`,
@@ -366,7 +863,7 @@ export default function ProductFormModal({
         const nextCode = await platform.getNextCode(licenseId);
         setCode(nextCode);
         await loadNextBarcodePreview();
-        requestAnimationFrame(() => nameRef.current?.focus());
+        requestAnimationFrame(() => productNameRef.current?.focus());
         return;
       }
 
@@ -376,29 +873,49 @@ export default function ProductFormModal({
     }
   };
 
-  // ── Bulk Helpers ────────────────────────────────────────────────────────
+  // ── Bulk helpers ──────────────────────────────────────────────────────────────
+
   function parseBulkText(text: string): BulkRow[] {
     const lines = text.trim().split("\n").filter(Boolean);
     if (lines.length === 0) return [];
     const firstLine = lines[0].toLowerCase();
     const startIdx = firstLine.includes("name") ? 1 : 0;
     const rows: BulkRow[] = [];
+    const validUnits: UnitCode[] = ["NOS", "KG", "LTR", "MTR"];
+    const validTaxes: TaxCode[] = ["NT", "P5", "P12", "P18", "P28"];
+
     for (let i = startIdx; i < lines.length; i++) {
       const cols = lines[i].split(",").map((c) => c.trim());
-      const [rName, rBrand, rCategory, rUnit, rTax, rHsn, rCost, rSale] = cols;
+      const [
+        rName,
+        rBrand,
+        rCategory,
+        rSubcategory,
+        rProductName,
+        rModel,
+        rSize,
+        rUnit,
+        rTax,
+        rHsn,
+        rCost,
+        rSale,
+      ] = cols;
       if (!rName) continue;
-      const validUnits: UnitCode[] = ["NOS", "KG", "LTR", "MTR"];
-      const validTaxes: TaxCode[] = ["NT", "P5", "P12", "P18", "P28"];
       const unitVal = validUnits.includes(rUnit?.toUpperCase() as UnitCode)
         ? (rUnit.toUpperCase() as UnitCode)
         : "NOS";
       const taxVal = validTaxes.includes(rTax?.toUpperCase() as TaxCode)
         ? (rTax.toUpperCase() as TaxCode)
         : "NT";
+
       rows.push({
         name: rName,
         brand: rBrand || undefined,
         category: rCategory || undefined,
+        subcategory: rSubcategory || undefined,
+        productName: rProductName || undefined,
+        model: rModel || undefined,
+        size: rSize || undefined,
         unit: unitVal,
         tax: taxVal,
         hsn: rHsn || undefined,
@@ -420,26 +937,76 @@ export default function ProductFormModal({
   async function handleBulkSave() {
     setBulkSaving(true);
     const updated = [...bulkRows];
+
     for (let i = 0; i < updated.length; i++) {
       if (updated[i]._status === "success") continue;
+
       try {
         const nextCode = await platform.getNextCode(licenseId);
+        const r = updated[i];
+
+        const trimmedProductName = r.productName?.trim() ?? "";
+        const generatedName = buildAutoName(
+          r.brand ?? "",
+          trimmedProductName,
+          r.model ?? "",
+          r.size ?? "",
+        );
+        const fallbackName = r.name?.trim() ?? "";
+        const finalName = generatedName || fallbackName || trimmedProductName;
+
+        if (!trimmedProductName) {
+          throw new Error(`Row ${i + 1}: Product name is required`);
+        }
+
+        if (!finalName) {
+          throw new Error(`Row ${i + 1}: Item name could not be generated`);
+        }
+
+        const resolvedCategory = resolveBulkCategorySelection(r);
+        if (resolvedCategory.error) {
+          throw new Error(`Row ${i + 1}: ${resolvedCategory.error}`);
+        }
+
+        const trimmedBrand = r.brand?.trim() || null;
+
+        await ensureMastersForProduct({
+          brand: trimmedBrand,
+          category: resolvedCategory.category,
+          subcategory: resolvedCategory.subcategory,
+        });
+
         const productData: ProductInput = {
           licenseId,
           code: nextCode,
           codeNumber: parseInt(nextCode, 10),
-          name: updated[i].name,
-          brand: updated[i].brand || null,
-          category: updated[i].category || null,
-          unit: updated[i].unit,
-          tax: updated[i].tax,
-          hsn: updated[i].hsn || null,
-          costPrice: updated[i].costPrice,
-          salePrice: updated[i].salePrice ?? null,
+          name: finalName,
+          brand: trimmedBrand,
+          category: resolvedCategory.category,
+          subcategory: resolvedCategory.subcategory,
+          productName: trimmedProductName || null,
+          model: r.model?.trim() || null,
+          size: r.size?.trim() || null,
+          unit: r.unit,
+          tax: r.tax,
+          hsn: r.hsn?.trim() || null,
+          costPrice: r.costPrice,
+          salePrice: r.salePrice ?? null,
         };
+
         const result = await platform.createProduct(productData);
-        if (!result?.success) throw new Error(result?.error || "Create failed");
-        updated[i] = { ...updated[i], _status: "success", _error: undefined };
+        if (!result?.success) {
+          throw new Error(result?.error || "Create failed");
+        }
+
+        updated[i] = {
+          ...updated[i],
+          name: finalName,
+          category: resolvedCategory.category ?? undefined,
+          subcategory: resolvedCategory.subcategory ?? undefined,
+          _status: "success",
+          _error: undefined,
+        };
       } catch (err: any) {
         updated[i] = {
           ...updated[i],
@@ -447,11 +1014,19 @@ export default function ProductFormModal({
           _error: err?.message || "Failed",
         };
       }
+
       setBulkRows([...updated]);
     }
+
     setBulkSaving(false);
     setBulkDone(true);
-    onSuccess();
+
+    const successCount = updated.filter((r) => r._status === "success").length;
+    if (successCount > 0) {
+      onSuccess();
+    } else {
+      showToast("error", "No products were imported.");
+    }
   }
 
   function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -481,11 +1056,13 @@ export default function ProductFormModal({
     { value: "MTR", label: "Meters (MTR)" },
   ];
 
+  // ── Category picker render helpers ────────────────────────────────────────────
+
   if (!isOpen) return null;
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4"
+      className="fixed inset-0 z-[260] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -494,7 +1071,7 @@ export default function ProductFormModal({
         className="w-full sm:max-w-2xl sm:rounded-[24px] rounded-t-[24px] bg-[linear-gradient(180deg,rgba(255,255,255,0.97),rgba(248,250,252,0.97))] shadow-[0_-10px_60px_rgba(3,10,24,0.18)] backdrop-blur overflow-hidden flex flex-col max-h-[92dvh] sm:max-h-[88dvh]"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* ── Header (fixed, compact) ── */}
+        {/* ── Header ── */}
         <div className="relative overflow-hidden rounded-t-[24px] bg-[linear-gradient(135deg,#091120_0%,#0f1a31_60%,#16213d_100%)] px-4 py-3.5 text-white shrink-0">
           <div className="pointer-events-none absolute -left-6 top-0 h-16 w-16 rounded-full bg-cyan-400/15 blur-2xl" />
           <div className="pointer-events-none absolute right-0 top-0 h-16 w-16 rounded-full bg-fuchsia-500/15 blur-2xl" />
@@ -503,24 +1080,20 @@ export default function ProductFormModal({
               <span className="kyn-brand-pill shrink-0 inline-flex items-center rounded-full px-2.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.18em] text-white/80 whitespace-nowrap">
                 {editProduct ? "Edit Item" : "New Item"}
               </span>
-
               <h2 className="text-sm font-semibold tracking-[-0.02em] text-white truncate">
                 {editProduct ? "Update product" : "Add to catalog"}
               </h2>
-
               <span className="hidden sm:inline-flex items-center rounded-lg bg-white/10 border border-white/15 px-2.5 py-1 font-mono text-[11px] font-semibold text-white/70 tracking-wider">
                 #{code}
               </span>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={onClose}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/15 bg-white/10 text-white transition hover:bg-white/20"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/15 bg-white/10 text-white transition hover:bg-white/20"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
           </div>
         </div>
 
@@ -544,7 +1117,7 @@ export default function ProductFormModal({
           </div>
         )}
 
-        {/* ── Scrollable body ── */}
+        {/* ── Single item form ── */}
         {activeTab === "single" ? (
           <form
             id="product-form"
@@ -561,20 +1134,19 @@ export default function ProductFormModal({
               </span>
             </div>
 
-            {/* Name + Brand */}
+            {/* ── Row 1: Product Name + Brand ── */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className={labelClass}>
                   Product Name <span className="text-rose-400">*</span>
                 </label>
                 <input
-                  ref={nameRef}
+                  ref={productNameRef}
                   type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  onKeyDown={(e) => handleKeyDown(e, IDX.NAME)}
-                  required
-                  placeholder="Enter product name"
+                  value={productName}
+                  onChange={(e) => setProductName(e.target.value)}
+                  onKeyDown={(e) => handleKeyDown(e, IDX.PRODUCT_NAME)}
+                  placeholder="e.g. Toothpaste, iPhone"
                   className={fieldClass}
                 />
               </div>
@@ -585,21 +1157,97 @@ export default function ProductFormModal({
                   value={brand}
                   onChange={setBrand}
                   options={existingBrands.map((b) => ({ value: b, label: b }))}
-                  placeholder="Enter or pick brand"
+                  placeholder="e.g. Apple, Nike"
                   allowCustom
                   autoOpenOnFocus={false}
                   onEnter={(dir) => {
                     if (dir === -1) {
-                      inputRefs[IDX.NAME].current?.focus();
+                      inputRefs[IDX.PRODUCT_NAME].current?.focus();
                     } else {
-                      inputRefs[IDX.UNIT].current?.focus();
+                      inputRefs[IDX.MODEL].current?.focus();
                     }
                   }}
                 />
               </div>
             </div>
 
-            {/* Unit + Tax */}
+            {/* ── Row 2: Model + Size ── */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={labelClass}>Model / Variant</label>
+                <input
+                  ref={modelRef}
+                  type="text"
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  onKeyDown={(e) => handleKeyDown(e, IDX.MODEL)}
+                  placeholder="e.g. Pro, Mini, Ultra"
+                  className={fieldClass}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Size / Qty</label>
+                <input
+                  ref={sizeRef}
+                  type="text"
+                  value={size}
+                  onChange={(e) => setSize(e.target.value)}
+                  onKeyDown={(e) => handleKeyDown(e, IDX.SIZE)}
+                  placeholder="e.g. 500g, 60ml, 1L"
+                  className={fieldClass}
+                />
+              </div>
+            </div>
+
+            {/* ── Row 3: Item Name (auto-generated) ── */}
+            <div>
+              <div className="mb-1 flex items-center justify-between">
+                <label className={labelClass}>
+                  Item Name <span className="text-rose-400">*</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNameAutoMode(true);
+                    const generated = buildAutoName(
+                      brand,
+                      productName,
+                      model,
+                      size,
+                    );
+                    setName(generated);
+                  }}
+                  className={`inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[10px] font-semibold transition ${
+                    nameAutoMode
+                      ? "bg-cyan-100 text-cyan-700"
+                      : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                  }`}
+                >
+                  <Sparkles className="h-2.5 w-2.5" />
+                  {nameAutoMode ? "Auto" : "Set Auto"}
+                </button>
+              </div>
+              <input
+                ref={nameRef}
+                type="text"
+                value={name}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  setNameAutoMode(false);
+                }}
+                onKeyDown={(e) => handleKeyDown(e, IDX.NAME)}
+                required
+                placeholder="Auto-filled from Brand + Product + Model + Size"
+                className={fieldClass}
+              />
+              {nameAutoMode && (
+                <p className="mt-1 text-[10px] text-slate-400">
+                  Auto-generates from Brand · Product Name · Model · Size
+                </p>
+              )}
+            </div>
+
+            {/* ── Row 4: Unit + Tax ── */}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className={labelClass}>
@@ -625,51 +1273,160 @@ export default function ProductFormModal({
                   onChange={(value) => setTax(value as TaxCode)}
                   options={taxOptions}
                   placeholder="Select tax"
-                  onEnter={() => inputRefs[IDX.CATEGORY].current?.focus()}
+                  onEnter={() => inputRefs[IDX.HSN].current?.focus()}
                   required
                 />
               </div>
             </div>
 
-            {/* Category + HSN */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className={labelClass}>Category</label>
-                <SearchableDropdown
-                  ref={categoryRef}
-                  value={category}
-                  onChange={setCategory}
-                  options={existingCategories.map((c) => ({
-                    value: c,
-                    label: c,
-                  }))}
-                  placeholder="Enter or pick category"
-                  allowCustom
-                  autoOpenOnFocus={false}
-                  onEnter={(dir) => {
-                    if (dir === -1) {
-                      inputRefs[IDX.TAX].current?.focus();
-                    } else {
-                      inputRefs[IDX.HSN].current?.focus();
-                    }
-                  }}
-                />
+            {/* ── Row 5: Category / Subcategory ── */}
+            <div className="rounded-[14px] border border-slate-200/80 bg-slate-50/60 p-3 space-y-2.5">
+              <div className="flex items-center gap-2">
+                <div className="flex h-6 w-6 items-center justify-center rounded-lg kyn-brand-chip">
+                  <FolderTree className="h-3 w-3 text-slate-700" />
+                </div>
+                <span className="text-xs font-semibold text-slate-800">
+                  Category
+                </span>
               </div>
-              <div>
-                <label className={labelClass}>HSN Code</label>
-                <input
-                  ref={hsnRef}
-                  type="text"
-                  value={hsn}
-                  onChange={(e) => setHsn(e.target.value)}
-                  onKeyDown={(e) => handleKeyDown(e, IDX.HSN)}
-                  placeholder="Enter HSN"
-                  className={fieldClass}
-                />
-              </div>
+
+              {allCategories.length > 0 ? (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <label className={labelClass}>
+                        Category <span className="text-rose-400">*</span>
+                      </label>
+                      <SearchableDropdown
+                        value={category}
+                        onChange={(val) => {
+                          const nextCategory = val ?? "";
+                          const changed =
+                            normalizeText(nextCategory) !==
+                            normalizeText(category);
+
+                          setCategory(nextCategory);
+                          setPickerSelectedId("");
+
+                          if (changed) {
+                            setSubcategory("");
+                          }
+                        }}
+                        options={parentCategoryOptions.map((row) => ({
+                          value: row.name,
+                          label: row.name,
+                        }))}
+                        placeholder="Pick or type category"
+                        allowCustom
+                        autoOpenOnFocus={false}
+                      />
+                    </div>
+
+                    <div>
+                      <label className={labelClass}>
+                        Subcategory
+                        {typedCategoryHasChildren && (
+                          <span className="text-rose-400"> *</span>
+                        )}
+                      </label>
+                      <SearchableDropdown
+                        key={category}
+                        value={subcategory}
+                        onChange={(val) => {
+                          setSubcategory(val ?? "");
+                          setPickerSelectedId("");
+                        }}
+                        options={subcategoryOptionsForTypedParent.map(
+                          (row) => ({
+                            value: row.name,
+                            label: row.name,
+                          }),
+                        )}
+                        placeholder={
+                          typedCategoryHasChildren
+                            ? "Pick or type subcategory"
+                            : "Optional subcategory"
+                        }
+                        allowCustom
+                        autoOpenOnFocus={false}
+                      />
+                    </div>
+                  </div>
+
+                  {category ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">
+                        Selected:
+                      </span>
+                      <span className="rounded-full bg-slate-100 border border-slate-200 px-2.5 py-0.5 text-[11px] font-semibold text-slate-700">
+                        {category}
+                      </span>
+                      {subcategory && (
+                        <>
+                          <span className="text-slate-300 text-xs">›</span>
+                          <span className="rounded-full bg-cyan-50 border border-cyan-200 px-2.5 py-0.5 text-[11px] font-semibold text-cyan-700">
+                            {subcategory}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] italic text-slate-400">
+                      Pick an existing category or type a new one. If an
+                      existing category has subcategories, subcategory is
+                      required.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                /* ── Fallback: no master categories, use free-text ── */
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className={labelClass}>Category</label>
+                    <SearchableDropdown
+                      value={category}
+                      onChange={(val) => {
+                        setCategory(val);
+                        setSubcategory("");
+                      }}
+                      options={existingCategories.map((c) => ({
+                        value: c,
+                        label: c,
+                      }))}
+                      placeholder="Enter or pick category"
+                      allowCustom
+                      autoOpenOnFocus={false}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Subcategory</label>
+                    <input
+                      type="text"
+                      value={subcategory}
+                      onChange={(e) => setSubcategory(e.target.value)}
+                      placeholder="Optional subcategory"
+                      className={fieldClass}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* Pricing */}
+            {/* ── Row 6: HSN ── */}
+            <div>
+              <label className={labelClass}>HSN Code</label>
+              <input
+                ref={hsnRef}
+                type="text"
+                value={hsn}
+                onChange={(e) => setHsn(e.target.value)}
+                onKeyDown={(e) => handleKeyDown(e, IDX.HSN)}
+                placeholder="Enter HSN"
+                className={fieldClass}
+              />
+            </div>
+
+            {/* ── Row 7: Pricing ── */}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className={labelClass}>
@@ -714,7 +1471,7 @@ export default function ProductFormModal({
               </div>
             </div>
 
-            {/* Barcode section */}
+            {/* ── Row 8: Barcodes ── */}
             <div className="rounded-[14px] border border-dashed border-slate-200 bg-slate-50/60 p-3 space-y-2.5">
               <div className="flex items-center gap-2">
                 <div className="flex h-6 w-6 items-center justify-center rounded-lg kyn-brand-chip">
@@ -736,7 +1493,11 @@ export default function ProductFormModal({
                       className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5"
                     >
                       <span
-                        className={`rounded-md px-1.5 py-0.5 font-mono text-[11px] font-semibold ${entry.isGenerated ? "bg-cyan-100 text-cyan-800" : "bg-fuchsia-100 text-fuchsia-800"}`}
+                        className={`rounded-md px-1.5 py-0.5 font-mono text-[11px] font-semibold ${
+                          entry.isGenerated
+                            ? "bg-cyan-100 text-cyan-800"
+                            : "bg-fuchsia-100 text-fuchsia-800"
+                        }`}
                       >
                         {entry.barcode}
                       </span>
@@ -762,15 +1523,15 @@ export default function ProductFormModal({
                 </div>
               )}
 
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                 <button
                   type="button"
                   onClick={addGeneratedBarcode}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-cyan-600 px-2.5 py-1.5 text-[11px] font-semibold text-white transition hover:bg-cyan-700"
+                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl bg-cyan-600 px-3 py-2 text-[11px] font-semibold text-white transition hover:bg-cyan-700 sm:h-auto sm:justify-start sm:px-2.5 sm:py-1.5"
                 >
                   <Zap className="h-3 w-3" /> Reserve {nextBarcodePreview}
                 </button>
-                <div className="flex flex-1 min-w-[160px] items-center gap-1.5">
+                <div className="flex w-full items-center gap-1.5 sm:min-w-[160px] sm:flex-1">
                   <input
                     type="text"
                     value={customBarcodeInput}
@@ -785,12 +1546,12 @@ export default function ProductFormModal({
                       }
                     }}
                     placeholder="Custom barcode"
-                    className="h-7 flex-1 rounded-xl border border-slate-200 bg-white px-2.5 text-xs text-slate-800 outline-none placeholder:text-slate-400 focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/10"
+                    className="h-9 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-xs text-slate-800 outline-none placeholder:text-slate-400 focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/10 sm:h-7 sm:px-2.5"
                   />
                   <button
                     type="button"
                     onClick={addCustomBarcode}
-                    className="inline-flex h-7 items-center gap-1 rounded-xl bg-slate-800 px-2.5 text-[11px] font-semibold text-white transition hover:bg-slate-700"
+                    className="inline-flex h-9 shrink-0 items-center justify-center gap-1 rounded-xl bg-slate-800 px-3 text-[11px] font-semibold text-white transition hover:bg-slate-700 sm:h-7 sm:px-2.5"
                   >
                     <Plus className="h-3 w-3" /> Add
                   </button>
@@ -811,6 +1572,7 @@ export default function ProductFormModal({
             </div>
           </form>
         ) : (
+          /* ── Bulk tab ── */
           <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-5 sm:py-4 space-y-4 no-scrollbar">
             <div className="rounded-[18px] border border-slate-200 bg-slate-50 p-4">
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -837,11 +1599,12 @@ export default function ProductFormModal({
                 className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-mono text-slate-800 outline-none placeholder:text-slate-300 transition focus:border-cyan-400/60 focus:ring-4 focus:ring-cyan-400/10 resize-none"
               />
             </div>
-            <div className="flex flex-wrap gap-2">
+
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 sm:justify-start"
               >
                 <Upload className="h-4 w-4" /> Upload CSV File
               </button>
@@ -849,7 +1612,7 @@ export default function ProductFormModal({
                 type="button"
                 onClick={handleBulkParse}
                 disabled={!bulkText.trim()}
-                className="inline-flex items-center gap-2 rounded-xl bg-slate-800 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:opacity-40"
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-800 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:opacity-40 sm:justify-start"
               >
                 <ClipboardPaste className="h-4 w-4" /> Preview
               </button>
@@ -861,6 +1624,7 @@ export default function ProductFormModal({
                 onChange={handleFileUpload}
               />
             </div>
+
             {bulkParsed && bulkRows.length > 0 && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
@@ -882,16 +1646,87 @@ export default function ProductFormModal({
                     </p>
                   )}
                 </div>
-                <div className="overflow-x-auto rounded-xl border border-slate-200">
-                  <table className="w-full min-w-[500px] text-xs">
+
+                {/* Mobile cards */}
+                <div className="space-y-2 sm:hidden">
+                  {bulkRows.map((r, i) => (
+                    <div
+                      key={i}
+                      className={`rounded-xl border px-3 py-3 ${
+                        r._status === "success"
+                          ? "border-emerald-200 bg-emerald-50"
+                          : r._status === "error"
+                            ? "border-rose-200 bg-rose-50"
+                            : "border-slate-200 bg-white"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-slate-900">
+                            {r.name}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {[r.brand, r.category, r.subcategory]
+                              .filter(Boolean)
+                              .join(" · ") || "—"}
+                          </p>
+                        </div>
+                        <div className="shrink-0">
+                          {r._status === "success" && (
+                            <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                          )}
+                          {r._status === "error" && (
+                            <AlertCircle className="h-4 w-4 text-rose-500" />
+                          )}
+                        </div>
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                        <div className="rounded-lg bg-slate-50 px-2.5 py-2">
+                          <span className="block text-slate-400">Unit</span>
+                          <span className="font-medium text-slate-700">
+                            {r.unit}
+                          </span>
+                        </div>
+                        <div className="rounded-lg bg-slate-50 px-2.5 py-2">
+                          <span className="block text-slate-400">Tax</span>
+                          <span className="font-medium text-slate-700">
+                            {r.tax}
+                          </span>
+                        </div>
+                        <div className="rounded-lg bg-slate-50 px-2.5 py-2">
+                          <span className="block text-slate-400">Cost</span>
+                          <span className="font-medium text-slate-700">
+                            ₹{r.costPrice}
+                          </span>
+                        </div>
+                        <div className="rounded-lg bg-slate-50 px-2.5 py-2">
+                          <span className="block text-slate-400">Sale</span>
+                          <span className="font-medium text-emerald-600">
+                            {r.salePrice ? `₹${r.salePrice}` : "—"}
+                          </span>
+                        </div>
+                      </div>
+                      {r._error && (
+                        <p className="mt-2 text-[11px] text-rose-500">
+                          {r._error}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Desktop table */}
+                <div className="hidden overflow-x-auto rounded-xl border border-slate-200 sm:block">
+                  <table className="w-full min-w-[560px] text-xs">
                     <thead className="bg-[#1e3a5f]">
                       <tr>
                         {[
                           "Name",
                           "Brand",
                           "Category",
-                          "Unit",
-                          "Tax",
+                          "Sub",
+                          "Model",
+                          "Size",
                           "Cost",
                           "Sale",
                           "",
@@ -926,12 +1761,15 @@ export default function ProductFormModal({
                           <td className="px-3 py-2 text-slate-500">
                             {r.category || "—"}
                           </td>
-                          <td className="px-3 py-2">
-                            <span className="rounded bg-cyan-50 px-1.5 py-0.5 text-[10px] font-semibold text-cyan-700">
-                              {r.unit}
-                            </span>
+                          <td className="px-3 py-2 text-slate-500">
+                            {r.subcategory || "—"}
                           </td>
-                          <td className="px-3 py-2 text-slate-500">{r.tax}</td>
+                          <td className="px-3 py-2 text-slate-500">
+                            {r.model || "—"}
+                          </td>
+                          <td className="px-3 py-2 text-slate-500">
+                            {r.size || "—"}
+                          </td>
                           <td className="px-3 py-2 text-slate-700">
                             ₹{r.costPrice}
                           </td>
@@ -953,6 +1791,7 @@ export default function ProductFormModal({
                     </tbody>
                   </table>
                 </div>
+
                 {!bulkDone && (
                   <button
                     type="button"
@@ -984,9 +1823,9 @@ export default function ProductFormModal({
           </div>
         )}
 
-        {/* ── Footer (fixed, compact) ── */}
+        {/* ── Footer ── */}
         {activeTab === "single" && (
-          <div className="shrink-0 border-t border-slate-100 bg-white/80 backdrop-blur px-4 py-3 sm:px-5">
+          <div className="shrink-0 border-t border-slate-100 bg-white/95 backdrop-blur px-4 pt-3 pb-[calc(0.9rem+env(safe-area-inset-bottom))] sm:px-5 sm:py-3">
             <div className="flex flex-col gap-2 sm:flex-row">
               <button
                 type="button"
@@ -995,7 +1834,6 @@ export default function ProductFormModal({
               >
                 Cancel
               </button>
-
               {!editProduct && (
                 <button
                   type="submit"
@@ -1006,7 +1844,6 @@ export default function ProductFormModal({
                   Save & Add Another
                 </button>
               )}
-
               <button
                 type="submit"
                 form="product-form"

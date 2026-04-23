@@ -8,6 +8,13 @@ import type {
   ShopSettingsPayload,
   BatchUpdatePayload,
   BatchMutationResult,
+  CategoryListResult,
+  CategorySavePayload,
+  CategoryMutationResult,
+  BrandListResult,
+  BrandSavePayload,
+  BrandMutationResult,
+  MutationResult,
 } from "../types";
 import {
   getWebShopSettings,
@@ -35,6 +42,12 @@ import {
   webUpdateBatch,
   webRebuildProductStock,
 } from "./products";
+import {
+  webListCategories,
+  webSaveCategory,
+  webDeleteCategory,
+} from "./categories";
+import { webListBrands, webSaveBrand, webDeleteBrand } from "./brands";
 
 let onlineHookRegistered = false;
 function ensureOnlineSyncHook() {
@@ -107,8 +120,27 @@ export const webPlatform: PlatformAPI = {
   deleteBatch: (batchId: string) => webDeleteBatch(batchId),
   rebuildProductStock: (productId: string) => webRebuildProductStock(productId),
 
-  // ── Shop Settings ─────────────────────────────────────────────────────────
+  // ── Categories ────────────────────────────────────────────────────────────
+  listCategories: (licenseId: string): Promise<CategoryListResult> =>
+    webListCategories(licenseId),
 
+  saveCategory: (
+    payload: CategorySavePayload,
+  ): Promise<CategoryMutationResult> => webSaveCategory(payload),
+
+  deleteCategory: (id: string): Promise<MutationResult> =>
+    webDeleteCategory(id),
+
+  // ── Brands ────────────────────────────────────────────────────────────────
+  listBrands: (licenseId: string): Promise<BrandListResult> =>
+    webListBrands(licenseId),
+
+  saveBrand: (payload: BrandSavePayload): Promise<BrandMutationResult> =>
+    webSaveBrand(payload),
+
+  deleteBrand: (id: string): Promise<MutationResult> => webDeleteBrand(id),
+
+  // ── Shop Settings ─────────────────────────────────────────────────────────
   getShopSettings: async (licenseId: string) => {
     ensureOnlineSyncHook();
     return getWebShopSettings(licenseId);

@@ -138,27 +138,32 @@ function registerProductHandlers() {
 
     db.prepare(
       `
-      INSERT INTO products 
-        (
-          id, licenseId, code, codeNumber, name, brand, category,
-          unit, tax, hsn, costPrice, salePrice, stock, barcode,
-          createdAt, updatedAt
-        ) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `,
+    INSERT INTO products 
+      (
+        id, licenseId, code, codeNumber, name, brand, category, subcategory,
+        productName, model, size,
+        unit, tax, hsn, costPrice, salePrice, stock, barcode,
+        createdAt, updatedAt
+      ) 
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `,
     ).run(
       newId,
       product.licenseId,
       product.code,
       product.codeNumber,
       product.name,
-      product.brand,
-      product.category,
+      product.brand ?? null,
+      product.category ?? null,
+      product.subcategory ?? null,
+      product.productName ?? null,
+      product.model ?? null,
+      product.size ?? null,
       product.unit,
       product.tax,
-      product.hsn,
+      product.hsn ?? null,
       product.costPrice,
-      product.salePrice,
+      product.salePrice ?? null,
       0,
       null,
       now,
@@ -167,15 +172,14 @@ function registerProductHandlers() {
 
     db.prepare(
       `
-      INSERT INTO code_sequence (licenseId, lastCodeNumber)
-      VALUES (?, ?)
-      ON CONFLICT(licenseId) DO UPDATE SET lastCodeNumber = excluded.lastCodeNumber
-    `,
+    INSERT INTO code_sequence (licenseId, lastCodeNumber)
+    VALUES (?, ?)
+    ON CONFLICT(licenseId) DO UPDATE SET lastCodeNumber = excluded.lastCodeNumber
+  `,
     ).run(product.licenseId, product.codeNumber);
 
     return { success: true, productId: newId };
   });
-
   ipcMain.handle(
     "get-products",
     (event, licenseId, { page = 1, pageSize = 10 } = {}) => {
@@ -184,8 +188,9 @@ function registerProductHandlers() {
       const products = db
         .prepare(
           `
-    SELECT
-  p.id, p.code, p.name, p.brand, p.category, p.unit, p.tax, p.hsn,
+  SELECT
+  p.id, p.code, p.name, p.brand, p.category, p.subcategory,
+  p.productName, p.model, p.size, p.unit, p.tax, p.hsn,
   p.costPrice, p.salePrice,
   COALESCE(SUM(CASE WHEN COALESCE(b.deletedAt,'')='' THEN b.stock ELSE 0 END), 0) AS stock,
   (
@@ -242,7 +247,8 @@ LIMIT ? OFFSET ?
         .prepare(
           `
 SELECT
-  p.id, p.code, p.name, p.brand, p.category, p.unit, p.tax, p.hsn,
+  p.id, p.code, p.name, p.brand, p.category, p.subcategory,
+  p.productName, p.model, p.size, p.unit, p.tax, p.hsn,
   p.costPrice, p.salePrice,
   COALESCE(SUM(CASE WHEN COALESCE(b.deletedAt,'')='' THEN b.stock ELSE 0 END), 0) AS stock,
   (
@@ -278,23 +284,28 @@ LIMIT ? OFFSET ?
     const result = db
       .prepare(
         `
-      UPDATE products 
-      SET name = ?, brand = ?, category = ?, unit = ?, tax = ?, hsn = ?, 
-          costPrice = ?, salePrice = ?, updatedAt = ?,
-          isSynced = 0,
-          syncedAt = NULL
-      WHERE id = ?
-    `,
+  UPDATE products 
+  SET name = ?, brand = ?, category = ?, subcategory = ?,
+      productName = ?, model = ?, size = ?,
+      unit = ?, tax = ?, hsn = ?, 
+      costPrice = ?, salePrice = ?, updatedAt = ?,
+      isSynced = 0, syncedAt = NULL
+  WHERE id = ?
+`,
       )
       .run(
         product.name,
-        product.brand,
-        product.category,
+        product.brand ?? null,
+        product.category ?? null,
+        product.subcategory ?? null,
+        product.productName ?? null,
+        product.model ?? null,
+        product.size ?? null,
         product.unit,
         product.tax,
-        product.hsn,
+        product.hsn ?? null,
         product.costPrice,
-        product.salePrice,
+        product.salePrice ?? null,
         now,
         productId,
       );

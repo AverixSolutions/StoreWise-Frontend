@@ -40,6 +40,16 @@ contextBridge.exposeInMainWorld("electronAPI", {
   bulkUpdateProductPrices: (updates) =>
     ipcRenderer.invoke("bulk-update-product-prices", updates),
 
+  // ---- Category APIs ----
+  listCategories: (licenseId) => ipcRenderer.invoke("category:list", licenseId),
+  saveCategory: (payload) => ipcRenderer.invoke("category:save", payload),
+  deleteCategory: (payload) => ipcRenderer.invoke("category:delete", payload),
+
+  // ---- Brand APIs ----
+  listBrands: (licenseId) => ipcRenderer.invoke("brand:list", licenseId),
+  saveBrand: (payload) => ipcRenderer.invoke("brand:save", payload),
+  deleteBrand: (id) => ipcRenderer.invoke("brand:delete", id),
+
   // Product sync
   getDirtyProducts: (licenseId, limit) =>
     ipcRenderer.invoke("get-dirty-products", licenseId, limit),

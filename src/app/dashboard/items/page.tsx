@@ -9,8 +9,13 @@ import BarcodePrintCenterButton from "@/components/barcodes/BarcodePrintCenterBu
 import { platform } from "@/platform";
 import { getActiveLicenseId } from "@/lib/session/runtimeSession";
 import { Plus, Search, X } from "lucide-react";
-import type { ProductSummary } from "@/platform/types";
+import type {
+  ProductSummary,
+  CategoryRecord,
+  BrandRecord,
+} from "@/platform/types";
 import SearchableDropdown from "@/components/ui/SearchableDropdown";
+import ProductViewModal from "@/components/products/ProductViewModal";
 
 type Product = ProductSummary;
 
@@ -30,12 +35,17 @@ export default function ItemsPage() {
 
   const [categories, setCategories] = useState<string[]>([]);
   const [brands, setBrands] = useState<string[]>([]);
+  const [productNames, setProductNames] = useState<string[]>([]);
+  const [categoryRecords, setCategoryRecords] = useState<CategoryRecord[]>([]);
 
   const [batchOpen, setBatchOpen] = useState(false);
   const [batchProductId, setBatchProductId] = useState<string | null>(null);
   const [batchProductName, setBatchProductName] = useState<string | undefined>(
     undefined,
   );
+
+  const [viewProduct, setViewProduct] = useState<Product | null>(null);
+  const [isViewOpen, setIsViewOpen] = useState(false);
 
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -47,25 +57,42 @@ export default function ItemsPage() {
 
   useEffect(() => {
     if (!isClient || !licenseId) return;
-    platform
-      .getProducts(licenseId, { page: 1, pageSize: 1000 })
-      .then((result: any) => {
+
+    Promise.all([
+      platform.getProducts(licenseId, { page: 1, pageSize: 1000 }),
+      platform.listCategories(licenseId),
+      platform.listBrands(licenseId),
+    ])
+      .then(([productsResult, categoriesResult, brandsResult]) => {
+        setProductNames(productsResult.products.map((p: any) => p.name));
+
         setCategories(
           Array.from(
             new Set(
-              result.products
+              productsResult.products
                 .map((p: any) => p.category)
                 .filter((c: string | undefined): c is string => !!c),
             ),
           ),
         );
+
+        if (categoriesResult.success) {
+          setCategoryRecords(categoriesResult.rows);
+        } else {
+          setCategoryRecords([]);
+        }
+
+        const productBrands = productsResult.products
+          .map((p: any) => p.brand)
+          .filter((b: string | undefined): b is string => !!b);
+
+        const masterBrands = brandsResult.success
+          ? brandsResult.rows.map((row) => row.name)
+          : [];
+
         setBrands(
-          Array.from(
-            new Set(
-              result.products
-                .map((p: any) => p.brand)
-                .filter((b: string | undefined): b is string => !!b),
-            ),
+          Array.from(new Set([...masterBrands, ...productBrands])).sort(
+            (a, b) => a.localeCompare(b),
           ),
         );
       })
@@ -80,6 +107,11 @@ export default function ItemsPage() {
   const handleEditProduct = (product: Product) => {
     setEditProduct(product);
     setIsModalOpen(true);
+  };
+
+  const handleViewProduct = (product: Product) => {
+    setViewProduct(product);
+    setIsViewOpen(true);
   };
 
   const handleDeleteProduct = (_id: string) => {
@@ -128,7 +160,7 @@ export default function ItemsPage() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 pb-10 md:pb-0">
       {/* ── Hero Header ── */}
       <section className="relative overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(135deg,#091120_0%,#0f1a31_58%,#16213d_100%)] px-5 py-5 text-white shadow-[0_22px_50px_rgba(5,10,20,0.18)] md:px-6 md:py-6">
         <div className="pointer-events-none absolute -left-12 top-0 h-32 w-32 rounded-full bg-cyan-400/12 blur-3xl" />
@@ -153,11 +185,11 @@ export default function ItemsPage() {
               licenseId={licenseId}
               defaultShopName={shopName}
               buttonText="Print Barcodes"
-              className="inline-flex items-center gap-2 rounded-2xl border border-white/15 bg-white/[0.07] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(0,0,0,0.16)] transition hover:bg-white/[0.12]"
+              className="inline-flex items-center gap-2 rounded-2xl border border-white/15 bg-white/[0.07] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(0,0,0,0.16)] transition hover:bg-white/[0.12] cursor-pointer"
             />
             <button
               onClick={handleAddProduct}
-              className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-2.5 text-sm font-semibold text-slate-900 shadow-[0_10px_24px_rgba(255,255,255,0.12)] transition hover:bg-slate-50"
+              className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-2.5 text-sm font-semibold text-slate-900 shadow-[0_10px_24px_rgba(255,255,255,0.12)] transition hover:bg-slate-50 cursor-pointer"
             >
               <Plus className="h-4 w-4" />
               Add Product
@@ -178,7 +210,7 @@ export default function ItemsPage() {
               autoOpenOnFocus={false}
               buttonProps={{
                 className:
-                  "h-[44px] rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-sm focus:border-cyan-400/60 focus:ring-4 focus:ring-cyan-400/10",
+                  "h-[44px] rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-sm focus:border-cyan-400/60 focus:ring-4 focus:ring-cyan-400/10 cursor-pointer",
               }}
               menuClassName="rounded-2xl"
               inputClassName="text-sm"
@@ -195,7 +227,7 @@ export default function ItemsPage() {
               autoOpenOnFocus={false}
               buttonProps={{
                 className:
-                  "h-[44px] rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-sm focus:border-cyan-400/60 focus:ring-4 focus:ring-cyan-400/10",
+                  "h-[44px] rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-sm focus:border-cyan-400/60 focus:ring-4 focus:ring-cyan-400/10 cursor-pointer",
               }}
               menuClassName="rounded-2xl"
               inputClassName="text-sm"
@@ -232,7 +264,7 @@ export default function ItemsPage() {
               type="button"
               onClick={clearAll}
               disabled={!hasFilters}
-              className="inline-flex h-[44px] w-full items-center justify-center gap-1.5 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-500 transition hover:bg-slate-50 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-50 lg:w-auto"
+              className="inline-flex h-[44px] w-full items-center justify-center gap-1.5 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-500 transition hover:bg-slate-50 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-50 lg:w-auto cursor-pointer"
             >
               <X className="h-3.5 w-3.5" />
               Clear
@@ -247,6 +279,7 @@ export default function ItemsPage() {
         onAdd={handleAddProduct}
         onEdit={handleEditProduct}
         onDelete={handleDeleteProduct}
+        onView={handleViewProduct}
         onManageBatches={(p) => openBatches(p.id, p.name)}
         refreshTrigger={refreshTrigger}
         nameFilter={searchQuery}
@@ -261,6 +294,7 @@ export default function ItemsPage() {
         editProduct={editProduct}
         existingCategories={categories}
         existingBrands={brands}
+        categoryRecords={categoryRecords}
       />
 
       <ProductBatchesDrawer
@@ -274,6 +308,15 @@ export default function ItemsPage() {
         productId={batchProductId}
         productName={batchProductName}
         licenseId={licenseId}
+      />
+
+      <ProductViewModal
+        open={isViewOpen}
+        onClose={() => {
+          setIsViewOpen(false);
+          setViewProduct(null);
+        }}
+        product={viewProduct}
       />
     </div>
   );

@@ -15,6 +15,12 @@ import type {
   TaxCode,
   BatchUpdatePayload,
   BatchMutationResult,
+  CategoryListResult,
+  CategorySavePayload,
+  CategoryMutationResult,
+  BrandListResult,
+  BrandSavePayload,
+  BrandMutationResult,
 } from "../types";
 
 function requireElectronAPI() {
@@ -42,6 +48,10 @@ function mapProductSummary(row: any): ProductSummary {
     name: row.name,
     brand: row.brand ?? null,
     category: row.category ?? null,
+    subcategory: row.subcategory ?? null,
+    productName: row.productName ?? null,
+    model: row.model ?? null,
+    size: row.size ?? null,
     barcode: row.barcode ?? null,
     batchCount: Number(row.batchCount ?? 0),
     unit: toUnitCode(row.unit),
@@ -248,6 +258,34 @@ export const desktopPlatform: PlatformAPI = {
 
   rebuildProductStock: (productId: string) => {
     return requireElectronAPI().rebuildProductStock(productId);
+  },
+
+  listCategories: async (licenseId: string): Promise<CategoryListResult> => {
+    return requireElectronAPI().listCategories(licenseId);
+  },
+
+  saveCategory: async (
+    payload: CategorySavePayload,
+  ): Promise<CategoryMutationResult> => {
+    return requireElectronAPI().saveCategory(payload);
+  },
+
+  deleteCategory: async (id: string) => {
+    return requireElectronAPI().deleteCategory(id);
+  },
+
+  listBrands: async (licenseId: string): Promise<BrandListResult> => {
+    return requireElectronAPI().listBrands(licenseId);
+  },
+
+  saveBrand: async (
+    payload: BrandSavePayload,
+  ): Promise<BrandMutationResult> => {
+    return requireElectronAPI().saveBrand(payload);
+  },
+
+  deleteBrand: async (id: string) => {
+    return requireElectronAPI().deleteBrand(id);
   },
 
   getShopSettings: (licenseId: string) => {

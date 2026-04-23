@@ -112,7 +112,7 @@ function EntryTile({
       whileHover={{ y: -2 }}
       whileTap={{ scale: 0.985 }}
       onClick={() => onOpen(item.path)}
-      className={`group w-full rounded-[22px] border border-slate-200/80 bg-[#fcfbf7] text-left shadow-[0_10px_24px_rgba(15,23,42,0.05)] transition hover:border-fuchsia-200 hover:shadow-[0_16px_30px_rgba(32,183,255,0.08)] ${
+      className={`group w-full rounded-[22px] border border-slate-200/80 bg-[#fcfbf7] text-left shadow-[0_10px_24px_rgba(15,23,42,0.05)] transition hover:border-fuchsia-200 hover:shadow-[0_16px_30px_rgba(32,183,255,0.08)] cursor-pointer ${
         compact ? "p-4" : "p-4.5"
       }`}
     >
@@ -166,7 +166,7 @@ export default function EntriesPage() {
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden">
+    <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden pb-10 md:pb-0">
       <section className="relative overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(135deg,#0a1324_0%,#101a31_58%,#16213d_100%)] px-5 py-4 text-white shadow-[0_8px_20px_rgba(7,12,24,0.10)] md:px-6 md:py-5">
         <div className="pointer-events-none absolute -left-10 top-0 h-28 w-28 rounded-full bg-cyan-400/10 blur-3xl" />
         <div className="pointer-events-none absolute right-0 top-0 h-28 w-28 rounded-full bg-fuchsia-500/10 blur-3xl" />
@@ -198,11 +198,12 @@ export default function EntriesPage() {
             </h2>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             {featuredActions.map((item) => (
               <EntryTile
                 key={item.name}
                 item={item}
+                compact
                 onOpen={(path) => router.push(path)}
               />
             ))}

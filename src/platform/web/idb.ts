@@ -1,6 +1,6 @@
 // src/platform/web/idb.ts
 const DB_NAME = "kynflow-web";
-const DB_VERSION = 2;
+const DB_VERSION = 4;
 
 export const STORES = {
   SHOP_SETTINGS: "shop_settings",
@@ -9,6 +9,8 @@ export const STORES = {
   PRODUCT_BATCHES: "product_batches",
   CODE_SEQUENCE: "code_sequence",
   BARCODE_SEQUENCE: "barcode_sequence",
+  CATEGORIES: "categories",
+  BRANDS: "brands",
 } as const;
 
 export type SyncJob = {
@@ -91,6 +93,32 @@ function openDb(): Promise<IDBDatabase> {
           db.createObjectStore(STORES.BARCODE_SEQUENCE, {
             keyPath: "licenseId",
           });
+        }
+      }
+      // v3 stores
+      if (oldVersion < 3) {
+        if (!db.objectStoreNames.contains(STORES.CATEGORIES)) {
+          const catStore = db.createObjectStore(STORES.CATEGORIES, {
+            keyPath: "id",
+          });
+          catStore.createIndex("licenseId", "licenseId", { unique: false });
+          catStore.createIndex(
+            "licenseId_parentId",
+            ["licenseId", "parentId"],
+            {
+              unique: false,
+            },
+          );
+        }
+      }
+
+      // v4 stores
+      if (oldVersion < 4) {
+        if (!db.objectStoreNames.contains(STORES.BRANDS)) {
+          const brandStore = db.createObjectStore(STORES.BRANDS, {
+            keyPath: "id",
+          });
+          brandStore.createIndex("licenseId", "licenseId", { unique: false });
         }
       }
     };

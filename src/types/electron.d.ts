@@ -89,6 +89,10 @@ declare global {
         name: string;
         brand: string | null;
         category: string | null;
+        subcategory?: string | null;
+        productName?: string | null;
+        model?: string | null;
+        size?: string | null;
         unit: string;
         tax: string;
         hsn?: string | null;
@@ -106,16 +110,25 @@ declare global {
           id: string;
           code: string;
           name: string;
-          brand?: string;
-          category?: string;
+          brand?: string | null;
+          category?: string | null;
+          subcategory?: string | null;
+          productName?: string | null;
+          model?: string | null;
+          size?: string | null;
           unit: string;
           tax: string;
-          hsn?: string;
+          hsn?: string | null;
           costPrice: number;
-          salePrice?: number;
+          salePrice?: number | null;
           stock: number;
-          barcode?: string;
+          barcode?: string | null;
           createdAt?: string;
+          updatedAt?: string;
+          deletedAt?: string | null;
+          licenseId?: string;
+          codeNumber?: number;
+          batchCount?: number;
         }>;
         total: number;
       }>;
@@ -133,16 +146,25 @@ declare global {
           id: string;
           code: string;
           name: string;
-          brand?: string;
-          category?: string;
+          brand?: string | null;
+          category?: string | null;
+          subcategory?: string | null;
+          productName?: string | null;
+          model?: string | null;
+          size?: string | null;
           unit: string;
           tax: string;
-          hsn?: string;
+          hsn?: string | null;
           costPrice: number;
-          salePrice?: number;
+          salePrice?: number | null;
           stock: number;
-          barcode?: string;
+          barcode?: string | null;
           createdAt?: string;
+          updatedAt?: string;
+          deletedAt?: string | null;
+          licenseId?: string;
+          codeNumber?: number;
+          batchCount?: number;
         }>;
         total: number;
       }>;
@@ -156,6 +178,10 @@ declare global {
           name: string;
           brand: string | null;
           category: string | null;
+          subcategory?: string | null;
+          productName?: string | null;
+          model?: string | null;
+          size?: string | null;
           unit: string;
           tax: string;
           hsn?: string | null;
@@ -338,6 +364,65 @@ declare global {
         serverSyncedAt?: string,
       ) => Promise<{ success: boolean; syncedAt: string }>;
       bulkUpsertProducts: (items: any[]) => Promise<any>;
+
+      listCategories: (licenseId: string) => Promise<{
+        success: boolean;
+        rows: Array<{
+          id: string;
+          licenseId: string;
+          name: string;
+          parentId: string | null;
+          createdAt?: string;
+          updatedAt?: string;
+          deletedAt?: string | null;
+        }>;
+        error?: string;
+      }>;
+
+      saveCategory: (payload: {
+        id?: string;
+        licenseId: string;
+        name: string;
+        parentId?: string | null;
+      }) => Promise<{
+        success: boolean;
+        id?: string;
+        error?: string;
+      }>;
+
+      deleteCategory: (payload: string) => Promise<{
+        success: boolean;
+        error?: string;
+      }>;
+
+      listBrands: (licenseId: string) => Promise<{
+        success: boolean;
+        rows: Array<{
+          id: string;
+          licenseId: string;
+          name: string;
+          createdAt?: string;
+          updatedAt?: string;
+          deletedAt?: string | null;
+        }>;
+        error?: string;
+      }>;
+
+      saveBrand: (payload: {
+        id?: string;
+        licenseId: string;
+        name: string;
+      }) => Promise<{
+        success: boolean;
+        id?: string;
+        error?: string;
+      }>;
+
+      deleteBrand: (id: string) => Promise<{
+        success: boolean;
+        error?: string;
+      }>;
+
       getSyncState: (scope: string) => Promise<any>;
       setSyncState: (scope: string, changes: any) => Promise<any>;
       wipeLocalData: () => Promise<any>;

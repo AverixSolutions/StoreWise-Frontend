@@ -8,7 +8,6 @@ import {
   Boxes,
   CircleDollarSign,
   CreditCard,
-  Package,
   RefreshCw,
   ShoppingBag,
   ShoppingCart,
@@ -67,17 +66,6 @@ function liveClock(value: Date) {
     second: "2-digit",
     hour12: true,
   });
-}
-
-function resolveLicenseId(user: any) {
-  return (
-    user?.licenseId ||
-    user?.license?.id ||
-    user?.license ||
-    user?.userId ||
-    user?.id ||
-    ""
-  );
 }
 
 function buildLinePath(
@@ -249,7 +237,7 @@ function OverviewChart({ series }: { series: DashboardOverview["series"] }) {
 
 function DashboardSkeleton() {
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 pb-2 md:pb-0">
       <div className="h-28 animate-pulse rounded-[26px] bg-white/50" />
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {Array.from({ length: 6 }).map((_, i) => (
@@ -380,7 +368,7 @@ export default function DashboardPage() {
 
   if (webMode) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-4 pb-10 md:pb-0">
         <section className="rounded-[28px] border border-white/10 bg-[linear-gradient(135deg,#091120_0%,#0f1a31_58%,#16213d_100%)] px-5 py-5 text-white shadow-[0_22px_50px_rgba(5,10,20,0.18)] md:px-6 md:py-6">
           <div className="max-w-3xl">
             <div className="kyn-brand-pill mb-3 inline-flex items-center rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/80">

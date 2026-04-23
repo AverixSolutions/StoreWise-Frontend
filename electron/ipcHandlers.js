@@ -16,9 +16,13 @@ const { registerBarcodeHandlers } = require("./ipc/barcodes");
 const { registerShopSettingsHandlers } = require("./ipc/shopSettings");
 const { registerLabelPrintingHandlers } = require("./ipc/labelPrinting");
 const { registerDashboardHandlers } = require("./ipc/dashboard");
+const { registerCategoryHandlers } = require("./ipc/categories");
+const { registerBrandHandlers } = require("./ipc/brands");
 
 function registerAllHandlers() {
   registerProductHandlers();
+  registerCategoryHandlers();
+  registerBrandHandlers();
   registerProductSyncHandlers();
   registerMaintenanceHandlers();
   registerBarcodeHandlers();

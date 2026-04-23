@@ -161,26 +161,6 @@ export default function Sidebar() {
           />
         ))}
 
-        {/* Centre logo pill */}
-        <button
-          type="button"
-          onClick={() => router.push("/dashboard")}
-          aria-label="Go to dashboard"
-          className="flex h-12 w-12 items-center justify-center rounded-[18px]
-                     bg-white
-                     shadow-[0_6px_24px_rgba(32,183,255,0.45)]
-                     transition-transform active:scale-95 hover:scale-[1.05]"
-        >
-          <Image
-            src="/branding/kyn-Photoroom.png"
-            alt="KYNSTACK"
-            width={26}
-            height={26}
-            className="h-[26px] w-[26px] object-contain"
-            priority
-          />
-        </button>
-
         {/* Last two tabs */}
         {tabs.slice(2, 4).map((tab) => (
           <MobileNavButton

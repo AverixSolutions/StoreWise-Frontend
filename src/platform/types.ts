@@ -22,6 +22,10 @@ export type ProductInput = {
   name: string;
   brand: string | null;
   category: string | null;
+  subcategory?: string | null;
+  productName?: string | null;
+  model?: string | null;
+  size?: string | null;
   unit: UnitCode;
   tax: TaxCode;
   hsn?: string | null;
@@ -38,6 +42,10 @@ export type ProductSummary = {
   name: string;
   brand?: string | null;
   category?: string | null;
+  subcategory?: string | null;
+  productName?: string | null;
+  model?: string | null;
+  size?: string | null;
   barcode?: string | null;
   batchCount?: number;
   unit: UnitCode;
@@ -262,6 +270,60 @@ export type DashboardOverviewResult =
   | { success: true; overview: DashboardOverview }
   | { success: false; unsupported?: boolean; error?: string };
 
+// ── Category types ──────────────────────────────────────────────────────────
+
+export type CategoryRecord = {
+  id: string;
+  licenseId: string;
+  name: string;
+  parentId: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
+};
+
+export type CategoryListResult = {
+  success: boolean;
+  rows: CategoryRecord[];
+  error?: string;
+};
+
+export type CategorySavePayload = {
+  id?: string;
+  licenseId: string;
+  name: string;
+  parentId?: string | null;
+};
+
+export type CategoryMutationResult = MutationResult & { id?: string };
+
+// ── Brand types ─────────────────────────────────────────────────────────────
+
+export type BrandRecord = {
+  id: string;
+  licenseId: string;
+  name: string;
+  createdAt?: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
+};
+
+export type BrandListResult = {
+  success: boolean;
+  rows: BrandRecord[];
+  error?: string;
+};
+
+export type BrandSavePayload = {
+  id?: string;
+  licenseId: string;
+  name: string;
+};
+
+export type BrandMutationResult = MutationResult & { id?: string };
+
+// ────────────────────────────────────────────────────────────────────────────
+
 export type PlatformAPI = {
   getNextCode: (licenseId: string) => Promise<string>;
 
@@ -344,4 +406,16 @@ export type PlatformAPI = {
   rebuildProductStock?: (
     productId: string,
   ) => Promise<{ success: boolean; stock: number }>;
+
+  // Categories
+  listCategories: (licenseId: string) => Promise<CategoryListResult>;
+  saveCategory: (
+    payload: CategorySavePayload,
+  ) => Promise<CategoryMutationResult>;
+  deleteCategory: (id: string) => Promise<MutationResult>;
+
+  // Brands
+  listBrands: (licenseId: string) => Promise<BrandListResult>;
+  saveBrand: (payload: BrandSavePayload) => Promise<BrandMutationResult>;
+  deleteBrand: (id: string) => Promise<MutationResult>;
 };

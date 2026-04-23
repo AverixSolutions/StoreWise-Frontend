@@ -76,6 +76,10 @@ db.prepare(
 
 addColumnIfMissing("products", "deletedAt", "TEXT");
 addColumnIfMissing("products", "barcode", "TEXT");
+addColumnIfMissing("products", "subcategory", "TEXT");
+addColumnIfMissing("products", "productName", "TEXT");
+addColumnIfMissing("products", "model", "TEXT");
+addColumnIfMissing("products", "size", "TEXT");
 
 // Product Index
 db.prepare(
@@ -85,6 +89,52 @@ db.prepare(
 db.prepare(
   `CREATE INDEX IF NOT EXISTS idx_products_isSynced 
   ON products(isSynced)`,
+).run();
+
+// --- Categories (master hierarchy table) ---
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS categories (
+    id TEXT PRIMARY KEY,
+    licenseId TEXT NOT NULL,
+    name TEXT NOT NULL,
+    parentId TEXT,
+    createdAt TEXT,
+    updatedAt TEXT,
+    deletedAt TEXT,
+    FOREIGN KEY (parentId) REFERENCES categories(id)
+  )
+`,
+).run();
+
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_categories_license
+   ON categories(licenseId, deletedAt)`,
+).run();
+
+// --- Brands (master table) ---
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS brands (
+    id TEXT PRIMARY KEY,
+    licenseId TEXT NOT NULL,
+    name TEXT NOT NULL,
+    createdAt TEXT,
+    updatedAt TEXT,
+    deletedAt TEXT
+  )
+`,
+).run();
+
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_brands_license
+   ON brands(licenseId, deletedAt)`,
+).run();
+
+db.prepare(
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_brands_unique_live
+   ON brands(licenseId, name COLLATE NOCASE)
+   WHERE deletedAt IS NULL OR deletedAt = ''`,
 ).run();
 
 // --- Batches (lots) ---------------------------------------------------------
