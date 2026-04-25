@@ -19,6 +19,14 @@ import ProductViewModal from "@/components/products/ProductViewModal";
 
 type Product = ProductSummary;
 
+const TAX_OPTIONS = [
+  { value: "NT", label: "NT — No Tax" },
+  { value: "P5", label: "P5 — 5%" },
+  { value: "P12", label: "P12 — 12%" },
+  { value: "P18", label: "P18 — 18%" },
+  { value: "P28", label: "P28 — 28%" },
+];
+
 export default function ItemsPage() {
   const [isClient, setIsClient] = useState(false);
   const [licenseId, setLicenseId] = useState("");
@@ -32,9 +40,12 @@ export default function ItemsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [brandFilter, setBrandFilter] = useState("");
+  const [subcategoryFilter, setSubcategoryFilter] = useState("");
+  const [taxFilter, setTaxFilter] = useState("");
 
   const [categories, setCategories] = useState<string[]>([]);
   const [brands, setBrands] = useState<string[]>([]);
+  const [subcategories, setSubcategories] = useState<string[]>([]);
   const [productNames, setProductNames] = useState<string[]>([]);
   const [categoryRecords, setCategoryRecords] = useState<CategoryRecord[]>([]);
 
@@ -74,6 +85,16 @@ export default function ItemsPage() {
                 .filter((c: string | undefined): c is string => !!c),
             ),
           ),
+        );
+
+        setSubcategories(
+          Array.from(
+            new Set(
+              productsResult.products
+                .map((p: any) => p.subcategory)
+                .filter((s: string | undefined): s is string => !!s),
+            ),
+          ).sort((a, b) => a.localeCompare(b)),
         );
 
         if (categoriesResult.success) {
@@ -135,28 +156,44 @@ export default function ItemsPage() {
 
   useEffect(() => {
     if (!isClient) return;
+
     const handleShortcut = (e: KeyboardEvent) => {
+      const modalOrDrawerOpen = isModalOpen || batchOpen || isViewOpen;
+
+      if (modalOrDrawerOpen) {
+        return;
+      }
+
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "n") {
         e.preventDefault();
         handleAddProduct();
       }
+
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
         e.preventDefault();
         searchRef.current?.focus();
       }
     };
+
     window.addEventListener("keydown", handleShortcut);
     return () => window.removeEventListener("keydown", handleShortcut);
-  }, [isClient]);
+  }, [isClient, isModalOpen, batchOpen, isViewOpen]);
 
   if (!isClient) return null;
 
-  const hasFilters = searchQuery || categoryFilter || brandFilter;
+  const hasFilters =
+    searchQuery ||
+    categoryFilter ||
+    brandFilter ||
+    subcategoryFilter ||
+    taxFilter;
 
   const clearAll = () => {
     setSearchQuery("");
     setCategoryFilter("");
     setBrandFilter("");
+    setSubcategoryFilter("");
+    setTaxFilter("");
   };
 
   return (
@@ -198,83 +235,109 @@ export default function ItemsPage() {
         </div>
       </section>
 
-      <section className="rounded-[16px] border border-slate-200/80 bg-white/80 p-3 shadow-sm">
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[220px_220px_minmax(0,1fr)_auto] lg:items-end">
+      {/* ── Filter Bar ── */}
+      <section className="rounded-[16px] border border-slate-300 bg-white/80 p-3 shadow-sm">
+        {/* Row 1: Category, Brand, Subcategory, Tax */}
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {/* Category */}
-          <div className="flex min-w-0 flex-col gap-1.5">
-            <SearchableDropdown
-              value={categoryFilter}
-              onChange={setCategoryFilter}
-              options={categories.map((c) => ({ value: c, label: c }))}
-              placeholder="All categories"
-              autoOpenOnFocus={false}
-              buttonProps={{
-                className:
-                  "h-[44px] rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-sm focus:border-cyan-400/60 focus:ring-4 focus:ring-cyan-400/10 cursor-pointer",
-              }}
-              menuClassName="rounded-2xl"
-              inputClassName="text-sm"
-            />
-          </div>
+          <SearchableDropdown
+            value={categoryFilter}
+            onChange={setCategoryFilter}
+            options={categories.map((c) => ({ value: c, label: c }))}
+            placeholder="All categories"
+            autoOpenOnFocus={false}
+            buttonProps={{
+              className:
+                "h-[44px] rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-sm focus:border-cyan-400/60 focus:ring-4 focus:ring-cyan-400/10 cursor-pointer",
+            }}
+            menuClassName="rounded-2xl"
+            inputClassName="text-sm"
+          />
 
           {/* Brand */}
-          <div className="flex min-w-0 flex-col gap-1.5">
-            <SearchableDropdown
-              value={brandFilter}
-              onChange={setBrandFilter}
-              options={brands.map((b) => ({ value: b, label: b }))}
-              placeholder="All brands"
-              autoOpenOnFocus={false}
-              buttonProps={{
-                className:
-                  "h-[44px] rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-sm focus:border-cyan-400/60 focus:ring-4 focus:ring-cyan-400/10 cursor-pointer",
-              }}
-              menuClassName="rounded-2xl"
-              inputClassName="text-sm"
-            />
-          </div>
+          <SearchableDropdown
+            value={brandFilter}
+            onChange={setBrandFilter}
+            options={brands.map((b) => ({ value: b, label: b }))}
+            placeholder="All brands"
+            autoOpenOnFocus={false}
+            buttonProps={{
+              className:
+                "h-[44px] rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-sm focus:border-cyan-400/60 focus:ring-4 focus:ring-cyan-400/10 cursor-pointer",
+            }}
+            menuClassName="rounded-2xl"
+            inputClassName="text-sm"
+          />
 
+          {/* Subcategory */}
+          <SearchableDropdown
+            value={subcategoryFilter}
+            onChange={setSubcategoryFilter}
+            options={subcategories.map((s) => ({ value: s, label: s }))}
+            placeholder="All subcategories"
+            autoOpenOnFocus={false}
+            buttonProps={{
+              className:
+                "h-[44px] rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-sm focus:border-cyan-400/60 focus:ring-4 focus:ring-cyan-400/10 cursor-pointer",
+            }}
+            menuClassName="rounded-2xl"
+            inputClassName="text-sm"
+          />
+
+          {/* Tax */}
+          <SearchableDropdown
+            value={taxFilter}
+            onChange={setTaxFilter}
+            options={TAX_OPTIONS}
+            placeholder="All tax rates"
+            autoOpenOnFocus={false}
+            buttonProps={{
+              className:
+                "h-[44px] rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-sm focus:border-cyan-400/60 focus:ring-4 focus:ring-cyan-400/10 cursor-pointer",
+            }}
+            menuClassName="rounded-2xl"
+            inputClassName="text-sm"
+          />
+        </div>
+
+        {/* Row 2: Search + Clear */}
+        <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
           {/* Search */}
-          <div className="flex min-w-0 flex-col gap-1.5">
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input
-                ref={searchRef}
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search products by name… (Ctrl/Cmd + F)"
-                className="h-[44px] w-full rounded-2xl border border-slate-200 bg-white py-2.5 pl-10 pr-10 text-sm text-slate-800 shadow-sm outline-none placeholder:text-slate-400 transition focus:border-cyan-400/60 focus:ring-4 focus:ring-cyan-400/10"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery("")}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 transition hover:text-slate-600"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              )}
-            </div>
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              ref={searchRef}
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by name or short code… (Ctrl/Cmd + F)"
+              className="h-[44px] w-full rounded-2xl border border-slate-200 bg-white py-2.5 pl-10 pr-10 text-sm text-slate-800 shadow-sm outline-none placeholder:text-slate-400 transition focus:border-cyan-400/60 focus:ring-4 focus:ring-cyan-400/10"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 transition hover:text-slate-600"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
           </div>
 
           {/* Clear */}
-          <div className="flex items-end">
-            <button
-              type="button"
-              onClick={clearAll}
-              disabled={!hasFilters}
-              className="inline-flex h-[44px] w-full items-center justify-center gap-1.5 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-500 transition hover:bg-slate-50 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-50 lg:w-auto cursor-pointer"
-            >
-              <X className="h-3.5 w-3.5" />
-              Clear
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={clearAll}
+            disabled={!hasFilters}
+            className="inline-flex h-[44px] w-full items-center justify-center gap-1.5 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-500 transition hover:bg-slate-50 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-50 lg:w-auto cursor-pointer"
+          >
+            <X className="h-3.5 w-3.5" />
+            Clear
+          </button>
         </div>
       </section>
 
       {/* ── Table ── */}
-
       <ProductsTable
         onAdd={handleAddProduct}
         onEdit={handleEditProduct}
@@ -285,6 +348,8 @@ export default function ItemsPage() {
         nameFilter={searchQuery}
         categoryFilter={categoryFilter}
         brandFilter={brandFilter}
+        subcategoryFilter={subcategoryFilter}
+        taxFilter={taxFilter}
       />
 
       <ProductFormModal

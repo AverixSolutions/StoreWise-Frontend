@@ -25,6 +25,10 @@ type NavItem = {
   icon: any;
   path: string;
   featured?: boolean;
+  iconBg: string;
+  iconText: string;
+  hoverBorder: string;
+  hoverBg: string;
 };
 
 const actions: NavItem[] = [
@@ -35,6 +39,10 @@ const actions: NavItem[] = [
     icon: LayoutDashboard,
     path: "/dashboard",
     featured: true,
+    iconBg: "bg-blue-100",
+    iconText: "text-blue-600",
+    hoverBorder: "hover:border-blue-300",
+    hoverBg: "hover:bg-blue-50/50",
   },
   {
     name: "Items",
@@ -43,6 +51,10 @@ const actions: NavItem[] = [
     icon: Package,
     path: "/dashboard/items",
     featured: true,
+    iconBg: "bg-emerald-100",
+    iconText: "text-emerald-600",
+    hoverBorder: "hover:border-emerald-300",
+    hoverBg: "hover:bg-emerald-50/50",
   },
   {
     name: "Sales",
@@ -51,6 +63,10 @@ const actions: NavItem[] = [
     icon: ShoppingCart,
     path: "/dashboard/sales",
     featured: true,
+    iconBg: "bg-fuchsia-100",
+    iconText: "text-fuchsia-600",
+    hoverBorder: "hover:border-fuchsia-300",
+    hoverBg: "hover:bg-fuchsia-50/50",
   },
   {
     name: "Purchase",
@@ -59,6 +75,10 @@ const actions: NavItem[] = [
     icon: ShoppingBag,
     path: "/dashboard/purchase",
     featured: true,
+    iconBg: "bg-orange-100",
+    iconText: "text-orange-600",
+    hoverBorder: "hover:border-orange-300",
+    hoverBg: "hover:bg-orange-50/50",
   },
   {
     name: "Sales Return",
@@ -66,6 +86,10 @@ const actions: NavItem[] = [
     description: "Reverse sold stock",
     icon: RotateCcw,
     path: "/dashboard/sales-return",
+    iconBg: "bg-rose-100",
+    iconText: "text-rose-600",
+    hoverBorder: "hover:border-rose-300",
+    hoverBg: "hover:bg-rose-50/50",
   },
   {
     name: "Purchase Return",
@@ -73,6 +97,10 @@ const actions: NavItem[] = [
     description: "Supplier return entry",
     icon: RotateCw,
     path: "/dashboard/purchase-return",
+    iconBg: "bg-amber-100",
+    iconText: "text-amber-600",
+    hoverBorder: "hover:border-amber-300",
+    hoverBg: "hover:bg-amber-50/50",
   },
   {
     name: "Payment",
@@ -80,6 +108,10 @@ const actions: NavItem[] = [
     description: "Outgoing payments",
     icon: CreditCard,
     path: "/dashboard/payment",
+    iconBg: "bg-indigo-100",
+    iconText: "text-indigo-600",
+    hoverBorder: "hover:border-indigo-300",
+    hoverBg: "hover:bg-indigo-50/50",
   },
   {
     name: "Collection",
@@ -87,6 +119,10 @@ const actions: NavItem[] = [
     description: "Incoming collections",
     icon: Wallet,
     path: "/dashboard/collection",
+    iconBg: "bg-teal-100",
+    iconText: "text-teal-600",
+    hoverBorder: "hover:border-teal-300",
+    hoverBg: "hover:bg-teal-50/50",
   },
   {
     name: "Quotation",
@@ -94,6 +130,10 @@ const actions: NavItem[] = [
     description: "Quotation workflow",
     icon: FileText,
     path: "/dashboard/quotation",
+    iconBg: "bg-cyan-100",
+    iconText: "text-cyan-600",
+    hoverBorder: "hover:border-cyan-300",
+    hoverBg: "hover:bg-cyan-50/50",
   },
 ];
 
@@ -112,20 +152,22 @@ function EntryTile({
       whileHover={{ y: -2 }}
       whileTap={{ scale: 0.985 }}
       onClick={() => onOpen(item.path)}
-      className={`group w-full rounded-[22px] border border-slate-200/80 bg-[#fcfbf7] text-left shadow-[0_10px_24px_rgba(15,23,42,0.05)] transition hover:border-fuchsia-200 hover:shadow-[0_16px_30px_rgba(32,183,255,0.08)] cursor-pointer ${
-        compact ? "p-4" : "p-4.5"
+      className={`group w-full rounded-[22px] border bg-white text-left shadow-[0_4px_14px_rgba(15,23,42,0.06)] transition-all duration-200 cursor-pointer border-slate-200/80 ${item.hoverBorder} ${item.hoverBg} hover:shadow-[0_10px_28px_rgba(15,23,42,0.10)] ${
+        compact ? "p-4" : "p-5"
       }`}
     >
       <div className="flex items-start justify-between gap-3">
         <div
-          className={`kyn-brand-chip flex items-center justify-center rounded-2xl text-slate-900 ring-1 ring-black/5 ${
+          className={`flex shrink-0 items-center justify-center rounded-2xl ${item.iconBg} ${item.iconText} ${
             compact ? "h-10 w-10" : "h-11 w-11"
           }`}
         >
           <item.icon className={compact ? "h-4 w-4" : "h-5 w-5"} />
         </div>
 
-        <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-fuchsia-500" />
+        <ArrowRight
+          className={`mt-0.5 h-4 w-4 shrink-0 transition-all duration-200 text-slate-300 group-hover:translate-x-0.5 group-hover:${item.iconText}`}
+        />
       </div>
 
       <div className={compact ? "mt-3.5" : "mt-4"}>
@@ -149,7 +191,6 @@ export default function EntriesPage() {
 
   useEffect(() => {
     const user = getCurrentUser();
-
     if (!user?.token) {
       router.push("/login");
     }
@@ -167,6 +208,7 @@ export default function EntriesPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden pb-10 md:pb-0">
+      {/* Hero banner */}
       <section className="relative overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(135deg,#0a1324_0%,#101a31_58%,#16213d_100%)] px-5 py-4 text-white shadow-[0_8px_20px_rgba(7,12,24,0.10)] md:px-6 md:py-5">
         <div className="pointer-events-none absolute -left-10 top-0 h-28 w-28 rounded-full bg-cyan-400/10 blur-3xl" />
         <div className="pointer-events-none absolute right-0 top-0 h-28 w-28 rounded-full bg-fuchsia-500/10 blur-3xl" />
@@ -187,7 +229,8 @@ export default function EntriesPage() {
         </div>
       </section>
 
-      <section className="flex-1 min-h-0 rounded-[26px] border border-slate-200 bg-white p-4 shadow-[0_6px_18px_rgba(15,23,42,0.04)] md:p-5">
+      {/* Tiles container */}
+      <section className="flex-1 min-h-0 rounded-[26px] border border-slate-200 bg-slate-50/70 p-3 shadow-[0_6px_18px_rgba(15,23,42,0.04)] md:p-5">
         <div className="flex h-full min-h-0 flex-col gap-4">
           <div>
             <div className="mb-2 inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">

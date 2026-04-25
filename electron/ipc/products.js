@@ -1,6 +1,8 @@
 // electron/ipc/products.js
 const { v4: uuidv4 } = require("uuid");
-const { ipcMain } = require("electron");
+const { ipcMain, app } = require("electron");
+const path = require("path");
+const fs = require("fs");
 const db = require("../db");
 
 // === BATCH HELPERS & UTILS ===
@@ -10,6 +12,110 @@ function nowISO() {
 
 function sum(a) {
   return a.reduce((s, n) => s + (Number(n) || 0), 0);
+}
+
+function ensureDir(dirPath) {
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
+  }
+}
+
+function normalizeShortCode(value) {
+  const raw = String(value || "")
+    .trim()
+    .toUpperCase();
+
+  if (!raw) return null;
+
+  // Allows APL, APPLE01, RICE-5KG, MILK_1L
+  const cleaned = raw.replace(/[^A-Z0-9-_]/g, "");
+
+  return cleaned || null;
+}
+
+function assertShortCodeAvailable({
+  licenseId,
+  shortCode,
+  excludeProductId = null,
+}) {
+  if (!shortCode) return;
+
+  const existing = db
+    .prepare(
+      `
+      SELECT id
+      FROM products
+      WHERE licenseId = ?
+        AND shortCode COLLATE NOCASE = ?
+        AND COALESCE(deletedAt,'') = ''
+        ${excludeProductId ? "AND id <> ?" : ""}
+      LIMIT 1
+    `,
+    )
+    .get(
+      ...(excludeProductId
+        ? [licenseId, shortCode, excludeProductId]
+        : [licenseId, shortCode]),
+    );
+
+  if (existing) {
+    throw new Error(
+      `Short code "${shortCode}" is already used by another product`,
+    );
+  }
+}
+
+function getImageExtension({ mimeType, fileName }) {
+  const nameExt = path.extname(String(fileName || "")).toLowerCase();
+
+  if ([".jpg", ".jpeg", ".png", ".webp"].includes(nameExt)) {
+    return nameExt === ".jpeg" ? ".jpg" : nameExt;
+  }
+
+  if (mimeType === "image/png") return ".png";
+  if (mimeType === "image/webp") return ".webp";
+  if (mimeType === "image/jpeg" || mimeType === "image/jpg") return ".jpg";
+
+  return ".jpg";
+}
+
+function saveProductImage({ productId, image }) {
+  if (!image?.base64) return null;
+
+  const allowedMimeTypes = new Set([
+    "image/jpeg",
+    "image/jpg",
+    "image/png",
+    "image/webp",
+  ]);
+
+  const mimeType = image.mimeType || image.type || "image/jpeg";
+
+  if (!allowedMimeTypes.has(mimeType)) {
+    throw new Error("Only JPG, PNG, and WEBP product images are allowed");
+  }
+
+  const imageDir = path.join(
+    app.getPath("appData"),
+    "KYNFLOW",
+    "product-images",
+  );
+  ensureDir(imageDir);
+
+  const ext = getImageExtension({
+    mimeType,
+    fileName: image.fileName || image.name,
+  });
+
+  const fileName = `${productId}-${Date.now()}${ext}`;
+  const filePath = path.join(imageDir, fileName);
+
+  fs.writeFileSync(filePath, Buffer.from(image.base64, "base64"));
+
+  return {
+    imagePath: filePath,
+    imageFileName: fileName,
+  };
 }
 
 // what defines one "batch identity" in your app
@@ -136,22 +242,37 @@ function registerProductHandlers() {
     const newId = product.id || uuidv4();
     const now = new Date().toISOString();
 
+    const shortCode = normalizeShortCode(product.shortCode);
+
+    assertShortCodeAvailable({
+      licenseId: product.licenseId,
+      shortCode,
+    });
+
+    const savedImage = saveProductImage({
+      productId: newId,
+      image: product.image,
+    });
+
     db.prepare(
       `
     INSERT INTO products 
       (
-        id, licenseId, code, codeNumber, name, brand, category, subcategory,
+        id, licenseId, code, codeNumber, shortCode,
+        name, brand, category, subcategory,
         productName, model, size,
         unit, tax, hsn, costPrice, salePrice, stock, barcode,
+        imagePath, imageFileName,
         createdAt, updatedAt
       ) 
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `,
     ).run(
       newId,
       product.licenseId,
       product.code,
       product.codeNumber,
+      shortCode,
       product.name,
       product.brand ?? null,
       product.category ?? null,
@@ -166,6 +287,8 @@ function registerProductHandlers() {
       product.salePrice ?? null,
       0,
       null,
+      savedImage?.imagePath ?? null,
+      savedImage?.imageFileName ?? null,
       now,
       now,
     );
@@ -180,6 +303,7 @@ function registerProductHandlers() {
 
     return { success: true, productId: newId };
   });
+
   ipcMain.handle(
     "get-products",
     (event, licenseId, { page = 1, pageSize = 10 } = {}) => {
@@ -189,7 +313,8 @@ function registerProductHandlers() {
         .prepare(
           `
   SELECT
-  p.id, p.code, p.name, p.brand, p.category, p.subcategory,
+  p.id, p.code, p.shortCode, p.imagePath, p.imageFileName,
+  p.name, p.brand, p.category, p.subcategory,
   p.productName, p.model, p.size, p.unit, p.tax, p.hsn,
   p.costPrice, p.salePrice,
   COALESCE(SUM(CASE WHEN COALESCE(b.deletedAt,'')='' THEN b.stock ELSE 0 END), 0) AS stock,
@@ -220,6 +345,39 @@ LIMIT ? OFFSET ?
     },
   );
 
+  ipcMain.handle("product:get-image-data-url", (event, productId) => {
+    if (!productId) return null;
+
+    const product = db
+      .prepare(
+        `
+      SELECT imagePath, imageFileName
+      FROM products
+      WHERE id = ?
+        AND COALESCE(deletedAt,'') = ''
+      LIMIT 1
+    `,
+      )
+      .get(productId);
+
+    if (!product?.imagePath) return null;
+
+    if (!fs.existsSync(product.imagePath)) return null;
+
+    const ext = path.extname(product.imagePath).toLowerCase();
+
+    const mimeType =
+      ext === ".png"
+        ? "image/png"
+        : ext === ".webp"
+          ? "image/webp"
+          : "image/jpeg";
+
+    const base64 = fs.readFileSync(product.imagePath).toString("base64");
+
+    return `data:${mimeType};base64,${base64}`;
+  });
+
   ipcMain.handle(
     "get-filtered-products",
     (event, licenseId, filters, { page = 1, pageSize = 10 } = {}) => {
@@ -227,8 +385,8 @@ LIMIT ? OFFSET ?
       const where = [`p.licenseId = ?`, `COALESCE(p.deletedAt,'') = ''`];
 
       if (filters?.name) {
-        where.push(`p.name LIKE ?`);
-        params.push(`%${filters.name}%`);
+        where.push(`(p.name LIKE ? OR COALESCE(p.shortCode,'') LIKE ?)`);
+        params.push(`%${filters.name}%`, `%${filters.name}%`);
       }
 
       if (filters?.category) {
@@ -241,13 +399,23 @@ LIMIT ? OFFSET ?
         params.push(filters.brand);
       }
 
+      if (filters?.subcategory) {
+        where.push(`p.subcategory = ?`);
+        params.push(filters.subcategory);
+      }
+
+      if (filters?.tax) {
+        where.push(`p.tax = ?`);
+        params.push(filters.tax);
+      }
       const offset = (page - 1) * pageSize;
 
       const rows = db
         .prepare(
           `
 SELECT
-  p.id, p.code, p.name, p.brand, p.category, p.subcategory,
+  p.id, p.code, p.shortCode, p.imagePath, p.imageFileName,
+  p.name, p.brand, p.category, p.subcategory,
   p.productName, p.model, p.size, p.unit, p.tax, p.hsn,
   p.costPrice, p.salePrice,
   COALESCE(SUM(CASE WHEN COALESCE(b.deletedAt,'')='' THEN b.stock ELSE 0 END), 0) AS stock,
@@ -281,14 +449,44 @@ LIMIT ? OFFSET ?
   ipcMain.handle("update-product", (event, productId, product) => {
     const now = new Date().toISOString();
 
+    const existing = db
+      .prepare(
+        `SELECT licenseId, shortCode, imagePath FROM products WHERE id = ? LIMIT 1`,
+      )
+      .get(productId);
+
+    if (!existing) {
+      throw new Error("Product not found");
+    }
+
+    const shortCode =
+      product.shortCode === undefined
+        ? existing.shortCode
+        : normalizeShortCode(product.shortCode);
+
+    assertShortCodeAvailable({
+      licenseId: existing.licenseId,
+      shortCode,
+      excludeProductId: productId,
+    });
+
+    const savedImage = saveProductImage({
+      productId,
+      image: product.image,
+    });
+
     const result = db
       .prepare(
         `
   UPDATE products 
   SET name = ?, brand = ?, category = ?, subcategory = ?,
       productName = ?, model = ?, size = ?,
+      shortCode = ?,
       unit = ?, tax = ?, hsn = ?, 
-      costPrice = ?, salePrice = ?, updatedAt = ?,
+      costPrice = ?, salePrice = ?,
+      imagePath = COALESCE(?, imagePath),
+      imageFileName = COALESCE(?, imageFileName),
+      updatedAt = ?,
       isSynced = 0, syncedAt = NULL
   WHERE id = ?
 `,
@@ -301,11 +499,14 @@ LIMIT ? OFFSET ?
         product.productName ?? null,
         product.model ?? null,
         product.size ?? null,
+        shortCode,
         product.unit,
         product.tax,
         product.hsn ?? null,
         product.costPrice,
         product.salePrice ?? null,
+        savedImage?.imagePath ?? null,
+        savedImage?.imageFileName ?? null,
         now,
         productId,
       );
@@ -447,6 +648,24 @@ LIMIT ? OFFSET ?
         "SELECT * FROM products WHERE licenseId = ? AND code = ? AND deletedAt IS NULL",
       )
       .get(licenseId, code);
+  });
+
+  ipcMain.handle("get-product-by-short-code", (event, licenseId, shortCode) => {
+    const normalized = normalizeShortCode(shortCode);
+    if (!normalized) return null;
+
+    return db
+      .prepare(
+        `
+      SELECT *
+      FROM products
+      WHERE licenseId = ?
+        AND shortCode COLLATE NOCASE = ?
+        AND COALESCE(deletedAt,'') = ''
+      LIMIT 1
+    `,
+      )
+      .get(licenseId, normalized);
   });
 
   ipcMain.handle("bulk-update-product-prices", (event, updates) => {

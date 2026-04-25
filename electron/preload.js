@@ -37,6 +37,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("get-product-by-barcode", licenseId, barcode),
   getProductByCode: (licenseId, code) =>
     ipcRenderer.invoke("get-product-by-code", licenseId, code),
+  getProductByShortCode: (licenseId, shortCode) =>
+    ipcRenderer.invoke("get-product-by-short-code", licenseId, shortCode),
+  getProductImageDataUrl: (productId) =>
+    ipcRenderer.invoke("product:get-image-data-url", productId),
   bulkUpdateProductPrices: (updates) =>
     ipcRenderer.invoke("bulk-update-product-prices", updates),
 

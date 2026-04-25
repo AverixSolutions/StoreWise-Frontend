@@ -80,6 +80,19 @@ addColumnIfMissing("products", "subcategory", "TEXT");
 addColumnIfMissing("products", "productName", "TEXT");
 addColumnIfMissing("products", "model", "TEXT");
 addColumnIfMissing("products", "size", "TEXT");
+addColumnIfMissing("products", "shortCode", "TEXT");
+addColumnIfMissing("products", "imagePath", "TEXT");
+addColumnIfMissing("products", "imageFileName", "TEXT");
+
+db.prepare(
+  `
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_products_short_code_live
+  ON products(licenseId, shortCode COLLATE NOCASE)
+  WHERE shortCode IS NOT NULL
+    AND shortCode <> ''
+    AND COALESCE(deletedAt,'') = ''
+`,
+).run();
 
 // Product Index
 db.prepare(

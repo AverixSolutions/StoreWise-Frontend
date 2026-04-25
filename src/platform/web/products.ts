@@ -4,6 +4,7 @@ import type {
   BatchSavePayload,
   Pagination,
   ProductFilters,
+  ProductSummary,
 } from "../types";
 import {
   STORES,
@@ -19,6 +20,9 @@ import {
 
 type WebProduct = ProductInput & {
   id: string;
+  shortCode?: string | null;
+  imagePath?: string | null;
+  imageFileName?: string | null;
   stock: number;
   createdAt: string;
   updatedAt: string;
@@ -93,6 +97,51 @@ async function reserveBarcodeNumbers(
   return result;
 }
 
+// ── Short code helpers ─────────────────────────────────────────────────────
+
+function normalizeShortCode(value: unknown): string | null {
+  const raw = String(value || "")
+    .trim()
+    .toUpperCase();
+  if (!raw) return null;
+
+  const cleaned = raw.replace(/[^A-Z0-9-_]/g, "");
+  return cleaned || null;
+}
+
+async function assertShortCodeAvailable(params: {
+  licenseId: string;
+  shortCode?: string | null;
+  excludeProductId?: string | null;
+}) {
+  const shortCode = normalizeShortCode(params.shortCode);
+  if (!shortCode) return;
+
+  const all = await idbGetAllByIndex<WebProduct>(
+    STORES.PRODUCTS,
+    "licenseId",
+    params.licenseId,
+  );
+
+  const conflict = all.find(
+    (product) =>
+      !product.deletedAt &&
+      product.id !== params.excludeProductId &&
+      normalizeShortCode(product.shortCode) === shortCode,
+  );
+
+  if (conflict) {
+    throw new Error(
+      `Short code "${shortCode}" is already used by another product`,
+    );
+  }
+}
+
+function productImageToDataUrl(product: WebProduct | null): string | null {
+  if (!product?.image?.base64 || !product.image.mimeType) return null;
+  return `data:${product.image.mimeType};base64,${product.image.base64}`;
+}
+
 // ── Stock rebuild ──────────────────────────────────────────────────────────
 
 async function rebuildProductStock(productId: string): Promise<number> {
@@ -129,9 +178,20 @@ export async function webCreateProduct(
   try {
     const id = newId();
     const now = new Date().toISOString();
+
+    const shortCode = normalizeShortCode(product.shortCode);
+
+    await assertShortCodeAvailable({
+      licenseId: product.licenseId,
+      shortCode,
+    });
+
     const record: WebProduct = {
       ...product,
       id,
+      shortCode,
+      imagePath: null,
+      imageFileName: product.image?.fileName ?? null,
       stock: 0,
       barcode: null,
       createdAt: now,
@@ -153,10 +213,27 @@ export async function webUpdateProduct(
   try {
     const existing = await idbGetByKey<WebProduct>(STORES.PRODUCTS, productId);
     if (!existing) return { success: false, error: "Product not found" };
+
+    const shortCode =
+      product.shortCode === undefined
+        ? existing.shortCode
+        : normalizeShortCode(product.shortCode);
+
+    await assertShortCodeAvailable({
+      licenseId: existing.licenseId,
+      shortCode,
+      excludeProductId: productId,
+    });
+
     await idbPut(STORES.PRODUCTS, {
       ...existing,
       ...product,
       id: productId,
+      shortCode,
+      imageFileName:
+        product.image === undefined
+          ? existing.imageFileName
+          : (product.image?.fileName ?? null),
       updatedAt: new Date().toISOString(),
     });
     return { success: true };
@@ -262,7 +339,11 @@ export async function webGetFilteredProducts(
 
   if (filters.name) {
     const q = filters.name.toLowerCase();
-    live = live.filter((p) => p.name.toLowerCase().includes(q));
+    live = live.filter(
+      (p) =>
+        p.name.toLowerCase().includes(q) ||
+        (p.shortCode ?? "").toLowerCase().includes(q),
+    );
   }
 
   if (filters.category) {
@@ -271,6 +352,14 @@ export async function webGetFilteredProducts(
 
   if (filters.brand) {
     live = live.filter((p) => p.brand === filters.brand);
+  }
+
+  if (filters.subcategory) {
+    live = live.filter((p) => (p as any).subcategory === filters.subcategory);
+  }
+
+  if (filters.tax) {
+    live = live.filter((p) => p.tax === filters.tax);
   }
 
   live.sort((a, b) => a.codeNumber - b.codeNumber);
@@ -317,6 +406,50 @@ export async function webGetProductByBarcode(
     expiryDate: batch.expiryDate,
     batchStock: batch.stock,
   } as any;
+}
+
+export async function webGetProductByCode(
+  licenseId: string,
+  code: string,
+): Promise<ProductSummary | null> {
+  const all = await idbGetAllByIndex<WebProduct>(
+    STORES.PRODUCTS,
+    "licenseId",
+    licenseId,
+  );
+
+  const product = all.find(
+    (p) => !p.deletedAt && String(p.code) === String(code),
+  );
+
+  return product ?? null;
+}
+
+export async function webGetProductByShortCode(
+  licenseId: string,
+  shortCode: string,
+): Promise<ProductSummary | null> {
+  const normalized = normalizeShortCode(shortCode);
+  if (!normalized) return null;
+
+  const all = await idbGetAllByIndex<WebProduct>(
+    STORES.PRODUCTS,
+    "licenseId",
+    licenseId,
+  );
+
+  const product = all.find(
+    (p) => !p.deletedAt && normalizeShortCode(p.shortCode) === normalized,
+  );
+
+  return product ?? null;
+}
+
+export async function webGetProductImageDataUrl(
+  productId: string,
+): Promise<string | null> {
+  const product = await webGetProduct(productId);
+  return productImageToDataUrl(product);
 }
 
 // ── Barcode/Batch APIs ─────────────────────────────────────────────────────

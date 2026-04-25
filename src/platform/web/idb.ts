@@ -1,6 +1,6 @@
 // src/platform/web/idb.ts
 const DB_NAME = "kynflow-web";
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 export const STORES = {
   SHOP_SETTINGS: "shop_settings",
@@ -95,6 +95,7 @@ function openDb(): Promise<IDBDatabase> {
           });
         }
       }
+
       // v3 stores
       if (oldVersion < 3) {
         if (!db.objectStoreNames.contains(STORES.CATEGORIES)) {
@@ -119,6 +120,23 @@ function openDb(): Promise<IDBDatabase> {
             keyPath: "id",
           });
           brandStore.createIndex("licenseId", "licenseId", { unique: false });
+        }
+      }
+
+      // v5 product short-code index
+      if (oldVersion < 5) {
+        if (db.objectStoreNames.contains(STORES.PRODUCTS)) {
+          const productStore = request.transaction!.objectStore(
+            STORES.PRODUCTS,
+          );
+
+          if (!productStore.indexNames.contains("licenseId_shortCode")) {
+            productStore.createIndex(
+              "licenseId_shortCode",
+              ["licenseId", "shortCode"],
+              { unique: false },
+            );
+          }
         }
       }
     };

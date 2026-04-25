@@ -12,6 +12,14 @@ export type ProductFilters = {
   name?: string | null;
   category?: string | null;
   brand?: string | null;
+  subcategory?: string | null;
+  tax?: string | null;
+};
+
+export type ProductImagePayload = {
+  base64: string;
+  mimeType: "image/jpeg" | "image/jpg" | "image/png" | "image/webp";
+  fileName?: string;
 };
 
 // WRITE MODEL
@@ -19,6 +27,7 @@ export type ProductInput = {
   licenseId: string;
   code: string;
   codeNumber: number;
+  shortCode?: string | null;
   name: string;
   brand: string | null;
   category: string | null;
@@ -33,12 +42,16 @@ export type ProductInput = {
   salePrice: number | null;
   stock?: number;
   barcode?: string | null;
+  image?: ProductImagePayload | null;
 };
 
 // READ/LIST MODEL
 export type ProductSummary = {
   id: string;
   code: string;
+  shortCode?: string | null;
+  imagePath?: string | null;
+  imageFileName?: string | null;
   name: string;
   brand?: string | null;
   category?: string | null;
@@ -340,10 +353,22 @@ export type PlatformAPI = {
 
   getProduct: (productId: string) => Promise<ProductSummary | null>;
 
+  getProductImageDataUrl?: (productId: string) => Promise<string | null>;
+
   getProductByBarcode: (
     licenseId: string,
     barcode: string,
   ) => Promise<ProductLookupResult | null>;
+
+  getProductByCode?: (
+    licenseId: string,
+    code: string,
+  ) => Promise<ProductSummary | null>;
+
+  getProductByShortCode?: (
+    licenseId: string,
+    shortCode: string,
+  ) => Promise<ProductSummary | null>;
 
   createProduct: (product: ProductInput) => Promise<CreateProductResult>;
 

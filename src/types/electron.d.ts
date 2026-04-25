@@ -22,6 +22,62 @@ type LabelPrintRequest = {
   rows: LabelPrintRow[];
 };
 
+type ProductImagePayload = {
+  base64: string;
+  mimeType: "image/jpeg" | "image/jpg" | "image/png" | "image/webp";
+  fileName?: string;
+};
+
+type ProductRecord = {
+  id: string;
+  licenseId?: string;
+  code: string;
+  codeNumber?: number;
+  shortCode?: string | null;
+  imagePath?: string | null;
+  imageFileName?: string | null;
+  name: string;
+  brand?: string | null;
+  category?: string | null;
+  subcategory?: string | null;
+  productName?: string | null;
+  model?: string | null;
+  size?: string | null;
+  unit: string;
+  tax: string;
+  hsn?: string | null;
+  costPrice: number;
+  salePrice?: number | null;
+  stock: number;
+  barcode?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
+  batchCount?: number;
+};
+
+type ProductWritePayload = {
+  licenseId: string;
+  code: string;
+  codeNumber: number;
+  shortCode?: string | null;
+  name: string;
+  brand: string | null;
+  category: string | null;
+  subcategory?: string | null;
+  productName?: string | null;
+  model?: string | null;
+  size?: string | null;
+  unit: string;
+  tax: string;
+  hsn?: string | null;
+  costPrice: number;
+  salePrice: number | null;
+  stock?: number;
+  barcode?: string | null;
+  image?: ProductImagePayload | null;
+};
+
 declare global {
   interface Window {
     electronAPI: {
@@ -82,54 +138,15 @@ declare global {
 
       getNextCode: (licenseId: string) => Promise<string>;
 
-      createProduct: (product: {
-        licenseId: string;
-        code: string;
-        codeNumber: number;
-        name: string;
-        brand: string | null;
-        category: string | null;
-        subcategory?: string | null;
-        productName?: string | null;
-        model?: string | null;
-        size?: string | null;
-        unit: string;
-        tax: string;
-        hsn?: string | null;
-        costPrice: number;
-        salePrice: number | null;
-        stock?: number;
-        barcode?: string | null;
-      }) => Promise<{ success: boolean; productId?: string }>;
+      createProduct: (
+        product: ProductWritePayload,
+      ) => Promise<{ success: boolean; productId?: string }>;
 
       getProducts: (
         licenseId: string,
         pagination?: { page?: number; pageSize?: number },
       ) => Promise<{
-        products: Array<{
-          id: string;
-          code: string;
-          name: string;
-          brand?: string | null;
-          category?: string | null;
-          subcategory?: string | null;
-          productName?: string | null;
-          model?: string | null;
-          size?: string | null;
-          unit: string;
-          tax: string;
-          hsn?: string | null;
-          costPrice: number;
-          salePrice?: number | null;
-          stock: number;
-          barcode?: string | null;
-          createdAt?: string;
-          updatedAt?: string;
-          deletedAt?: string | null;
-          licenseId?: string;
-          codeNumber?: number;
-          batchCount?: number;
-        }>;
+        products: ProductRecord[];
         total: number;
       }>;
 
@@ -142,109 +159,35 @@ declare global {
         },
         pagination?: { page?: number; pageSize?: number },
       ) => Promise<{
-        products: Array<{
-          id: string;
-          code: string;
-          name: string;
-          brand?: string | null;
-          category?: string | null;
-          subcategory?: string | null;
-          productName?: string | null;
-          model?: string | null;
-          size?: string | null;
-          unit: string;
-          tax: string;
-          hsn?: string | null;
-          costPrice: number;
-          salePrice?: number | null;
-          stock: number;
-          barcode?: string | null;
-          createdAt?: string;
-          updatedAt?: string;
-          deletedAt?: string | null;
-          licenseId?: string;
-          codeNumber?: number;
-          batchCount?: number;
-        }>;
+        products: ProductRecord[];
         total: number;
       }>;
 
       updateProduct: (
         productId: string,
-        product: {
-          licenseId: string;
-          code: string;
-          codeNumber: number;
-          name: string;
-          brand: string | null;
-          category: string | null;
-          subcategory?: string | null;
-          productName?: string | null;
-          model?: string | null;
-          size?: string | null;
-          unit: string;
-          tax: string;
-          hsn?: string | null;
-          costPrice: number;
-          salePrice: number | null;
-          stock?: number;
-          barcode?: string | null;
-        },
+        product: ProductWritePayload,
       ) => Promise<{ success: boolean }>;
 
       deleteProduct: (productId: string) => Promise<{ success: boolean }>;
 
-      getProduct: (productId: string) => Promise<{
-        id: string;
-        code: string;
-        name: string;
-        brand?: string;
-        category?: string;
-        unit: string;
-        tax: string;
-        hsn?: string;
-        costPrice: number;
-        salePrice?: number;
-        stock: number;
-        createdAt?: string;
-        barcode?: string;
-      } | null>;
+      getProduct: (productId: string) => Promise<ProductRecord | null>;
 
       getProductByBarcode: (
         licenseId: string,
         barcode: string,
-      ) => Promise<{
-        id: string;
-        code: string;
-        name: string;
-        brand?: string;
-        category?: string;
-        unit: string;
-        tax: string;
-        hsn?: string;
-        costPrice: number;
-        salePrice?: number;
-        stock: number;
-        barcode?: string;
-      } | null>;
+      ) => Promise<ProductRecord | null>;
 
       getProductByCode: (
         licenseId: string,
         code: string,
-      ) => Promise<{
-        id: string;
-        code: string;
-        name: string;
-        brand?: string;
-        category?: string;
-        unit: string;
-        tax: string;
-        hsn?: string;
-        costPrice: number;
-        salePrice?: number;
-        stock: number;
-        barcode?: string;
-      } | null>;
+      ) => Promise<ProductRecord | null>;
+
+      getProductByShortCode: (
+        licenseId: string,
+        shortCode: string,
+      ) => Promise<ProductRecord | null>;
+
+      getProductImageDataUrl: (productId: string) => Promise<string | null>;
 
       listBarcodesForProduct: (
         licenseId: string,

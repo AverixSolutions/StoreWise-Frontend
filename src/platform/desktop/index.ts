@@ -45,6 +45,9 @@ function mapProductSummary(row: any): ProductSummary {
   return {
     id: row.id,
     code: row.code,
+    shortCode: row.shortCode ?? null,
+    imagePath: row.imagePath ?? null,
+    imageFileName: row.imageFileName ?? null,
     name: row.name,
     brand: row.brand ?? null,
     category: row.category ?? null,
@@ -175,6 +178,16 @@ export const desktopPlatform: PlatformAPI = {
     return row ? mapProductSummary(row) : null;
   },
 
+  getProductImageDataUrl: async (productId: string): Promise<string | null> => {
+    const api = requireElectronAPI() as any;
+
+    if (!api.getProductImageDataUrl) {
+      return null;
+    }
+
+    return api.getProductImageDataUrl(productId);
+  },
+
   getProductByBarcode: async (
     licenseId: string,
     barcode: string,
@@ -184,6 +197,34 @@ export const desktopPlatform: PlatformAPI = {
       barcode,
     );
     return row ? mapProductLookup(row) : null;
+  },
+
+  getProductByCode: async (
+    licenseId: string,
+    code: string,
+  ): Promise<ProductSummary | null> => {
+    const api = requireElectronAPI() as any;
+
+    if (!api.getProductByCode) {
+      return null;
+    }
+
+    const row = await api.getProductByCode(licenseId, code);
+    return row ? mapProductSummary(row) : null;
+  },
+
+  getProductByShortCode: async (
+    licenseId: string,
+    shortCode: string,
+  ): Promise<ProductSummary | null> => {
+    const api = requireElectronAPI() as any;
+
+    if (!api.getProductByShortCode) {
+      return null;
+    }
+
+    const row = await api.getProductByShortCode(licenseId, shortCode);
+    return row ? mapProductSummary(row) : null;
   },
 
   createProduct: (product: ProductInput) => {

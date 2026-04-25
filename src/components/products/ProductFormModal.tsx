@@ -1,3 +1,4 @@
+// src/components/products/ProductFormModal.tsx
 "use client";
 
 import { useEffect, useState, useRef } from "react";
@@ -21,6 +22,7 @@ import { getActiveLicenseId } from "@/lib/session/runtimeSession";
 import type {
   ProductInput,
   ProductSummary,
+  ProductImagePayload,
   UnitCode,
   TaxCode,
   CategoryRecord,
@@ -38,6 +40,7 @@ interface BarcodeEntry {
 }
 
 interface BulkRow {
+  shortCode?: string;
   name: string;
   brand?: string;
   category?: string;
@@ -127,6 +130,50 @@ function buildAutoName(
     .join(" ");
 }
 
+function fileToProductImagePayload(file: File): Promise<{
+  payload: ProductImagePayload;
+  previewUrl: string;
+}> {
+  return new Promise((resolve, reject) => {
+    const allowed = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+
+    if (!allowed.includes(file.type)) {
+      reject(new Error("Only JPG, PNG, and WEBP images are allowed"));
+      return;
+    }
+
+    const maxSizeMb = 3;
+    if (file.size > maxSizeMb * 1024 * 1024) {
+      reject(new Error(`Image must be below ${maxSizeMb}MB`));
+      return;
+    }
+
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      const dataUrl = String(reader.result || "");
+      const base64 = dataUrl.split(",")[1];
+
+      if (!base64) {
+        reject(new Error("Failed to read image"));
+        return;
+      }
+
+      resolve({
+        previewUrl: dataUrl,
+        payload: {
+          base64,
+          mimeType: file.type as ProductImagePayload["mimeType"],
+          fileName: file.name,
+        },
+      });
+    };
+
+    reader.onerror = () => reject(new Error("Failed to read image"));
+    reader.readAsDataURL(file);
+  });
+}
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const fieldClass =
@@ -135,9 +182,9 @@ const fieldClass =
 const labelClass =
   "mb-1 block text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400";
 
-const BULK_FORMAT = `name,brand,category,subcategory,productName,model,size,unit,tax,hsn,costPrice,salePrice
-Apple iPhone,Apple,Electronics,Smartphones,iPhone,14 Pro,128GB,NOS,P18,8517,75000,89999
-Colgate Toothpaste,Colgate,Health,Dental Care,Toothpaste,MaxFresh,150g,NOS,P12,3306,60,85`;
+const BULK_FORMAT = `shortCode,category,subcategory,brand,productName,model,size,name,unit,tax,hsn,costPrice,salePrice
+APL,Electronics,Smartphones,Apple,iPhone,14 Pro,128GB,Apple iPhone 14 Pro 128GB,NOS,P18,8517,75000,89999
+MILK,Dairy,,Amul,Milk,,500ml,Amul Milk 500ml,NOS,P5,0401,28,32`;
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -154,6 +201,12 @@ export default function ProductFormModal({
 
   // ── Basic product fields ──
   const [code, setCode] = useState<string>("00001");
+  const [shortCode, setShortCode] = useState("");
+  const [productImage, setProductImage] = useState<ProductImagePayload | null>(
+    null,
+  );
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+  const [imageError, setImageError] = useState<string | null>(null);
   const [productName, setProductName] = useState("");
   const [brand, setBrand] = useState("");
   const [model, setModel] = useState("");
@@ -164,7 +217,7 @@ export default function ProductFormModal({
   // ── Category / subcategory ──
   const [allCategories, setAllCategories] =
     useState<CategoryRecord[]>(categoryRecords);
-  const [pickerSelectedId, setPickerSelectedId] = useState<string>("");
+  const [, setPickerSelectedId] = useState<string>("");
   const [category, setCategory] = useState(""); // parent category string (derived)
   const [subcategory, setSubcategory] = useState(""); // subcategory string (derived)
 
@@ -191,15 +244,20 @@ export default function ProductFormModal({
   const [bulkSaving, setBulkSaving] = useState(false);
   const [bulkDone, setBulkDone] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const productImageInputRef = useRef<HTMLInputElement>(null);
 
   const licenseId = typeof window !== "undefined" ? getActiveLicenseId() : "";
 
   // ── Refs ──
-  const productNameRef = useRef<HTMLInputElement>(null);
+  const categoryRef = useRef<HTMLButtonElement>(null);
+  const subcategoryDropdownRef = useRef<HTMLButtonElement>(null);
+  const subcategoryInputRef = useRef<HTMLInputElement>(null);
   const brandRef = useRef<HTMLButtonElement>(null);
+  const productNameRef = useRef<HTMLInputElement>(null);
   const modelRef = useRef<HTMLInputElement>(null);
   const sizeRef = useRef<HTMLInputElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
+  const shortCodeRef = useRef<HTMLInputElement>(null);
   const unitRef = useRef<HTMLButtonElement>(null);
   const taxRef = useRef<HTMLButtonElement>(null);
   const hsnRef = useRef<HTMLInputElement>(null);
@@ -209,60 +267,127 @@ export default function ProductFormModal({
   // ── Keyboard navigation ───────────────────────────────────────────────────
 
   const IDX = {
-    PRODUCT_NAME: 0,
-    BRAND: 1,
-    MODEL: 2,
-    SIZE: 3,
-    NAME: 4,
-    UNIT: 5,
-    TAX: 6,
-    HSN: 7,
-    COST: 8,
-    SALE: 9,
+    CATEGORY: 0,
+    SUBCATEGORY: 1,
+    BRAND: 2,
+    PRODUCT_NAME: 3,
+    MODEL: 4,
+    SIZE: 5,
+    NAME: 6,
+    SHORT_CODE: 7,
+    UNIT: 8,
+    TAX: 9,
+    HSN: 10,
+    COST: 11,
+    SALE: 12,
   } as const;
 
-  const inputRefs = [
-    productNameRef, // 0
-    brandRef, // 1
-    modelRef, // 2
-    sizeRef, // 3
-    nameRef, // 4
-    unitRef, // 5
-    taxRef, // 6
-    hsnRef, // 7
-    costRef, // 8
-    saleRef, // 9
-  ];
+  const LAST_FIELD_INDEX = IDX.SALE;
 
-  function handleKeyDown(e: React.KeyboardEvent<HTMLElement>, index: number) {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      if (e.shiftKey) {
-        if (index > 0) inputRefs[index - 1].current?.focus();
-      } else {
-        if (index < inputRefs.length - 1) {
-          inputRefs[index + 1].current?.focus();
-        } else {
-          const form = (e.currentTarget as HTMLElement).closest(
-            "form",
-          ) as HTMLFormElement | null;
-          form?.requestSubmit();
-        }
-      }
+  function getFocusTarget(index: number): HTMLElement | null {
+    switch (index) {
+      case IDX.CATEGORY:
+        return categoryRef.current;
+      case IDX.SUBCATEGORY:
+        return subcategoryDropdownRef.current ?? subcategoryInputRef.current;
+      case IDX.BRAND:
+        return brandRef.current;
+      case IDX.PRODUCT_NAME:
+        return productNameRef.current;
+      case IDX.MODEL:
+        return modelRef.current;
+      case IDX.SIZE:
+        return sizeRef.current;
+      case IDX.NAME:
+        return nameRef.current;
+      case IDX.SHORT_CODE:
+        return shortCodeRef.current;
+      case IDX.UNIT:
+        return unitRef.current;
+      case IDX.TAX:
+        return taxRef.current;
+      case IDX.HSN:
+        return hsnRef.current;
+      case IDX.COST:
+        return costRef.current;
+      case IDX.SALE:
+        return saleRef.current;
+      default:
+        return null;
     }
   }
 
+  function focusField(index: number) {
+    window.setTimeout(() => {
+      const target = getFocusTarget(index);
+      if (!target) return;
+
+      target.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+        inline: "nearest",
+      });
+
+      window.setTimeout(() => {
+        target.focus({ preventScroll: true });
+      }, 80);
+    }, 0);
+  }
+
+  function focusNext(index: number) {
+    if (index >= LAST_FIELD_INDEX) {
+      const form = document.getElementById(
+        "product-form",
+      ) as HTMLFormElement | null;
+      form?.requestSubmit();
+      return;
+    }
+
+    focusField(index + 1);
+  }
+
+  function focusPrev(index: number) {
+    if (index <= IDX.CATEGORY) {
+      focusField(IDX.CATEGORY);
+      return;
+    }
+
+    focusField(index - 1);
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLElement>, index: number) {
+    if (e.key !== "Enter" && e.key !== "Tab") return;
+
+    e.preventDefault();
+
+    if (e.shiftKey) {
+      focusPrev(index);
+    } else {
+      focusNext(index);
+    }
+  }
+
+  // ── Ctrl/Cmd + S shortcut ─────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!isOpen || activeTab !== "single") return;
+    function handleGlobalKeyDown(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        const form = document.getElementById(
+          "product-form",
+        ) as HTMLFormElement | null;
+        form?.requestSubmit();
+      }
+    }
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, [isOpen, activeTab]);
+
   // ── Picker options derived from categories ──
   const pickerOptions = buildPickerOptions(allCategories);
-  const standaloneOptions = pickerOptions.filter((o) => !o.isSubcategory);
-
-  const parentCategoriesWithChildren = allCategories.filter(
-    (c) => !c.parentId && pickerOptions.some((o) => o.parentId === c.id),
-  );
 
   const hasCategoryMaster = allCategories.length > 0;
-  const selectedPickerOption =
-    pickerOptions.find((o) => o.id === pickerSelectedId) ?? null;
 
   const parentCategoryOptions = allCategories
     .filter((c) => !c.parentId)
@@ -291,24 +416,6 @@ export default function ProductFormModal({
 
   // ── Category picker handler ──────────────────────────────────────────────────
 
-  function handlePickerChange(id: string) {
-    setPickerSelectedId(id);
-    if (!id) {
-      setCategory("");
-      setSubcategory("");
-      return;
-    }
-    const opt = pickerOptions.find((o) => o.id === id);
-    if (!opt) return;
-    if (opt.isSubcategory) {
-      setCategory(opt.parentName ?? "");
-      setSubcategory(opt.name);
-    } else {
-      setCategory(opt.name);
-      setSubcategory("");
-    }
-  }
-
   // ── Load categories on open ─────────────────────────────────────────────────
 
   useEffect(() => {
@@ -331,7 +438,7 @@ export default function ProductFormModal({
 
   useEffect(() => {
     if (isOpen) {
-      requestAnimationFrame(() => productNameRef.current?.focus());
+      requestAnimationFrame(() => categoryRef.current?.focus());
     }
   }, [isOpen]);
 
@@ -352,6 +459,7 @@ export default function ProductFormModal({
       );
 
       setCode(editProduct.code);
+      setShortCode(editProduct.shortCode ?? "");
       setProductName(initialProductName);
       setBrand(initialBrand);
       setModel(initialModel);
@@ -372,6 +480,7 @@ export default function ProductFormModal({
       setCostPrice(editProduct.costPrice.toString());
       setSalePrice(editProduct.salePrice?.toString() ?? "");
       loadExistingBarcodes(editProduct.id);
+      loadExistingProductImage(editProduct.id);
     } else {
       resetForm();
       platform
@@ -438,6 +547,46 @@ export default function ProductFormModal({
   function normalizeText(value?: string | null) {
     return (value ?? "").trim().toLowerCase();
   }
+
+  // ── Image helpers ─────────────────────────────────────────────────────────
+
+  async function loadExistingProductImage(productId: string) {
+    try {
+      const dataUrl = await platform.getProductImageDataUrl?.(productId);
+      setImagePreviewUrl(dataUrl || null);
+      setProductImage(null);
+      setImageError(null);
+    } catch {
+      setImagePreviewUrl(null);
+      setProductImage(null);
+    }
+  }
+
+  async function handleProductImageChange(
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+
+    if (!file) return;
+
+    try {
+      setImageError(null);
+      const { payload, previewUrl } = await fileToProductImagePayload(file);
+      setProductImage(payload);
+      setImagePreviewUrl(previewUrl);
+    } catch (err: any) {
+      setImageError(err?.message || "Failed to load image");
+    }
+  }
+
+  function clearProductImageSelection() {
+    setProductImage(null);
+    setImagePreviewUrl(null);
+    setImageError(null);
+  }
+
+  // ── Brand / Category master helpers ──────────────────────────────────────────
 
   async function ensureBrandMaster(brandName?: string | null) {
     const trimmedBrand = brandName?.trim();
@@ -574,7 +723,6 @@ export default function ProductFormModal({
       };
     }
 
-    // No master yet → allow typed values directly
     if (!hasCategoryMaster) {
       return {
         category: rawCategory,
@@ -590,7 +738,6 @@ export default function ProductFormModal({
         (parent) => normalizeText(parent.name) === normalizeText(rawCategory),
       ) ?? null;
 
-    // New parent category in bulk → allow it
     if (!matchedParent) {
       return {
         category: rawCategory,
@@ -602,7 +749,6 @@ export default function ProductFormModal({
       (child) => child.parentId === matchedParent.id,
     );
 
-    // Existing parent with children → subcategory required
     if (existingChildren.length > 0) {
       if (!rawSubcategory) {
         return {
@@ -616,7 +762,6 @@ export default function ProductFormModal({
         (child) => normalizeText(child.name) === normalizeText(rawSubcategory),
       );
 
-      // Existing child
       if (matchedChild) {
         return {
           category: matchedParent.name,
@@ -624,14 +769,12 @@ export default function ProductFormModal({
         };
       }
 
-      // New child under existing parent → allow it
       return {
         category: matchedParent.name,
         subcategory: rawSubcategory,
       };
     }
 
-    // Existing direct category with no children
     return {
       category: matchedParent.name,
       subcategory: rawSubcategory || null,
@@ -666,6 +809,10 @@ export default function ProductFormModal({
   }
 
   function resetForm() {
+    setShortCode("");
+    setProductImage(null);
+    setImagePreviewUrl(null);
+    setImageError(null);
     setProductName("");
     setBrand("");
     setModel("");
@@ -760,6 +907,7 @@ export default function ProductFormModal({
       const trimmedBrand = brand.trim();
       const trimmedCategory = category.trim();
       const trimmedSubcategory = subcategory.trim();
+      const trimmedShortCode = shortCode.trim().toUpperCase();
 
       if (!trimmedProductName) throw new Error("Product name is required");
       if (!trimmedName) throw new Error("Item name is required");
@@ -807,6 +955,7 @@ export default function ProductFormModal({
         licenseId,
         code,
         codeNumber: parseInt(code, 10),
+        shortCode: trimmedShortCode || null,
         name: trimmedName,
         brand: trimmedBrand || null,
         category: trimmedCategory || null,
@@ -819,6 +968,7 @@ export default function ProductFormModal({
         hsn: hsn.trim() || null,
         costPrice: parsedCostPrice,
         salePrice: parsedSalePrice,
+        image: productImage ?? undefined,
       };
 
       let productId = "";
@@ -863,7 +1013,7 @@ export default function ProductFormModal({
         const nextCode = await platform.getNextCode(licenseId);
         setCode(nextCode);
         await loadNextBarcodePreview();
-        requestAnimationFrame(() => productNameRef.current?.focus());
+        requestAnimationFrame(() => categoryRef.current?.focus());
         return;
       }
 
@@ -879,28 +1029,39 @@ export default function ProductFormModal({
     const lines = text.trim().split("\n").filter(Boolean);
     if (lines.length === 0) return [];
     const firstLine = lines[0].toLowerCase();
-    const startIdx = firstLine.includes("name") ? 1 : 0;
+    // Detect if first line is a header (contains "shortcode" or "name" or "category")
+    const startIdx =
+      firstLine.includes("shortcode") ||
+      firstLine.includes("name") ||
+      firstLine.includes("category")
+        ? 1
+        : 0;
     const rows: BulkRow[] = [];
     const validUnits: UnitCode[] = ["NOS", "KG", "LTR", "MTR"];
     const validTaxes: TaxCode[] = ["NT", "P5", "P12", "P18", "P28"];
 
     for (let i = startIdx; i < lines.length; i++) {
       const cols = lines[i].split(",").map((c) => c.trim());
+      // New column order: shortCode,category,subcategory,brand,productName,model,size,name,unit,tax,hsn,costPrice,salePrice
       const [
-        rName,
-        rBrand,
+        rShortCode,
         rCategory,
         rSubcategory,
+        rBrand,
         rProductName,
         rModel,
         rSize,
+        rName,
         rUnit,
         rTax,
         rHsn,
         rCost,
         rSale,
       ] = cols;
-      if (!rName) continue;
+
+      // Require at least productName or name
+      if (!rProductName && !rName) continue;
+
       const unitVal = validUnits.includes(rUnit?.toUpperCase() as UnitCode)
         ? (rUnit.toUpperCase() as UnitCode)
         : "NOS";
@@ -909,7 +1070,8 @@ export default function ProductFormModal({
         : "NT";
 
       rows.push({
-        name: rName,
+        shortCode: rShortCode ? rShortCode.toUpperCase() : undefined,
+        name: rName || "",
         brand: rBrand || undefined,
         category: rCategory || undefined,
         subcategory: rSubcategory || undefined,
@@ -953,7 +1115,7 @@ export default function ProductFormModal({
           r.size ?? "",
         );
         const fallbackName = r.name?.trim() ?? "";
-        const finalName = generatedName || fallbackName || trimmedProductName;
+        const finalName = fallbackName || generatedName || trimmedProductName;
 
         if (!trimmedProductName) {
           throw new Error(`Row ${i + 1}: Product name is required`);
@@ -969,6 +1131,7 @@ export default function ProductFormModal({
         }
 
         const trimmedBrand = r.brand?.trim() || null;
+        const trimmedShortCode = r.shortCode?.trim().toUpperCase() || null;
 
         await ensureMastersForProduct({
           brand: trimmedBrand,
@@ -980,6 +1143,7 @@ export default function ProductFormModal({
           licenseId,
           code: nextCode,
           codeNumber: parseInt(nextCode, 10),
+          shortCode: trimmedShortCode,
           name: finalName,
           brand: trimmedBrand,
           category: resolvedCategory.category,
@@ -1056,14 +1220,15 @@ export default function ProductFormModal({
     { value: "MTR", label: "Meters (MTR)" },
   ];
 
-  // ── Category picker render helpers ────────────────────────────────────────────
-
   if (!isOpen) return null;
 
   return (
     <div
       className="fixed inset-0 z-[260] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4"
       onClick={onClose}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+      }}
       role="dialog"
       aria-modal="true"
     >
@@ -1072,7 +1237,7 @@ export default function ProductFormModal({
         onClick={(e) => e.stopPropagation()}
       >
         {/* ── Header ── */}
-        <div className="relative overflow-hidden rounded-t-[24px] bg-[linear-gradient(135deg,#091120_0%,#0f1a31_60%,#16213d_100%)] px-4 py-3.5 text-white shrink-0">
+        <div className="relative overflow-hidden bg-[linear-gradient(135deg,#091120_0%,#0f1a31_60%,#16213d_100%)] px-4 py-3.5 text-white shrink-0">
           <div className="pointer-events-none absolute -left-6 top-0 h-16 w-16 rounded-full bg-cyan-400/15 blur-2xl" />
           <div className="pointer-events-none absolute right-0 top-0 h-16 w-16 rounded-full bg-fuchsia-500/15 blur-2xl" />
           <div className="relative flex items-center justify-between gap-3">
@@ -1090,6 +1255,7 @@ export default function ProductFormModal({
             <button
               type="button"
               onClick={onClose}
+              tabIndex={-1}
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/15 bg-white/10 text-white transition hover:bg-white/20"
             >
               <X className="h-3.5 w-3.5" />
@@ -1104,6 +1270,7 @@ export default function ProductFormModal({
               <button
                 key={tab}
                 type="button"
+                tabIndex={-1}
                 onClick={() => setActiveTab(tab)}
                 className={`px-3 py-2 text-xs font-semibold rounded-t-lg transition border-b-2 -mb-px ${
                   activeTab === tab
@@ -1122,7 +1289,7 @@ export default function ProductFormModal({
           <form
             id="product-form"
             onSubmit={handleSubmit}
-            className="flex-1 overflow-y-auto px-4 py-4 sm:px-5 sm:py-4 space-y-3.5 no-scrollbar"
+            className="flex-1 overflow-y-auto scroll-pt-24 scroll-pb-36 px-4 py-4 sm:px-5 sm:py-4 space-y-3.5 no-scrollbar"
           >
             {/* Item Code — mobile only */}
             <div className="sm:hidden flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
@@ -1134,8 +1301,172 @@ export default function ProductFormModal({
               </span>
             </div>
 
-            {/* ── Row 1: Product Name + Brand ── */}
+            {/* ── Row 1: Category / Subcategory ── */}
+            <div>
+              {allCategories.length > 0 ? (
+                <div className="space-y-1.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className={labelClass}>
+                        Category <span className="text-rose-400">*</span>
+                      </label>
+                      <SearchableDropdown
+                        ref={categoryRef}
+                        value={category}
+                        onChange={(val) => {
+                          const nextCategory = val ?? "";
+                          const changed =
+                            normalizeText(nextCategory) !==
+                            normalizeText(category);
+
+                          setCategory(nextCategory);
+                          setPickerSelectedId("");
+
+                          if (changed) {
+                            setSubcategory("");
+                          }
+                        }}
+                        options={parentCategoryOptions.map((row) => ({
+                          value: row.name,
+                          label: row.name,
+                        }))}
+                        placeholder="Pick or type category"
+                        allowCustom
+                        autoOpenOnFocus={false}
+                        onEnter={(dir) => {
+                          if (dir === -1) {
+                            focusPrev(IDX.CATEGORY);
+                          } else {
+                            focusNext(IDX.CATEGORY);
+                          }
+                        }}
+                      />
+                    </div>
+
+                    <div>
+                      <label className={labelClass}>
+                        Subcategory
+                        {typedCategoryHasChildren && (
+                          <span className="text-rose-400"> *</span>
+                        )}
+                      </label>
+                      <SearchableDropdown
+                        ref={subcategoryDropdownRef}
+                        value={subcategory}
+                        onChange={(val) => {
+                          setSubcategory(val ?? "");
+                          setPickerSelectedId("");
+                        }}
+                        options={subcategoryOptionsForTypedParent.map(
+                          (row) => ({
+                            value: row.name,
+                            label: row.name,
+                          }),
+                        )}
+                        placeholder={
+                          typedCategoryHasChildren
+                            ? "Pick or type subcategory"
+                            : "Optional subcategory"
+                        }
+                        allowCustom
+                        autoOpenOnFocus={false}
+                        onEnter={(dir) => {
+                          if (dir === -1) {
+                            focusPrev(IDX.SUBCATEGORY);
+                          } else {
+                            focusNext(IDX.SUBCATEGORY);
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {category && (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">
+                        Selected:
+                      </span>
+                      <span className="rounded-full bg-slate-100 border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+                        {category}
+                      </span>
+                      {subcategory && (
+                        <>
+                          <span className="text-slate-300 text-[10px]">›</span>
+                          <span className="rounded-full bg-cyan-50 border border-cyan-200 px-2 py-0.5 text-[10px] font-semibold text-cyan-700">
+                            {subcategory}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className={labelClass}>
+                      Category <span className="text-rose-400">*</span>
+                    </label>
+                    <SearchableDropdown
+                      ref={categoryRef}
+                      value={category}
+                      onChange={(val) => {
+                        setCategory(val);
+                        setSubcategory("");
+                      }}
+                      options={existingCategories.map((c) => ({
+                        value: c,
+                        label: c,
+                      }))}
+                      placeholder="Enter or pick category"
+                      allowCustom
+                      autoOpenOnFocus={false}
+                      onEnter={(dir) => {
+                        if (dir === -1) {
+                          focusPrev(IDX.CATEGORY);
+                        } else {
+                          focusNext(IDX.CATEGORY);
+                        }
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Subcategory</label>
+                    <input
+                      ref={subcategoryInputRef}
+                      type="text"
+                      value={subcategory}
+                      onChange={(e) => setSubcategory(e.target.value)}
+                      onKeyDown={(e) => handleKeyDown(e, IDX.SUBCATEGORY)}
+                      placeholder="Optional subcategory"
+                      className={fieldClass}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* ── Row 2: Brand + Product Name ── */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className={labelClass}>Brand</label>
+                <SearchableDropdown
+                  ref={brandRef}
+                  value={brand}
+                  onChange={setBrand}
+                  options={existingBrands.map((b) => ({ value: b, label: b }))}
+                  placeholder="e.g. Apple, Nike"
+                  allowCustom
+                  autoOpenOnFocus={false}
+                  onEnter={(dir) => {
+                    if (dir === -1) {
+                      focusPrev(IDX.BRAND);
+                    } else {
+                      focusNext(IDX.BRAND);
+                    }
+                  }}
+                />
+              </div>
+
               <div>
                 <label className={labelClass}>
                   Product Name <span className="text-rose-400">*</span>
@@ -1150,28 +1481,9 @@ export default function ProductFormModal({
                   className={fieldClass}
                 />
               </div>
-              <div>
-                <label className={labelClass}>Brand</label>
-                <SearchableDropdown
-                  ref={brandRef}
-                  value={brand}
-                  onChange={setBrand}
-                  options={existingBrands.map((b) => ({ value: b, label: b }))}
-                  placeholder="e.g. Apple, Nike"
-                  allowCustom
-                  autoOpenOnFocus={false}
-                  onEnter={(dir) => {
-                    if (dir === -1) {
-                      inputRefs[IDX.PRODUCT_NAME].current?.focus();
-                    } else {
-                      inputRefs[IDX.MODEL].current?.focus();
-                    }
-                  }}
-                />
-              </div>
             </div>
 
-            {/* ── Row 2: Model + Size ── */}
+            {/* ── Row 3: Model + Size ── */}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className={labelClass}>Model / Variant</label>
@@ -1199,7 +1511,7 @@ export default function ProductFormModal({
               </div>
             </div>
 
-            {/* ── Row 3: Item Name (auto-generated) ── */}
+            {/* ── Row 4: Item Name ── */}
             <div>
               <div className="mb-1 flex items-center justify-between">
                 <label className={labelClass}>
@@ -1207,6 +1519,7 @@ export default function ProductFormModal({
                 </label>
                 <button
                   type="button"
+                  tabIndex={-1}
                   onClick={() => {
                     setNameAutoMode(true);
                     const generated = buildAutoName(
@@ -1247,172 +1560,110 @@ export default function ProductFormModal({
               )}
             </div>
 
-            {/* ── Row 4: Unit + Tax ── */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className={labelClass}>
-                  Unit <span className="text-rose-400">*</span>
-                </label>
-                <Dropdown
-                  ref={unitRef}
-                  value={unit}
-                  onChange={(value) => setUnit(value as UnitCode)}
-                  options={unitOptions}
-                  placeholder="Select unit"
-                  onEnter={() => inputRefs[IDX.TAX].current?.focus()}
-                  required
-                />
-              </div>
-              <div>
-                <label className={labelClass}>
-                  Tax Rate <span className="text-rose-400">*</span>
-                </label>
-                <Dropdown
-                  ref={taxRef}
-                  value={tax}
-                  onChange={(value) => setTax(value as TaxCode)}
-                  options={taxOptions}
-                  placeholder="Select tax"
-                  onEnter={() => inputRefs[IDX.HSN].current?.focus()}
-                  required
-                />
-              </div>
-            </div>
-
-            {/* ── Row 5: Category / Subcategory ── */}
-            <div className="rounded-[14px] border border-slate-200/80 bg-slate-50/60 p-3 space-y-2.5">
-              <div className="flex items-center gap-2">
-                <div className="flex h-6 w-6 items-center justify-center rounded-lg kyn-brand-chip">
-                  <FolderTree className="h-3 w-3 text-slate-700" />
+            {/* ── Row 5: Short Code + Unit + Tax + Image ── */}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_120px]">
+              <div className="grid grid-cols-1 gap-3">
+                <div>
+                  <label className={labelClass}>Short Code</label>
+                  <input
+                    ref={shortCodeRef}
+                    type="text"
+                    value={shortCode}
+                    onChange={(e) => setShortCode(e.target.value.toUpperCase())}
+                    onKeyDown={(e) => handleKeyDown(e, IDX.SHORT_CODE)}
+                    placeholder="e.g. APL, MILK, RICE-5KG"
+                    maxLength={24}
+                    className={fieldClass}
+                  />
+                  <p className="mt-1 text-[10px] text-slate-400">
+                    Easy billing/search code. Example: Apple = APL.
+                  </p>
                 </div>
-                <span className="text-xs font-semibold text-slate-800">
-                  Category
-                </span>
-              </div>
 
-              {allCategories.length > 0 ? (
-                <div className="space-y-2">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <div>
-                      <label className={labelClass}>
-                        Category <span className="text-rose-400">*</span>
-                      </label>
-                      <SearchableDropdown
-                        value={category}
-                        onChange={(val) => {
-                          const nextCategory = val ?? "";
-                          const changed =
-                            normalizeText(nextCategory) !==
-                            normalizeText(category);
-
-                          setCategory(nextCategory);
-                          setPickerSelectedId("");
-
-                          if (changed) {
-                            setSubcategory("");
-                          }
-                        }}
-                        options={parentCategoryOptions.map((row) => ({
-                          value: row.name,
-                          label: row.name,
-                        }))}
-                        placeholder="Pick or type category"
-                        allowCustom
-                        autoOpenOnFocus={false}
-                      />
-                    </div>
-
-                    <div>
-                      <label className={labelClass}>
-                        Subcategory
-                        {typedCategoryHasChildren && (
-                          <span className="text-rose-400"> *</span>
-                        )}
-                      </label>
-                      <SearchableDropdown
-                        key={category}
-                        value={subcategory}
-                        onChange={(val) => {
-                          setSubcategory(val ?? "");
-                          setPickerSelectedId("");
-                        }}
-                        options={subcategoryOptionsForTypedParent.map(
-                          (row) => ({
-                            value: row.name,
-                            label: row.name,
-                          }),
-                        )}
-                        placeholder={
-                          typedCategoryHasChildren
-                            ? "Pick or type subcategory"
-                            : "Optional subcategory"
-                        }
-                        allowCustom
-                        autoOpenOnFocus={false}
-                      />
-                    </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={labelClass}>
+                      Unit <span className="text-rose-400">*</span>
+                    </label>
+                    <Dropdown
+                      ref={unitRef}
+                      value={unit}
+                      onChange={(value) => setUnit(value as UnitCode)}
+                      options={unitOptions}
+                      placeholder="Select unit"
+                      onEnter={() => focusNext(IDX.UNIT)}
+                      required
+                    />
                   </div>
 
-                  {category ? (
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">
-                        Selected:
-                      </span>
-                      <span className="rounded-full bg-slate-100 border border-slate-200 px-2.5 py-0.5 text-[11px] font-semibold text-slate-700">
-                        {category}
-                      </span>
-                      {subcategory && (
-                        <>
-                          <span className="text-slate-300 text-xs">›</span>
-                          <span className="rounded-full bg-cyan-50 border border-cyan-200 px-2.5 py-0.5 text-[11px] font-semibold text-cyan-700">
-                            {subcategory}
-                          </span>
-                        </>
-                      )}
-                    </div>
+                  <div>
+                    <label className={labelClass}>
+                      Tax Rate <span className="text-rose-400">*</span>
+                    </label>
+                    <Dropdown
+                      ref={taxRef}
+                      value={tax}
+                      onChange={(value) => setTax(value as TaxCode)}
+                      options={taxOptions}
+                      placeholder="Select tax"
+                      onEnter={() => focusNext(IDX.TAX)}
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className={labelClass}>Item Image</label>
+
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={() => productImageInputRef.current?.click()}
+                  className="group flex h-[116px] w-full items-center justify-center overflow-hidden rounded-2xl border border-dashed border-slate-300 bg-slate-50 transition hover:border-cyan-300 hover:bg-cyan-50/40"
+                >
+                  {imagePreviewUrl ? (
+                    <img
+                      src={imagePreviewUrl}
+                      alt="Product preview"
+                      className="h-full w-full object-cover"
+                    />
                   ) : (
-                    <p className="text-[11px] italic text-slate-400">
-                      Pick an existing category or type a new one. If an
-                      existing category has subcategories, subcategory is
-                      required.
-                    </p>
+                    <div className="flex flex-col items-center gap-1 text-slate-400">
+                      <Upload className="h-5 w-5" />
+                      <span className="text-[10px] font-semibold">Upload</span>
+                    </div>
                   )}
-                </div>
-              ) : (
-                /* ── Fallback: no master categories, use free-text ── */
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <div>
-                    <label className={labelClass}>Category</label>
-                    <SearchableDropdown
-                      value={category}
-                      onChange={(val) => {
-                        setCategory(val);
-                        setSubcategory("");
-                      }}
-                      options={existingCategories.map((c) => ({
-                        value: c,
-                        label: c,
-                      }))}
-                      placeholder="Enter or pick category"
-                      allowCustom
-                      autoOpenOnFocus={false}
-                    />
-                  </div>
-                  <div>
-                    <label className={labelClass}>Subcategory</label>
-                    <input
-                      type="text"
-                      value={subcategory}
-                      onChange={(e) => setSubcategory(e.target.value)}
-                      placeholder="Optional subcategory"
-                      className={fieldClass}
-                    />
-                  </div>
-                </div>
-              )}
+                </button>
+
+                <input
+                  ref={productImageInputRef}
+                  type="file"
+                  accept="image/jpeg,image/jpg,image/png,image/webp"
+                  className="hidden"
+                  onChange={handleProductImageChange}
+                />
+
+                {productImage && (
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    onClick={clearProductImageSelection}
+                    className="mt-1 text-[10px] font-semibold text-rose-500 hover:text-rose-600"
+                  >
+                    Clear selected image
+                  </button>
+                )}
+
+                {imageError && (
+                  <p className="mt-1 text-[10px] font-medium text-rose-500">
+                    {imageError}
+                  </p>
+                )}
+              </div>
             </div>
 
-            {/* ── Row 6: HSN ── */}
+            {/* ── Row 7: HSN ── */}
             <div>
               <label className={labelClass}>HSN Code</label>
               <input
@@ -1426,7 +1677,7 @@ export default function ProductFormModal({
               />
             </div>
 
-            {/* ── Row 7: Pricing ── */}
+            {/* ── Row 8: Pricing ── */}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className={labelClass}>
@@ -1444,7 +1695,7 @@ export default function ProductFormModal({
                     onKeyDown={(e) => handleKeyDown(e, IDX.COST)}
                     required
                     min="0"
-                    step="0.01"
+                    step="1"
                     placeholder="0.00"
                     className={`${fieldClass} pl-7`}
                   />
@@ -1463,7 +1714,7 @@ export default function ProductFormModal({
                     onChange={(e) => setSalePrice(e.target.value)}
                     onKeyDown={(e) => handleKeyDown(e, IDX.SALE)}
                     min="0"
-                    step="0.01"
+                    step="1"
                     placeholder="0.00"
                     className={`${fieldClass} pl-7`}
                   />
@@ -1513,6 +1764,7 @@ export default function ProductFormModal({
                       )}
                       <button
                         type="button"
+                        tabIndex={-1}
                         onClick={() => removeBarcode(entry)}
                         className="ml-auto flex h-5 w-5 items-center justify-center rounded-md text-rose-400 transition hover:bg-rose-50 hover:text-rose-600"
                       >
@@ -1526,6 +1778,7 @@ export default function ProductFormModal({
               <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                 <button
                   type="button"
+                  tabIndex={-1}
                   onClick={addGeneratedBarcode}
                   className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl bg-cyan-600 px-3 py-2 text-[11px] font-semibold text-white transition hover:bg-cyan-700 sm:h-auto sm:justify-start sm:px-2.5 sm:py-1.5"
                 >
@@ -1533,6 +1786,7 @@ export default function ProductFormModal({
                 </button>
                 <div className="flex w-full items-center gap-1.5 sm:min-w-[160px] sm:flex-1">
                   <input
+                    tabIndex={-1}
                     type="text"
                     value={customBarcodeInput}
                     onChange={(e) => {
@@ -1550,6 +1804,7 @@ export default function ProductFormModal({
                   />
                   <button
                     type="button"
+                    tabIndex={-1}
                     onClick={addCustomBarcode}
                     className="inline-flex h-9 shrink-0 items-center justify-center gap-1 rounded-xl bg-slate-800 px-3 text-[11px] font-semibold text-white transition hover:bg-slate-700 sm:h-7 sm:px-2.5"
                   >
@@ -1582,7 +1837,8 @@ export default function ProductFormModal({
                 {BULK_FORMAT}
               </pre>
               <p className="mt-2 text-[11px] text-slate-400">
-                Units: NOS / KG / LTR / MTR · Tax: NT / P5 / P12 / P18 / P28
+                Units: NOS / KG / LTR / MTR · Tax: NT / P5 / P12 / P18 / P28 ·
+                shortCode is optional
               </p>
             </div>
             <div>
@@ -1663,8 +1919,13 @@ export default function ProductFormModal({
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="text-sm font-semibold text-slate-900">
-                            {r.name}
+                            {r.name || r.productName}
                           </p>
+                          {r.shortCode && (
+                            <span className="mt-0.5 inline-block rounded-full bg-cyan-50 border border-cyan-200 px-2 py-0.5 text-[10px] font-semibold text-cyan-700">
+                              {r.shortCode}
+                            </span>
+                          )}
                           <p className="mt-1 text-xs text-slate-500">
                             {[r.brand, r.category, r.subcategory]
                               .filter(Boolean)
@@ -1717,16 +1978,16 @@ export default function ProductFormModal({
 
                 {/* Desktop table */}
                 <div className="hidden overflow-x-auto rounded-xl border border-slate-200 sm:block">
-                  <table className="w-full min-w-[560px] text-xs">
+                  <table className="w-full min-w-[600px] text-xs">
                     <thead className="bg-[#1e3a5f]">
                       <tr>
                         {[
+                          "Short Code",
                           "Name",
                           "Brand",
                           "Category",
                           "Sub",
                           "Model",
-                          "Size",
                           "Cost",
                           "Sale",
                           "",
@@ -1752,8 +2013,17 @@ export default function ProductFormModal({
                                 : "bg-white"
                           }
                         >
+                          <td className="px-3 py-2">
+                            {r.shortCode ? (
+                              <span className="rounded-full bg-cyan-50 border border-cyan-200 px-2 py-0.5 font-mono text-[10px] font-semibold text-cyan-700">
+                                {r.shortCode}
+                              </span>
+                            ) : (
+                              <span className="text-slate-300">—</span>
+                            )}
+                          </td>
                           <td className="px-3 py-2 font-medium text-slate-800">
-                            {r.name}
+                            {r.name || r.productName}
                           </td>
                           <td className="px-3 py-2 text-slate-500">
                             {r.brand || "—"}
@@ -1765,10 +2035,9 @@ export default function ProductFormModal({
                             {r.subcategory || "—"}
                           </td>
                           <td className="px-3 py-2 text-slate-500">
-                            {r.model || "—"}
-                          </td>
-                          <td className="px-3 py-2 text-slate-500">
-                            {r.size || "—"}
+                            {r.model || r.size
+                              ? [r.model, r.size].filter(Boolean).join(" / ")
+                              : "—"}
                           </td>
                           <td className="px-3 py-2 text-slate-700">
                             ₹{r.costPrice}
@@ -1829,6 +2098,7 @@ export default function ProductFormModal({
             <div className="flex flex-col gap-2 sm:flex-row">
               <button
                 type="button"
+                tabIndex={-1}
                 onClick={onClose}
                 className="flex-1 rounded-xl border border-slate-200 bg-white py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[0.98]"
               >
@@ -1837,6 +2107,7 @@ export default function ProductFormModal({
               {!editProduct && (
                 <button
                   type="submit"
+                  tabIndex={-1}
                   form="product-form"
                   onClick={() => setSaveMode("addAnother")}
                   className="flex-1 rounded-xl border border-slate-200 bg-slate-100 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-200 active:scale-[0.98]"
@@ -1846,6 +2117,7 @@ export default function ProductFormModal({
               )}
               <button
                 type="submit"
+                tabIndex={-1}
                 form="product-form"
                 onClick={() => setSaveMode("close")}
                 className="flex-1 rounded-xl bg-slate-900 py-2 text-xs font-semibold text-white shadow-[0_4px_12px_rgba(15,23,42,0.18)] transition hover:bg-slate-800 active:scale-[0.98]"

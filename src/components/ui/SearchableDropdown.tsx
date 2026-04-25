@@ -80,19 +80,27 @@ const SearchableDropdown = forwardRef<
       opt.label.toLowerCase().includes(searchTerm.toLowerCase()),
     );
 
-    useEffect(() => {
-      const el = optionRefs.current[active];
-      if (el) el.scrollIntoView({ block: "nearest" });
-    }, [active, isOpen, filteredOptions.length]);
+    function closeAndMove(dir: 1 | -1) {
+      setIsOpen(false);
 
-    const createFromSearch = () => {
+      // Let React close the portal first, then move focus.
+      window.setTimeout(() => {
+        onEnter?.(dir);
+      }, 0);
+    }
+
+    const createFromSearch = (dir: 1 | -1 = 1) => {
       const v = searchTerm.trim();
       if (!v) return;
       onChange(v);
       onCreate?.(v);
-      setIsOpen(false);
-      onEnter?.(1);
+      closeAndMove(dir);
     };
+
+    useEffect(() => {
+      const el = optionRefs.current[active];
+      if (el) el.scrollIntoView({ block: "nearest" });
+    }, [active, isOpen, filteredOptions.length]);
 
     useEffect(() => {
       function onFocusIn(e: FocusEvent) {
@@ -201,6 +209,13 @@ const SearchableDropdown = forwardRef<
           }}
           onClick={() => setIsOpen((p) => !p)}
           onKeyDown={(e) => {
+            if (e.key === "Tab") {
+              e.preventDefault();
+              e.stopPropagation();
+              closeAndMove(e.shiftKey ? -1 : 1);
+              return;
+            }
+
             const handled = handleButtonKeyDown(e);
             if (!handled) buttonProps?.onKeyDown?.(e);
           }}
@@ -292,20 +307,26 @@ const SearchableDropdown = forwardRef<
                         setActive((a) => Math.max(a - 10, 0));
                       } else if (e.key === "Enter") {
                         e.preventDefault();
+                        e.stopPropagation();
+
+                        const dir = e.shiftKey ? -1 : 1;
+
                         if (filteredOptions.length) {
                           const opt =
                             filteredOptions[active] ?? filteredOptions[0];
                           onChange(opt.value);
-                          setIsOpen(false);
-                          onEnter?.(e.shiftKey ? -1 : 1);
+                          closeAndMove(dir);
                         } else if (allowCustom) {
-                          createFromSearch();
+                          createFromSearch(dir);
                         }
                       } else if (e.key === "Escape") {
                         e.preventDefault();
+                        e.stopPropagation();
                         setIsOpen(false);
                       } else if (e.key === "Tab") {
-                        setIsOpen(false);
+                        e.preventDefault();
+                        e.stopPropagation();
+                        closeAndMove(e.shiftKey ? -1 : 1);
                       }
                     }}
                     role="combobox"
@@ -323,7 +344,7 @@ const SearchableDropdown = forwardRef<
                     type="button"
                     onClick={() => {
                       onChange("");
-                      setIsOpen(false);
+                      closeAndMove(1);
                     }}
                     className="w-full cursor-pointer border-b border-slate-100 px-3.5 py-2 text-left text-xs font-medium text-slate-400 transition hover:bg-slate-50"
                   >
@@ -357,9 +378,15 @@ const SearchableDropdown = forwardRef<
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {
                           e.preventDefault();
+                          e.stopPropagation();
                           onChange(opt.value);
-                          setIsOpen(false);
-                          onEnter?.(e.shiftKey ? -1 : 1);
+                          closeAndMove(e.shiftKey ? -1 : 1);
+                        }
+
+                        if (e.key === "Tab") {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          closeAndMove(e.shiftKey ? -1 : 1);
                         }
                       }}
                     >
@@ -375,7 +402,20 @@ const SearchableDropdown = forwardRef<
                 {allowCustom && searchTerm.trim() && (
                   <button
                     type="button"
-                    onClick={createFromSearch}
+                    onClick={() => createFromSearch(1)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        createFromSearch(e.shiftKey ? -1 : 1);
+                      }
+
+                      if (e.key === "Tab") {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        closeAndMove(e.shiftKey ? -1 : 1);
+                      }
+                    }}
                     className={[
                       "w-full cursor-pointer border-t border-slate-100 px-3.5 py-2.5 text-left text-sm",
                       "text-cyan-600 font-medium transition hover:bg-cyan-50",

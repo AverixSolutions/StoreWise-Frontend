@@ -36,7 +36,7 @@ export default function HoldsModal({
     try {
       const res = await (window as any).electronAPI.listPurchaseHolds(
         licenseId,
-        { page: 1, pageSize: 200 }
+        { page: 1, pageSize: 200 },
       );
       setHolds(res.holds || []);
     } finally {
@@ -148,11 +148,11 @@ export default function HoldsModal({
                           <Clock className="w-3 h-3" />
                           Updated{" "}
                           {new Date(
-                            h.updatedAt || h.createdAt || ""
+                            h.updatedAt || h.createdAt || "",
                           ).toLocaleDateString()}{" "}
                           at{" "}
                           {new Date(
-                            h.updatedAt || h.createdAt || ""
+                            h.updatedAt || h.createdAt || "",
                           ).toLocaleTimeString([], {
                             hour: "2-digit",
                             minute: "2-digit",

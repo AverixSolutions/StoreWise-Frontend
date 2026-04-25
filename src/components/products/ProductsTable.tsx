@@ -23,6 +23,8 @@ interface ProductsTableProps {
   nameFilter?: string;
   categoryFilter?: string;
   brandFilter?: string;
+  subcategoryFilter?: string;
+  taxFilter?: string;
 }
 
 function Surface({
@@ -71,6 +73,8 @@ export default function ProductsTable({
   nameFilter = "",
   categoryFilter = "",
   brandFilter = "",
+  subcategoryFilter = "",
+  taxFilter = "",
 }: ProductsTableProps) {
   const { showToast } = useToast();
   const [products, setProducts] = useState<Product[]>([]);
@@ -92,13 +96,21 @@ export default function ProductsTable({
       const licenseId = getActiveLicenseId();
       let result: ProductListResult;
 
-      if (nameFilter || categoryFilter || brandFilter) {
+      if (
+        nameFilter ||
+        categoryFilter ||
+        brandFilter ||
+        subcategoryFilter ||
+        taxFilter
+      ) {
         result = await platform.getFilteredProducts(
           licenseId,
           {
             name: nameFilter || null,
             category: categoryFilter || null,
             brand: brandFilter || null,
+            subcategory: subcategoryFilter || null,
+            tax: taxFilter || null,
           },
           { page, pageSize },
         );
@@ -117,11 +129,19 @@ export default function ProductsTable({
 
   useEffect(() => {
     loadProducts();
-  }, [refreshTrigger, nameFilter, categoryFilter, brandFilter, page]);
+  }, [
+    refreshTrigger,
+    nameFilter,
+    categoryFilter,
+    brandFilter,
+    subcategoryFilter,
+    taxFilter,
+    page,
+  ]);
 
   useEffect(() => {
     setPage(1);
-  }, [nameFilter, categoryFilter, brandFilter]);
+  }, [nameFilter, categoryFilter, brandFilter, subcategoryFilter, taxFilter]);
 
   const handleDeleteClick = (id: string, name: string) => {
     setDeleteTarget({ id, name });
@@ -186,12 +206,13 @@ export default function ProductsTable({
     );
   }
 
+  // Change 1: "Batches" → "Subcategory"
   const HEADERS = [
     "Code",
     "Product Name",
     "Brand",
     "Category",
-    "Batches",
+    "Subcategory",
     "Unit",
     "Tax",
     "Cost",
@@ -247,9 +268,18 @@ export default function ProductsTable({
                     "—"
                   )}
                 </td>
-                <td className="px-3.5 py-2.5 font-mono text-[11px] text-slate-600 pl-0 md:pl-8">
-                  {product.batchCount ?? 0}
+
+                {/* Change 2: Batches cell → Subcategory cell */}
+                <td className="px-3.5 py-2.5">
+                  {(product as any).subcategory ? (
+                    <span className="rounded-full bg-cyan-50 px-2 py-0.5 text-[11px] font-medium text-cyan-700 ring-1 ring-cyan-200/70">
+                      {(product as any).subcategory}
+                    </span>
+                  ) : (
+                    <span className="text-[12px] text-slate-300">—</span>
+                  )}
                 </td>
+
                 <td className="px-3.5 py-2.5">
                   <span className="rounded-full border border-cyan-200 bg-cyan-50 px-2 py-0.5 text-[10px] font-semibold text-cyan-700">
                     {product.unit}
@@ -277,6 +307,7 @@ export default function ProductsTable({
                       <Eye className="h-3 w-3" />
                     </button>
 
+                    {/* Change 4: Batch button kept — column removed, entry point preserved */}
                     <button
                       onClick={() => onManageBatches(product)}
                       title="Batches"
@@ -325,9 +356,36 @@ export default function ProductsTable({
           >
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0 flex-1">
-                <p className="truncate text-[14px] font-semibold text-slate-900 leading-snug">
+                {/* Change 3: Mobile card — code + shortCode badges, then name, then category + subcategory */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] text-slate-500">
+                    #{product.code}
+                  </span>
+
+                  {(product as any).shortCode && (
+                    <span className="rounded-md border border-cyan-200 bg-cyan-50 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-cyan-700">
+                      {(product as any).shortCode}
+                    </span>
+                  )}
+                </div>
+
+                <p className="mt-1 truncate text-[14px] font-semibold text-slate-900 leading-snug">
                   {product.name}
                 </p>
+
+                <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                  {product.category && (
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600">
+                      {product.category}
+                    </span>
+                  )}
+
+                  {(product as any).subcategory && (
+                    <span className="rounded-full bg-cyan-50 px-2 py-0.5 text-[10px] font-medium text-cyan-700 ring-1 ring-cyan-200/70">
+                      {(product as any).subcategory}
+                    </span>
+                  )}
+                </div>
               </div>
 
               <div className="flex items-center gap-2.5 shrink-0">

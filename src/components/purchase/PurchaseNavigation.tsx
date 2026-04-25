@@ -25,7 +25,7 @@ export default function PurchaseNavigation({
   }, [pathname, title]);
 
   const [online, setOnline] = useState(
-    typeof navigator !== "undefined" ? navigator.onLine : true
+    typeof navigator !== "undefined" ? navigator.onLine : true,
   );
   useEffect(() => {
     const on = () => setOnline(true);

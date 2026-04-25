@@ -48,7 +48,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     <ToastContext.Provider value={value}>
       {children}
 
-      <div className="pointer-events-none fixed left-1/2 top-4 z-[120] flex w-[min(380px,calc(100vw-2rem))] -translate-x-1/2 flex-col gap-2">
+      <div className="pointer-events-none fixed left-1/2 top-4 z-[9999] flex w-[min(380px,calc(100vw-2rem))] -translate-x-1/2 flex-col gap-2">
         {toasts.map((toast) => {
           const tone =
             toast.type === "success"

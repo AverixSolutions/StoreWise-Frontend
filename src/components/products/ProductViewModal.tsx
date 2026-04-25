@@ -44,6 +44,7 @@ export default function ProductViewModal({
 }) {
   const [barcodes, setBarcodes] = useState<string[]>([]);
   const [loadingBarcodes, setLoadingBarcodes] = useState(false);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
 
   const licenseId = typeof window !== "undefined" ? getActiveLicenseId() : "";
 
@@ -83,6 +84,32 @@ export default function ProductViewModal({
       alive = false;
     };
   }, [open, product?.id, licenseId]);
+
+  useEffect(() => {
+    let alive = true;
+
+    async function loadImage() {
+      if (!open || !product?.id) {
+        setImagePreviewUrl(null);
+        return;
+      }
+
+      try {
+        const dataUrl = await platform.getProductImageDataUrl?.(product.id);
+        if (!alive) return;
+        setImagePreviewUrl(dataUrl || null);
+      } catch {
+        if (!alive) return;
+        setImagePreviewUrl(null);
+      }
+    }
+
+    loadImage();
+
+    return () => {
+      alive = false;
+    };
+  }, [open, product?.id]);
 
   const barcodeSummary = useMemo(() => {
     if (loadingBarcodes) return "Loading...";
@@ -177,12 +204,53 @@ export default function ProductViewModal({
             </div>
           </div>
 
+          {imagePreviewUrl && (
+            <div className="rounded-xl border border-slate-200 bg-white p-2.5">
+              <div className="flex items-center gap-3">
+                <img
+                  src={imagePreviewUrl}
+                  alt={product.name}
+                  className="h-16 w-16 shrink-0 rounded-xl border border-slate-200 bg-slate-50 object-cover"
+                />
+
+                <div className="min-w-0 flex-1">
+                  <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                    Product Image
+                  </p>
+                  <p className="mt-0.5 truncate text-sm font-semibold text-slate-900">
+                    {fieldValue(product.name)}
+                  </p>
+
+                  {(product as any).shortCode && (
+                    <span className="mt-1 inline-flex rounded-md border border-cyan-200 bg-cyan-50 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-cyan-700">
+                      {(product as any).shortCode}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Main info */}
           <div className="grid grid-cols-2 gap-2">
             <InfoCard
               label="Product Name"
               value={fieldValue((product as any).productName || product.name)}
             />
+
+            <InfoCard
+              label="Short Code"
+              value={
+                (product as any).shortCode ? (
+                  <span className="inline-flex rounded-md border border-cyan-200 bg-cyan-50 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-cyan-700">
+                    {(product as any).shortCode}
+                  </span>
+                ) : (
+                  "—"
+                )
+              }
+            />
+
             <InfoCard label="Brand" value={fieldValue(product.brand)} />
             <InfoCard label="Category" value={fieldValue(product.category)} />
 

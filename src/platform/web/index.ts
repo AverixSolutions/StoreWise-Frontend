@@ -31,6 +31,9 @@ import {
   webGetProducts,
   webGetFilteredProducts,
   webGetProductByBarcode,
+  webGetProductByCode,
+  webGetProductByShortCode,
+  webGetProductImageDataUrl,
   webListBatchesForProduct,
   webSaveBatch,
   webPeekNextBarcode,
@@ -90,8 +93,17 @@ export const webPlatform: PlatformAPI = {
 
   getProduct: (productId: string) => webGetProduct(productId),
 
+  getProductImageDataUrl: (productId: string) =>
+    webGetProductImageDataUrl(productId),
+
   getProductByBarcode: (licenseId: string, barcode: string) =>
     webGetProductByBarcode(licenseId, barcode),
+
+  getProductByCode: (licenseId: string, code: string) =>
+    webGetProductByCode(licenseId, code),
+
+  getProductByShortCode: (licenseId: string, shortCode: string) =>
+    webGetProductByShortCode(licenseId, shortCode),
 
   createProduct: (product: ProductInput) => webCreateProduct(product),
 
