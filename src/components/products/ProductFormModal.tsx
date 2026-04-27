@@ -221,6 +221,15 @@ export default function ProductFormModal({
   const [category, setCategory] = useState(""); // parent category string (derived)
   const [subcategory, setSubcategory] = useState(""); // subcategory string (derived)
 
+  const [unitOptions, setUnitOptions] = useState<
+    { value: string; label: string }[]
+  >([
+    { value: "NOS", label: "Numbers (NOS)" },
+    { value: "KG", label: "Kilograms (KG)" },
+    { value: "LTR", label: "Liters (LTR)" },
+    { value: "MTR", label: "Meters (MTR)" },
+  ]);
+
   // ── Other product fields ──
   const [unit, setUnit] = useState<UnitCode>("NOS");
   const [tax, setTax] = useState<TaxCode>("P5");
@@ -420,10 +429,26 @@ export default function ProductFormModal({
 
   useEffect(() => {
     if (!isOpen || !licenseId) return;
+
     platform
       .listCategories(licenseId)
       .then((res) => {
         if (res.success) setAllCategories(res.rows);
+      })
+      .catch(() => {});
+
+    // Load dynamic units
+    platform
+      .listUnits?.(licenseId)
+      .then((res) => {
+        if (res?.success && res.rows.length > 0) {
+          setUnitOptions(
+            res.rows.map((u) => ({
+              value: u.code,
+              label: `${u.label} (${u.code})`,
+            })),
+          );
+        }
       })
       .catch(() => {});
   }, [isOpen, licenseId]);
@@ -1037,7 +1062,7 @@ export default function ProductFormModal({
         ? 1
         : 0;
     const rows: BulkRow[] = [];
-    const validUnits: UnitCode[] = ["NOS", "KG", "LTR", "MTR"];
+    const validUnitCodes = unitOptions.map((u) => u.value);
     const validTaxes: TaxCode[] = ["NT", "P5", "P12", "P18", "P28"];
 
     for (let i = startIdx; i < lines.length; i++) {
@@ -1062,9 +1087,10 @@ export default function ProductFormModal({
       // Require at least productName or name
       if (!rProductName && !rName) continue;
 
-      const unitVal = validUnits.includes(rUnit?.toUpperCase() as UnitCode)
-        ? (rUnit.toUpperCase() as UnitCode)
-        : "NOS";
+      const upperUnit = rUnit?.toUpperCase() ?? "";
+      const unitVal = (
+        validUnitCodes.includes(upperUnit) ? upperUnit : "NOS"
+      ) as UnitCode;
       const taxVal = validTaxes.includes(rTax?.toUpperCase() as TaxCode)
         ? (rTax.toUpperCase() as TaxCode)
         : "NT";
@@ -1212,12 +1238,6 @@ export default function ProductFormModal({
     { value: "P12", label: "GST 12%" },
     { value: "P18", label: "GST 18%" },
     { value: "P28", label: "GST 28%" },
-  ];
-  const unitOptions = [
-    { value: "NOS", label: "Numbers (NOS)" },
-    { value: "KG", label: "Kilograms (KG)" },
-    { value: "LTR", label: "Liters (LTR)" },
-    { value: "MTR", label: "Meters (MTR)" },
   ];
 
   if (!isOpen) return null;
@@ -1837,8 +1857,8 @@ export default function ProductFormModal({
                 {BULK_FORMAT}
               </pre>
               <p className="mt-2 text-[11px] text-slate-400">
-                Units: NOS / KG / LTR / MTR · Tax: NT / P5 / P12 / P18 / P28 ·
-                shortCode is optional
+                Units: {unitOptions.map((u) => u.value).join(" / ")} · Tax: NT /
+                P5 / P12 / P18 / P28 · shortCode is optional
               </p>
             </div>
             <div>

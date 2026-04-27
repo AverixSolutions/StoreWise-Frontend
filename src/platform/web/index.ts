@@ -15,6 +15,9 @@ import type {
   BrandSavePayload,
   BrandMutationResult,
   MutationResult,
+  UnitListResult,
+  UnitSavePayload,
+  UnitMutationResult,
 } from "../types";
 import {
   getWebShopSettings,
@@ -51,6 +54,14 @@ import {
   webDeleteCategory,
 } from "./categories";
 import { webListBrands, webSaveBrand, webDeleteBrand } from "./brands";
+import { webListUnits, webSaveUnit, webDeleteUnit } from "./units";
+import {
+  webListTaxCategories,
+  webSaveTaxCategory,
+  webDeleteTaxCategory,
+  webSeedIndiaGST,
+  webListDefaultableAccounts,
+} from "./tax";
 
 let onlineHookRegistered = false;
 function ensureOnlineSyncHook() {
@@ -151,6 +162,23 @@ export const webPlatform: PlatformAPI = {
     webSaveBrand(payload),
 
   deleteBrand: (id: string): Promise<MutationResult> => webDeleteBrand(id),
+
+  // ── Units ────────────────────────────────────────────────────────────────
+  listUnits: (licenseId: string): Promise<UnitListResult> =>
+    webListUnits(licenseId),
+
+  saveUnit: (payload: UnitSavePayload): Promise<UnitMutationResult> =>
+    webSaveUnit(payload),
+
+  deleteUnit: (id: string): Promise<MutationResult> => webDeleteUnit(id),
+
+  // ── Tax ───────────────────────────────────────────────────────────────────
+  listTaxCategories: (licenseId: string) => webListTaxCategories(licenseId),
+  saveTaxCategory: (payload) => webSaveTaxCategory(payload),
+  deleteTaxCategory: (id: string) => webDeleteTaxCategory(id),
+  seedIndiaGST: (licenseId: string) => webSeedIndiaGST(licenseId),
+  listDefaultableAccounts: (licenseId: string) =>
+    webListDefaultableAccounts(licenseId),
 
   // ── Shop Settings ─────────────────────────────────────────────────────────
   getShopSettings: async (licenseId: string) => {

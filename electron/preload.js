@@ -54,6 +54,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
   saveBrand: (payload) => ipcRenderer.invoke("brand:save", payload),
   deleteBrand: (id) => ipcRenderer.invoke("brand:delete", id),
 
+  // ---- Unit Master ----
+  listUnits: (licenseId) => ipcRenderer.invoke("unit:list", licenseId),
+  saveUnit: (payload) => ipcRenderer.invoke("unit:save", payload),
+  deleteUnit: (id) => ipcRenderer.invoke("unit:delete", id),
+
   // Product sync
   getDirtyProducts: (licenseId, limit) =>
     ipcRenderer.invoke("get-dirty-products", licenseId, limit),

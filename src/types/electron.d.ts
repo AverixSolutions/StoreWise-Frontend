@@ -366,6 +366,44 @@ declare global {
         error?: string;
       }>;
 
+      listUnits: (licenseId: string) => Promise<{
+        success: boolean;
+        rows: Array<{
+          id: string;
+          licenseId: string;
+          code: string;
+          label: string;
+          isDefault: number;
+          sortOrder: number;
+          createdAt?: string;
+          updatedAt?: string;
+        }>;
+        error?: string;
+      }>;
+
+      saveUnit: (payload: {
+        id?: string;
+        licenseId: string;
+        code: string;
+        label: string;
+      }) => Promise<{ success: boolean; id?: string; error?: string }>;
+
+      deleteUnit: (id: string) => Promise<{ success: boolean; error?: string }>;
+
+      listTaxCategories: (
+        licenseId: string,
+      ) => Promise<{ success: boolean; rows: any[] }>;
+      saveTaxCategory: (
+        payload: any,
+      ) => Promise<{ success: boolean; id?: string; error?: string }>;
+      deleteTaxCategory: (id: string) => Promise<{ success: boolean }>;
+      seedIndiaGST: (
+        licenseId: string,
+      ) => Promise<{ success: boolean; error?: string }>;
+      listDefaultableAccounts: (
+        licenseId: string,
+      ) => Promise<{ success: boolean; rows: any[] }>;
+
       getSyncState: (scope: string) => Promise<any>;
       setSyncState: (scope: string, changes: any) => Promise<any>;
       wipeLocalData: () => Promise<any>;

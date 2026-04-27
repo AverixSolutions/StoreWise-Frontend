@@ -13,6 +13,7 @@ import {
   Tag,
   ArrowRight,
   ChevronLeft,
+  Ruler,
 } from "lucide-react";
 import { platform } from "@/platform";
 import { getActiveLicenseId } from "@/lib/session/runtimeSession";
@@ -23,6 +24,7 @@ import TaxSettings from "@/components/tax/TaxSettings";
 import ShopSettingsPanel from "@/components/master/ShopSettingsPanel";
 import LabelPrintSettings from "@/components/master/LabelPrintSettings";
 import BrandsCategoriesManager from "@/components/master/BrandsCategoriesManager";
+import UnitsManager from "@/components/master/UnitsManager";
 
 type MasterSection =
   | "dashboard"
@@ -32,7 +34,8 @@ type MasterSection =
   | "shopSettings"
   | "accounts"
   | "tax"
-  | "labelPrint";
+  | "labelPrint"
+  | "units";
 
 type SectionDef = {
   id: MasterSection;
@@ -40,10 +43,9 @@ type SectionDef = {
   shortName: string;
   description: string;
   icon: any;
-  featured?: boolean;
   iconBg: string;
   iconText: string;
-  hoverBorder: string;
+  border: string;
   hoverBg: string;
   countBg: string;
   countText: string;
@@ -56,11 +58,10 @@ const masterSections: SectionDef[] = [
     shortName: "Suppliers",
     description: "Supplier info and contacts",
     icon: Truck,
-    featured: true,
     iconBg: "bg-blue-100",
     iconText: "text-blue-600",
-    hoverBorder: "hover:border-blue-300",
-    hoverBg: "hover:bg-blue-50/50",
+    border: "border-blue-200",
+    hoverBg: "hover:bg-blue-50/60",
     countBg: "bg-blue-100",
     countText: "text-blue-700",
   },
@@ -70,11 +71,10 @@ const masterSections: SectionDef[] = [
     shortName: "Customers",
     description: "Customer database",
     icon: Users,
-    featured: true,
     iconBg: "bg-emerald-100",
     iconText: "text-emerald-600",
-    hoverBorder: "hover:border-emerald-300",
-    hoverBg: "hover:bg-emerald-50/50",
+    border: "border-emerald-200",
+    hoverBg: "hover:bg-emerald-50/60",
     countBg: "bg-emerald-100",
     countText: "text-emerald-700",
   },
@@ -84,11 +84,10 @@ const masterSections: SectionDef[] = [
     shortName: "Shop Settings",
     description: "Profile, logo, GST & print details",
     icon: Building2,
-    featured: true,
     iconBg: "bg-orange-100",
     iconText: "text-orange-600",
-    hoverBorder: "hover:border-orange-300",
-    hoverBg: "hover:bg-orange-50/50",
+    border: "border-orange-200",
+    hoverBg: "hover:bg-orange-50/60",
     countBg: "bg-orange-100",
     countText: "text-orange-700",
   },
@@ -98,13 +97,25 @@ const masterSections: SectionDef[] = [
     shortName: "Brands & Categories",
     description: "Add, rename and delete brands/categories",
     icon: Tag,
-    featured: true,
     iconBg: "bg-fuchsia-100",
     iconText: "text-fuchsia-600",
-    hoverBorder: "hover:border-fuchsia-300",
-    hoverBg: "hover:bg-fuchsia-50/50",
+    border: "border-fuchsia-200",
+    hoverBg: "hover:bg-fuchsia-50/60",
     countBg: "bg-fuchsia-100",
     countText: "text-fuchsia-700",
+  },
+  {
+    id: "units",
+    title: "Units of Measure",
+    shortName: "Units",
+    description: "Manage KG, NOS, LTR and custom units",
+    icon: Ruler,
+    iconBg: "bg-teal-100",
+    iconText: "text-teal-600",
+    border: "border-teal-200",
+    hoverBg: "hover:bg-teal-50/60",
+    countBg: "bg-teal-100",
+    countText: "text-teal-700",
   },
   {
     id: "accounts",
@@ -114,8 +125,8 @@ const masterSections: SectionDef[] = [
     icon: Settings,
     iconBg: "bg-indigo-100",
     iconText: "text-indigo-600",
-    hoverBorder: "hover:border-indigo-300",
-    hoverBg: "hover:bg-indigo-50/50",
+    border: "border-indigo-200",
+    hoverBg: "hover:bg-indigo-50/60",
     countBg: "bg-indigo-100",
     countText: "text-indigo-700",
   },
@@ -127,8 +138,8 @@ const masterSections: SectionDef[] = [
     icon: Percent,
     iconBg: "bg-rose-100",
     iconText: "text-rose-600",
-    hoverBorder: "hover:border-rose-300",
-    hoverBg: "hover:bg-rose-50/50",
+    border: "border-rose-200",
+    hoverBg: "hover:bg-rose-50/60",
     countBg: "bg-rose-100",
     countText: "text-rose-700",
   },
@@ -138,16 +149,21 @@ const masterSections: SectionDef[] = [
     shortName: "Label Print",
     description: "Printers and print templates",
     icon: Printer,
-    iconBg: "bg-cyan-100",
-    iconText: "text-cyan-600",
-    hoverBorder: "hover:border-cyan-300",
-    hoverBg: "hover:bg-cyan-50/50",
-    countBg: "bg-cyan-100",
-    countText: "text-cyan-700",
+    iconBg: "bg-amber-100",
+    iconText: "text-amber-600",
+    border: "border-amber-200",
+    hoverBg: "hover:bg-amber-50/60",
+    countBg: "bg-amber-100",
+    countText: "text-amber-700",
   },
 ];
 
-const webSafeSections: MasterSection[] = ["shopSettings", "brandCategory"];
+const webSafeSections: MasterSection[] = [
+  "shopSettings",
+  "brandCategory",
+  "units",
+  "tax",
+];
 
 const sectionTitles: Record<MasterSection, string> = {
   dashboard: "Master",
@@ -158,6 +174,7 @@ const sectionTitles: Record<MasterSection, string> = {
   accounts: "Account Master",
   tax: "Tax Settings",
   labelPrint: "Label Print Settings",
+  units: "Units of Measure",
 };
 
 function MasterTile({
@@ -165,13 +182,11 @@ function MasterTile({
   count,
   disabled,
   onOpen,
-  compact = false,
 }: {
   section: SectionDef;
   count: number | null;
   disabled: boolean;
   onOpen: () => void;
-  compact?: boolean;
 }) {
   return (
     <motion.button
@@ -181,21 +196,17 @@ function MasterTile({
       onClick={() => {
         if (!disabled) onOpen();
       }}
-      className={`group w-full rounded-[22px] border bg-white text-left shadow-[0_4px_14px_rgba(15,23,42,0.06)] transition-all duration-200 ${
-        compact ? "p-4" : "p-5"
-      } ${
+      className={`group w-full rounded-[20px] border bg-white p-4 text-left shadow-[0_2px_10px_rgba(15,23,42,0.05)] transition-all duration-200 ${
         disabled
           ? "cursor-not-allowed border-slate-200/50 opacity-40"
-          : `cursor-pointer border-slate-200/80 ${section.hoverBorder} ${section.hoverBg} hover:shadow-[0_10px_28px_rgba(15,23,42,0.10)]`
+          : `cursor-pointer ${section.border} ${section.hoverBg} hover:shadow-[0_8px_24px_rgba(15,23,42,0.09)]`
       }`}
     >
       <div className="flex items-start justify-between gap-3">
         <div
-          className={`flex shrink-0 items-center justify-center rounded-2xl ${section.iconBg} ${section.iconText} ${
-            compact ? "h-10 w-10" : "h-11 w-11"
-          }`}
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${section.iconBg} ${section.iconText}`}
         >
-          <section.icon className={compact ? "h-4 w-4" : "h-5 w-5"} />
+          <section.icon className="h-4 w-4" />
         </div>
 
         <div className="flex items-center gap-1.5">
@@ -212,18 +223,14 @@ function MasterTile({
             </span>
           ) : (
             <ArrowRight
-              className={`mt-0.5 h-4 w-4 shrink-0 transition-all duration-200 text-slate-300 group-hover:translate-x-0.5 group-hover:${section.iconText}`}
+              className={`mt-0.5 h-4 w-4 shrink-0 text-slate-300 transition-all duration-200 group-hover:translate-x-0.5 group-hover:${section.iconText}`}
             />
           )}
         </div>
       </div>
 
-      <div className={compact ? "mt-3.5" : "mt-4"}>
-        <h3
-          className={`font-semibold tracking-[-0.02em] text-slate-900 ${
-            compact ? "text-sm" : "text-[15px]"
-          }`}
-        >
+      <div className="mt-3.5">
+        <h3 className="text-sm font-semibold tracking-[-0.02em] text-slate-900">
           {section.shortName}
         </h3>
         <p className="mt-1 text-xs leading-5 text-slate-500">
@@ -282,9 +289,6 @@ export default function MasterPage() {
     })();
   }, [currentSection]);
 
-  const featuredSections = masterSections.filter((s) => s.featured);
-  const secondarySections = masterSections.filter((s) => !s.featured);
-
   const renderDashboard = () => (
     <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden pb-10 md:pb-0">
       {/* Hero banner */}
@@ -319,43 +323,20 @@ export default function MasterPage() {
         <div className="flex h-full min-h-0 flex-col gap-4">
           <div>
             <div className="mb-2 inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-              Main Sections
+              All Sections
             </div>
             <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-900">
-              Frequently accessed
+              Select a section to manage
             </h2>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-            {featuredSections.map((section) => (
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-4">
+            {masterSections.map((section) => (
               <MasterTile
                 key={section.id}
                 section={section}
                 count={counts[section.id] ?? null}
                 disabled={isWeb && !webSafeSections.includes(section.id)}
-                compact
-                onOpen={() => setCurrentSection(section.id)}
-              />
-            ))}
-          </div>
-
-          <div className="border-t border-slate-200/80 pt-4">
-            <div className="mb-2 inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-              More Settings
-            </div>
-            <h3 className="text-base font-semibold tracking-[-0.02em] text-slate-900">
-              Configuration &amp; setup
-            </h3>
-          </div>
-
-          <div className="grid flex-1 auto-rows-fr gap-3 grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-            {secondarySections.map((section) => (
-              <MasterTile
-                key={section.id}
-                section={section}
-                count={counts[section.id] ?? null}
-                disabled={isWeb && !webSafeSections.includes(section.id)}
-                compact
                 onOpen={() => setCurrentSection(section.id)}
               />
             ))}
@@ -374,9 +355,11 @@ export default function MasterPage() {
       case "accounts":
         return <AccountMaster />;
       case "tax":
-        return <TaxSettings />;
+        return <TaxSettings onBack={() => setCurrentSection("dashboard")} />;
       case "shopSettings":
-        return <ShopSettingsPanel />;
+        return (
+          <ShopSettingsPanel onBack={() => setCurrentSection("dashboard")} />
+        );
       case "labelPrint":
         return <LabelPrintSettings />;
       case "brandCategory":
@@ -385,6 +368,8 @@ export default function MasterPage() {
             onBackToMaster={() => setCurrentSection("dashboard")}
           />
         );
+      case "units":
+        return <UnitsManager />;
       default:
         return renderDashboard();
     }
@@ -392,18 +377,21 @@ export default function MasterPage() {
 
   return (
     <main className="">
-      {currentSection !== "dashboard" && (
-        <div className="mb-4">
-          <button
-            type="button"
-            onClick={() => setCurrentSection("dashboard")}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200/80 bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-[0_2px_8px_rgba(15,23,42,0.06)] transition hover:bg-slate-50 hover:text-slate-900 cursor-pointer"
-          >
-            <ChevronLeft className="h-4 w-4" />
-            {sectionTitles[currentSection]}
-          </button>
-        </div>
-      )}
+      {currentSection !== "dashboard" &&
+        currentSection !== "brandCategory" &&
+        currentSection !== "shopSettings" &&
+        currentSection !== "tax" && (
+          <div className="mb-4">
+            <button
+              type="button"
+              onClick={() => setCurrentSection("dashboard")}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200/80 bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-[0_2px_8px_rgba(15,23,42,0.06)] transition hover:bg-slate-50 hover:text-slate-900 cursor-pointer"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              {sectionTitles[currentSection]}
+            </button>
+          </div>
+        )}
       {renderSectionContent()}
     </main>
   );

@@ -21,6 +21,9 @@ import type {
   BrandListResult,
   BrandSavePayload,
   BrandMutationResult,
+  UnitListResult,
+  UnitSavePayload,
+  UnitMutationResult,
 } from "../types";
 
 function requireElectronAPI() {
@@ -327,6 +330,41 @@ export const desktopPlatform: PlatformAPI = {
 
   deleteBrand: async (id: string) => {
     return requireElectronAPI().deleteBrand(id);
+  },
+
+  listUnits: async (licenseId: string): Promise<UnitListResult> => {
+    return requireElectronAPI().listUnits(licenseId);
+  },
+
+  saveUnit: async (payload: UnitSavePayload): Promise<UnitMutationResult> => {
+    return requireElectronAPI().saveUnit(payload);
+  },
+
+  deleteUnit: async (id: string): Promise<UnitMutationResult> => {
+    return requireElectronAPI().deleteUnit(id);
+  },
+
+  // ── Tax ───────────────────────────────────────────────────────────────────
+  listTaxCategories: async (licenseId: string) => {
+    const res = await requireElectronAPI().listTaxCategories(licenseId);
+    return res ?? { success: false, rows: [] };
+  },
+
+  saveTaxCategory: async (payload: any) => {
+    return requireElectronAPI().saveTaxCategory(payload);
+  },
+
+  deleteTaxCategory: async (id: string) => {
+    return requireElectronAPI().deleteTaxCategory(id);
+  },
+
+  seedIndiaGST: async (licenseId: string) => {
+    return requireElectronAPI().seedIndiaGST(licenseId);
+  },
+
+  listDefaultableAccounts: async (licenseId: string) => {
+    const res = await requireElectronAPI().listDefaultableAccounts(licenseId);
+    return res ?? { success: false, rows: [] };
   },
 
   getShopSettings: (licenseId: string) => {

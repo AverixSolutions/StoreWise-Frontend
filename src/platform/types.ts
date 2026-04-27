@@ -337,6 +337,111 @@ export type BrandMutationResult = MutationResult & { id?: string };
 
 // ────────────────────────────────────────────────────────────────────────────
 
+// ── Unit types ───────────────────────────────────────────────────────────────
+
+export type UnitRecord = {
+  id: string;
+  licenseId: string;
+  code: string;
+  label: string;
+  isDefault: number;
+  sortOrder: number;
+  createdAt?: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
+};
+
+export type UnitListResult = {
+  success: boolean;
+  rows: UnitRecord[];
+  error?: string;
+};
+
+export type UnitSavePayload = {
+  id?: string;
+  licenseId: string;
+  code: string;
+  label: string;
+};
+
+export type UnitMutationResult = MutationResult & { id?: string };
+
+// ── Tax types ────────────────────────────────────────────────────────────────
+
+export type TaxComponentRecord = {
+  id?: string;
+  categoryId?: string;
+  component: "CGST" | "SGST" | "IGST" | "CESS";
+  rate: number;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type TaxDefaultsRecord = {
+  salesAccountId?: string | null;
+  purchaseAccountId?: string | null;
+  salesReturnAccountId?: string | null;
+  purchaseReturnAccountId?: string | null;
+  outputCgstAccountId?: string | null;
+  outputSgstAccountId?: string | null;
+  outputIgstAccountId?: string | null;
+  inputCgstAccountId?: string | null;
+  inputSgstAccountId?: string | null;
+  inputIgstAccountId?: string | null;
+  cessAccountId?: string | null;
+  singleTaxAccountId?: string | null;
+};
+
+export type TaxCategoryRecord = {
+  id: string;
+  licenseId: string;
+  code: string;
+  name: string;
+  rate: number;
+  isInterstate: number; // 0 | 1
+  cessRate?: number | null;
+  calcMethod?: string;
+  components: TaxComponentRecord[];
+  defaults?: TaxDefaultsRecord | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type TaxCategoryListResult = {
+  success: boolean;
+  rows: TaxCategoryRecord[];
+  error?: string;
+};
+
+export type TaxCategorySavePayload = {
+  id?: string;
+  licenseId: string;
+  code: string;
+  name: string;
+  rate: number;
+  isInterstate: boolean;
+  cessRate?: number | null;
+  calcMethod?: string;
+  components: TaxComponentRecord[];
+  defaults?: TaxDefaultsRecord | null;
+};
+
+export type AccountOption = {
+  id: string;
+  name: string;
+  code?: string | null;
+  groupId?: string;
+  taxType?: "INPUT" | "OUTPUT" | null;
+  gstComponent?: "CGST" | "SGST" | "IGST" | "CESS" | null;
+  rate?: number | null;
+};
+
+export type AccountListResult = {
+  success: boolean;
+  rows: AccountOption[];
+  error?: string;
+};
+
 export type PlatformAPI = {
   getNextCode: (licenseId: string) => Promise<string>;
 
@@ -443,4 +548,18 @@ export type PlatformAPI = {
   listBrands: (licenseId: string) => Promise<BrandListResult>;
   saveBrand: (payload: BrandSavePayload) => Promise<BrandMutationResult>;
   deleteBrand: (id: string) => Promise<MutationResult>;
+
+  // Units
+  listUnits: (licenseId: string) => Promise<UnitListResult>;
+  saveUnit: (payload: UnitSavePayload) => Promise<UnitMutationResult>;
+  deleteUnit: (id: string) => Promise<MutationResult>;
+
+  // Tax
+  listTaxCategories: (licenseId: string) => Promise<TaxCategoryListResult>;
+  saveTaxCategory: (
+    payload: TaxCategorySavePayload,
+  ) => Promise<MutationResult & { id?: string }>;
+  deleteTaxCategory: (id: string) => Promise<MutationResult>;
+  seedIndiaGST: (licenseId: string) => Promise<MutationResult>;
+  listDefaultableAccounts: (licenseId: string) => Promise<AccountListResult>;
 };

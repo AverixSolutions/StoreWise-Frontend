@@ -1,6 +1,6 @@
 // src/platform/web/idb.ts
 const DB_NAME = "kynflow-web";
-const DB_VERSION = 5;
+const DB_VERSION = 7; // bumped from 6
 
 export const STORES = {
   SHOP_SETTINGS: "shop_settings",
@@ -11,6 +11,8 @@ export const STORES = {
   BARCODE_SEQUENCE: "barcode_sequence",
   CATEGORIES: "categories",
   BRANDS: "brands",
+  UNITS: "units",
+  TAX_CATEGORIES: "tax_categories",
 } as const;
 
 export type SyncJob = {
@@ -64,9 +66,7 @@ function openDb(): Promise<IDBDatabase> {
           productStore.createIndex(
             "licenseId_deletedAt",
             ["licenseId", "deletedAt"],
-            {
-              unique: false,
-            },
+            { unique: false },
           );
         }
 
@@ -79,9 +79,7 @@ function openDb(): Promise<IDBDatabase> {
           batchStore.createIndex(
             "licenseId_barcode",
             ["licenseId", "barcode"],
-            {
-              unique: false,
-            },
+            { unique: false },
           );
         }
 
@@ -106,9 +104,7 @@ function openDb(): Promise<IDBDatabase> {
           catStore.createIndex(
             "licenseId_parentId",
             ["licenseId", "parentId"],
-            {
-              unique: false,
-            },
+            { unique: false },
           );
         }
       }
@@ -123,7 +119,7 @@ function openDb(): Promise<IDBDatabase> {
         }
       }
 
-      // v5 product short-code index
+      // v5 index
       if (oldVersion < 5) {
         if (db.objectStoreNames.contains(STORES.PRODUCTS)) {
           const productStore = request.transaction!.objectStore(
@@ -137,6 +133,29 @@ function openDb(): Promise<IDBDatabase> {
               { unique: false },
             );
           }
+        }
+      }
+
+      // v6 stores
+      if (oldVersion < 6) {
+        if (!db.objectStoreNames.contains(STORES.UNITS)) {
+          const unitStore = db.createObjectStore(STORES.UNITS, {
+            keyPath: "id",
+          });
+          unitStore.createIndex("licenseId", "licenseId", { unique: false });
+        }
+      }
+
+      // v7 stores
+      if (oldVersion < 7) {
+        if (!db.objectStoreNames.contains(STORES.TAX_CATEGORIES)) {
+          const taxStore = db.createObjectStore(STORES.TAX_CATEGORIES, {
+            keyPath: "id",
+          });
+          taxStore.createIndex("licenseId", "licenseId", { unique: false });
+          taxStore.createIndex("licenseId_code", ["licenseId", "code"], {
+            unique: false,
+          });
         }
       }
     };

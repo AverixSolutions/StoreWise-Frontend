@@ -14,62 +14,119 @@ import {
   Upload,
   ChevronLeft,
   ChevronRight,
-  ChevronDown,
-  ChevronRight as ChevronRightSmall,
-  LayoutDashboard,
   AlertTriangle,
   ArrowLeft,
+  LayoutDashboard,
+  Eye,
   Info,
   FolderOpen,
-  Folder,
 } from "lucide-react";
 import { platform } from "@/platform";
 import { getActiveLicenseId } from "@/lib/session/runtimeSession";
 import { useRouter } from "next/navigation";
 import type { CategoryRecord, BrandRecord } from "@/platform/types";
 
+// ── Types ────────────────────────────────────────────────────────────────────
+
 type Item = { value: string; count: number };
+type CategoryBulkEntry = { category: string; subcategory?: string };
+type ActiveTab = "categories" | "brands";
 
-// ── NEW: Category bulk entry type ────────────────────────────────────────────
-type CategoryBulkEntry = {
-  category: string;
-  subcategory?: string;
-};
+const PAGE_SIZE = 12;
 
-const PAGE_SIZE = 10;
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
-// ── Unsaved-changes guard modal ─────────────────────────────────────────────
-function UnsavedModal({
-  onLeave,
-  onCancel,
+function parseCategoryBulkText(text: string): CategoryBulkEntry[] {
+  const lines = text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const seen = new Set<string>();
+  const result: CategoryBulkEntry[] = [];
+  for (const line of lines) {
+    const parts = line
+      .split(">")
+      .map((p) => p.trim())
+      .filter(Boolean);
+    if (!parts.length || parts.length > 2) continue;
+    const entry: CategoryBulkEntry =
+      parts.length === 1
+        ? { category: parts[0] }
+        : { category: parts[0], subcategory: parts[1] };
+    const key = `${entry.category.toLowerCase()}|||${(entry.subcategory ?? "").toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(entry);
+  }
+  return result;
+}
+
+// ── Shared Surface ────────────────────────────────────────────────────────────
+
+function Surface({
+  children,
+  className = "",
 }: {
-  onLeave: () => void;
-  onCancel: () => void;
+  children: React.ReactNode;
+  className?: string;
 }) {
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="w-full max-w-sm rounded-[24px] border border-slate-200 bg-white p-6 shadow-[0_24px_60px_rgba(3,10,24,0.18)]">
-        <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-amber-200 bg-amber-50">
-          <AlertTriangle className="h-5 w-5 text-amber-600" />
+    <div
+      className={`rounded-xl border border-slate-200/80 bg-white shadow-[0_4px_20px_rgba(3,10,24,0.06)] overflow-hidden ${className}`}
+    >
+      {children}
+    </div>
+  );
+}
+
+// ── Delete Confirm Modal ──────────────────────────────────────────────────────
+
+function DeleteModal({
+  itemName,
+  itemType,
+  onConfirm,
+  onCancel,
+  confirming = false,
+}: {
+  itemName: string;
+  itemType: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  confirming?: boolean;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+      onClick={onCancel}
+    >
+      <div
+        className="w-full max-w-sm rounded-[24px] border border-slate-200 bg-white p-6 shadow-[0_24px_60px_rgba(3,10,24,0.18)]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-rose-200 bg-rose-50">
+          <Trash2 className="h-5 w-5 text-rose-600" />
         </div>
         <h3 className="mt-4 text-base font-semibold text-slate-900">
-          Unsaved changes
+          Delete {itemType}?
         </h3>
         <p className="mt-1.5 text-sm text-slate-500">
-          You have an item open for editing. Leave without saving?
+          Are you sure you want to delete{" "}
+          <strong className="text-slate-700">&ldquo;{itemName}&rdquo;</strong>?
+          This action cannot be undone.
         </p>
         <div className="mt-5 flex flex-col gap-2">
           <button
-            onClick={onLeave}
-            className="w-full rounded-xl border border-slate-200 bg-white py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            onClick={onConfirm}
+            disabled={confirming}
+            className="w-full rounded-xl bg-rose-600 py-2.5 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-50"
           >
-            Leave without saving
+            {confirming ? "Deleting..." : "Delete"}
           </button>
           <button
             onClick={onCancel}
-            className="w-full rounded-xl bg-slate-900 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
+            className="w-full rounded-xl border border-slate-200 bg-white py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
           >
-            Stay &amp; finish editing
+            Cancel
           </button>
         </div>
       </div>
@@ -77,7 +134,392 @@ function UnsavedModal({
   );
 }
 
-// ── Bulk-import modal (flat list — used for non-brands if needed) ─────────────
+// ── Rename Modal ──────────────────────────────────────────────────────────────
+
+function RenameModal({
+  title,
+  current,
+  onSave,
+  onClose,
+}: {
+  title: string;
+  current: string;
+  onSave: (name: string) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [value, setValue] = useState(current);
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave() {
+    const trimmed = value.trim();
+    if (!trimmed || trimmed === current) {
+      onClose();
+      return;
+    }
+    setSaving(true);
+    await onSave(trimmed);
+    setSaving(false);
+    onClose();
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-sm rounded-[24px] border border-slate-200 bg-white p-6 shadow-[0_24px_60px_rgba(3,10,24,0.18)]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="text-base font-semibold text-slate-900">{title}</h3>
+        <p className="mt-0.5 text-sm text-slate-400">
+          Current: <span className="font-medium text-slate-600">{current}</span>
+        </p>
+        <input
+          autoFocus
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handleSave();
+            if (e.key === "Escape") onClose();
+          }}
+          className="mt-4 w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-cyan-400/60 focus:ring-4 focus:ring-cyan-400/10"
+        />
+        <div className="mt-5 flex gap-2">
+          <button
+            onClick={onClose}
+            className="flex-1 rounded-xl border border-slate-200 bg-white py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving || !value.trim() || value.trim() === current}
+            className="flex-1 rounded-xl bg-slate-900 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {saving ? "Saving..." : "Save"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Category View Modal (shows + manages subcategories) ───────────────────────
+
+function CategoryViewModal({
+  category,
+  subcategories,
+  subcategoryCounts,
+  onAddSubcategory,
+  onRenameSubcategory,
+  onDeleteSubcategory,
+  onClose,
+}: {
+  category: CategoryRecord;
+  subcategories: CategoryRecord[];
+  subcategoryCounts: Map<string, number>;
+  onAddSubcategory: (parentId: string, name: string) => Promise<void>;
+  onRenameSubcategory: (row: CategoryRecord, nextName: string) => Promise<void>;
+  onDeleteSubcategory: (row: CategoryRecord) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [addInput, setAddInput] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editInput, setEditInput] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<CategoryRecord | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleAdd() {
+    const trimmed = addInput.trim();
+    if (!trimmed) return;
+    if (
+      subcategories.some((s) => s.name.toLowerCase() === trimmed.toLowerCase())
+    ) {
+      alert(`"${trimmed}" already exists.`);
+      return;
+    }
+    setAdding(true);
+    await onAddSubcategory(category.id, trimmed);
+    setAdding(false);
+    setAddInput("");
+  }
+
+  async function commitEdit(row: CategoryRecord) {
+    const trimmed = editInput.trim();
+    if (!trimmed || trimmed === row.name) {
+      setEditingId(null);
+      return;
+    }
+    if (
+      subcategories.some(
+        (s) =>
+          s.id !== row.id && s.name.toLowerCase() === trimmed.toLowerCase(),
+      )
+    ) {
+      alert(`"${trimmed}" already exists.`);
+      return;
+    }
+    setSavingEdit(true);
+    await onRenameSubcategory(row, trimmed);
+    setSavingEdit(false);
+    setEditingId(null);
+  }
+
+  async function handleDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    await onDeleteSubcategory(deleteTarget);
+    setDeleting(false);
+    setDeleteTarget(null);
+  }
+
+  return (
+    <>
+      {deleteTarget && (
+        <DeleteModal
+          itemName={deleteTarget.name}
+          itemType="subcategory"
+          onConfirm={handleDelete}
+          onCancel={() => setDeleteTarget(null)}
+          confirming={deleting}
+        />
+      )}
+
+      <div
+        className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4"
+        onClick={onClose}
+      >
+        <div
+          className="w-full sm:max-w-lg rounded-t-[24px] sm:rounded-[24px] border border-slate-200 bg-white shadow-[0_24px_60px_rgba(3,10,24,0.18)] flex flex-col max-h-[85dvh]"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="relative overflow-hidden rounded-t-[24px] bg-[linear-gradient(135deg,#091120_0%,#0f1a31_60%,#16213d_100%)] px-5 py-4 text-white shrink-0">
+            <div className="pointer-events-none absolute -left-6 top-0 h-14 w-14 rounded-full bg-purple-400/20 blur-2xl" />
+            <div className="relative flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-purple-500/20 text-purple-300 border border-purple-400/20">
+                  <FolderOpen className="h-4 w-4" />
+                </div>
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/50">
+                    Category
+                  </p>
+                  <h3 className="text-base font-semibold text-white">
+                    {category.name}
+                  </h3>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="rounded-full border border-purple-400/20 bg-purple-500/10 px-2.5 py-1 text-[11px] font-semibold text-purple-300">
+                  {subcategories.length} subcategories
+                </span>
+                <button
+                  onClick={onClose}
+                  className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/15 bg-white/10 text-white transition hover:bg-white/20"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Subcategory list */}
+          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-1.5">
+            {subcategories.length === 0 ? (
+              <p className="py-8 text-center text-sm text-slate-400">
+                No subcategories yet. Add one below.
+              </p>
+            ) : (
+              subcategories.map((sub) => {
+                const count =
+                  subcategoryCounts.get(`${category.name}|||${sub.name}`) ?? 0;
+                const isEditing = editingId === sub.id;
+
+                return (
+                  <div
+                    key={sub.id}
+                    className={`flex items-center gap-2 rounded-xl border px-3 py-2 transition ${
+                      isEditing
+                        ? "border-cyan-300 bg-cyan-50/50"
+                        : "border-slate-100 bg-slate-50/60"
+                    }`}
+                  >
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-purple-300" />
+
+                    {isEditing ? (
+                      <input
+                        autoFocus
+                        value={editInput}
+                        onChange={(e) => setEditInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") commitEdit(sub);
+                          if (e.key === "Escape") setEditingId(null);
+                        }}
+                        className="flex-1 min-w-0 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-sm text-slate-900 outline-none focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/10"
+                      />
+                    ) : (
+                      <span className="flex-1 min-w-0 truncate text-sm font-medium text-slate-800">
+                        {sub.name}
+                      </span>
+                    )}
+
+                    {!isEditing && count > 0 && (
+                      <span className="shrink-0 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] text-slate-500">
+                        {count} product{count !== 1 ? "s" : ""}
+                      </span>
+                    )}
+
+                    {isEditing ? (
+                      <>
+                        <button
+                          onClick={() => commitEdit(sub)}
+                          disabled={savingEdit}
+                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 disabled:opacity-50"
+                        >
+                          {savingEdit ? (
+                            <span className="h-3 w-3 animate-spin rounded-full border border-emerald-400 border-t-transparent" />
+                          ) : (
+                            <Check className="h-3 w-3" />
+                          )}
+                        </button>
+                        <button
+                          onClick={() => setEditingId(null)}
+                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 hover:bg-slate-100"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => {
+                            setEditingId(sub.id);
+                            setEditInput(sub.name);
+                          }}
+                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-cyan-600 transition hover:border-cyan-200 hover:bg-cyan-50"
+                        >
+                          <Edit2 className="h-3 w-3" />
+                        </button>
+                        {count > 0 ? (
+                          <div
+                            title={`Used by ${count} product(s) — cannot delete`}
+                            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-100 bg-slate-50 text-slate-300 cursor-not-allowed"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setDeleteTarget(sub)}
+                            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-rose-500 transition hover:border-rose-200 hover:bg-rose-50"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Add subcategory footer */}
+          <div className="shrink-0 border-t border-slate-100 bg-slate-50/50 px-5 py-4">
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+              Add Subcategory
+            </p>
+            <div className="flex gap-2">
+              <input
+                value={addInput}
+                onChange={(e) => setAddInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleAdd();
+                }}
+                placeholder="New subcategory name…"
+                className="flex-1 min-w-0 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-cyan-400/60 focus:ring-4 focus:ring-cyan-400/10"
+              />
+              <button
+                onClick={handleAdd}
+                disabled={adding || !addInput.trim()}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-3.5 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {adding ? (
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                ) : (
+                  <Plus className="h-4 w-4" />
+                )}
+                Add
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── Brand View Modal ──────────────────────────────────────────────────────────
+
+function BrandViewModal({
+  brand,
+  onClose,
+}: {
+  brand: Item;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-xs rounded-[24px] border border-slate-200 bg-white p-6 shadow-[0_24px_60px_rgba(3,10,24,0.18)]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-3">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-fuchsia-100 text-fuchsia-700">
+            <Tag className="h-6 w-6" />
+          </div>
+          <div>
+            <h3 className="text-base font-semibold text-slate-900">
+              {brand.value}
+            </h3>
+            <p className="text-xs text-slate-400">Brand</p>
+          </div>
+        </div>
+        <div className="mt-4 grid grid-cols-1 gap-3">
+          <div className="rounded-xl border border-fuchsia-200/60 bg-fuchsia-50/60 px-4 py-3">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-fuchsia-500">
+              Products using this brand
+            </p>
+            <p className="mt-1 text-2xl font-bold text-fuchsia-700">
+              {brand.count}
+            </p>
+          </div>
+          {brand.count === 0 && (
+            <div className="flex items-start gap-2 rounded-xl border border-amber-200/60 bg-amber-50/60 px-3.5 py-2.5 text-xs text-amber-700">
+              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>No products assigned to this brand yet.</span>
+            </div>
+          )}
+        </div>
+        <button
+          onClick={onClose}
+          className="mt-5 w-full rounded-xl bg-slate-900 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Bulk Import Modal (flat — for brands) ────────────────────────────────────
+
 function BulkImportModal({
   title,
   existingValues,
@@ -105,7 +547,7 @@ function BulkImportModal({
   );
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
       <div className="w-full max-w-md rounded-[24px] border border-slate-200 bg-white shadow-[0_24px_60px_rgba(3,10,24,0.18)] flex flex-col max-h-[90dvh]">
         <div className="flex items-center justify-between gap-3 px-6 pt-6 pb-4 border-b border-slate-100">
           <div>
@@ -123,13 +565,12 @@ function BulkImportModal({
             <X className="h-4 w-4" />
           </button>
         </div>
-
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
           <textarea
             autoFocus
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder={`e.g. Electronics, Clothing, Food\nor one per line`}
+            placeholder={`e.g. Nike, Adidas, Puma\nor one per line`}
             rows={6}
             className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-cyan-400/60 focus:ring-4 focus:ring-cyan-400/10 resize-none"
           />
@@ -172,7 +613,6 @@ function BulkImportModal({
             </div>
           )}
         </div>
-
         <div className="flex gap-3 px-6 py-4 border-t border-slate-100">
           <button
             onClick={onClose}
@@ -197,41 +637,8 @@ function BulkImportModal({
   );
 }
 
-// ── NEW: Category bulk text parser ───────────────────────────────────────────
-function parseCategoryBulkText(text: string): CategoryBulkEntry[] {
-  const lines = text
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
+// ── Category Bulk Import Modal ────────────────────────────────────────────────
 
-  const seen = new Set<string>();
-  const result: CategoryBulkEntry[] = [];
-
-  for (const line of lines) {
-    const parts = line
-      .split(">")
-      .map((part) => part.trim())
-      .filter(Boolean);
-
-    if (parts.length === 0) continue;
-    if (parts.length > 2) continue;
-
-    const entry: CategoryBulkEntry =
-      parts.length === 1
-        ? { category: parts[0] }
-        : { category: parts[0], subcategory: parts[1] };
-
-    const key = `${entry.category.toLowerCase()}|||${(entry.subcategory ?? "").toLowerCase()}`;
-    if (seen.has(key)) continue;
-
-    seen.add(key);
-    result.push(entry);
-  }
-
-  return result;
-}
-
-// ── NEW: Category bulk import modal ─────────────────────────────────────────
 function CategoryBulkImportModal({
   onImport,
   onClose,
@@ -241,11 +648,10 @@ function CategoryBulkImportModal({
 }) {
   const [text, setText] = useState("");
   const [saving, setSaving] = useState(false);
-
   const preview = parseCategoryBulkText(text);
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
       <div className="w-full max-w-md rounded-[24px] border border-slate-200 bg-white shadow-[0_24px_60px_rgba(3,10,24,0.18)] flex flex-col max-h-[90dvh]">
         <div className="flex items-center justify-between gap-3 px-6 pt-6 pb-4 border-b border-slate-100">
           <div>
@@ -253,7 +659,7 @@ function CategoryBulkImportModal({
               Bulk import categories
             </h3>
             <p className="mt-0.5 text-xs text-slate-500">
-              Use one per line. Format: Category or Category &gt; Subcategory
+              One per line. Format: Category or Category &gt; Subcategory
             </p>
           </div>
           <button
@@ -263,7 +669,6 @@ function CategoryBulkImportModal({
             <X className="h-4 w-4" />
           </button>
         </div>
-
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
           <textarea
             autoFocus
@@ -273,7 +678,6 @@ function CategoryBulkImportModal({
             rows={8}
             className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-cyan-400/60 focus:ring-4 focus:ring-cyan-400/10 resize-none"
           />
-
           {preview.length > 0 && (
             <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
               <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-700">
@@ -293,7 +697,6 @@ function CategoryBulkImportModal({
             </div>
           )}
         </div>
-
         <div className="flex gap-3 px-6 py-4 border-t border-slate-100">
           <button
             onClick={onClose}
@@ -319,96 +722,22 @@ function CategoryBulkImportModal({
   );
 }
 
-// ── Flat item list (used for Brands) ─────────────────────────────────────────
-function ItemList({
-  title,
-  icon: Icon,
-  items,
-  loading,
-  onAdd,
-  onRename,
-  onDelete,
-  accentClass,
-  onEditingChange,
-  allowCreate = true,
-  allowDelete = true,
-  allowBulk = true,
+// ── Pagination ────────────────────────────────────────────────────────────────
+
+function TablePagination({
+  page,
+  total,
+  pageSize,
+  onPageChange,
+  itemLabel,
 }: {
-  title: string;
-  icon: React.ElementType;
-  items: Item[];
-  loading: boolean;
-  onAdd: (val: string) => void;
-  onRename: (old: string, next: string) => Promise<void>;
-  onDelete: (val: string) => void;
-  accentClass: string;
-  onEditingChange: (editing: boolean) => void;
-  allowCreate?: boolean;
-  allowDelete?: boolean;
-  allowBulk?: boolean;
+  page: number;
+  total: number;
+  pageSize: number;
+  onPageChange: (p: number) => void;
+  itemLabel: string;
 }) {
-  const [input, setInput] = useState("");
-  const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
-  const [editingValue, setEditingValue] = useState<string | null>(null);
-  const [editInput, setEditInput] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [showBulk, setShowBulk] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => setPage(1), [search]);
-  useEffect(() => {
-    onEditingChange(editingValue !== null);
-  }, [editingValue, onEditingChange]);
-
-  const filtered = items.filter((i) =>
-    i.value.toLowerCase().includes(search.toLowerCase()),
-  );
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-
-  function handleAdd() {
-    const trimmed = input.trim();
-    if (!trimmed) return;
-    if (items.some((i) => i.value.toLowerCase() === trimmed.toLowerCase())) {
-      alert(`"${trimmed}" already exists.`);
-      return;
-    }
-    onAdd(trimmed);
-    setInput("");
-    inputRef.current?.focus();
-  }
-
-  function startEdit(val: string) {
-    setEditingValue(val);
-    setEditInput(val);
-  }
-
-  async function commitEdit(old: string) {
-    const trimmed = editInput.trim();
-    if (!trimmed || trimmed === old) {
-      setEditingValue(null);
-      return;
-    }
-    if (
-      items.some(
-        (i) =>
-          i.value.toLowerCase() === trimmed.toLowerCase() && i.value !== old,
-      )
-    ) {
-      alert(`"${trimmed}" already exists.`);
-      return;
-    }
-    setSaving(true);
-    await onRename(old, trimmed);
-    setSaving(false);
-    setEditingValue(null);
-  }
-
-  function cancelEdit() {
-    setEditingValue(null);
-    setEditInput("");
-  }
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const pageNumbers = Array.from({ length: totalPages }, (_, i) => i + 1)
     .filter((p) => p === 1 || p === totalPages || Math.abs(p - page) <= 1)
@@ -418,554 +747,191 @@ function ItemList({
       return acc;
     }, []);
 
+  if (totalPages <= 1) return null;
+
   return (
-    <>
-      {showBulk && (
-        <BulkImportModal
-          title={title}
-          existingValues={items.map((i) => i.value)}
-          onImport={(vals) => vals.forEach((v) => onAdd(v))}
-          onClose={() => setShowBulk(false)}
-        />
-      )}
-
-      <div className="flex flex-col rounded-[22px] border border-slate-200/80 bg-white/80 overflow-hidden">
-        {/* Panel header */}
-        <div className="flex items-center gap-2.5 px-5 py-4 border-b border-slate-100">
-          <div
-            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${accentClass}`}
-          >
-            <Icon className="h-4 w-4" />
-          </div>
-          <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
-          <span className="ml-auto rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-[11px] font-semibold text-slate-500">
-            {items.length}
-          </span>
-        </div>
-
-        {/* Editing info banner */}
-        {editingValue && (
-          <div className="flex items-center gap-2 bg-amber-50 border-b border-amber-100 px-5 py-2.5 text-xs text-amber-700">
-            <Info className="h-3.5 w-3.5 shrink-0" />
-            <span>
-              Editing <strong>"{editingValue}"</strong> — Enter to save, Esc to
-              cancel
+    <div className="flex items-center justify-between gap-4 border-t border-slate-100 px-4 py-3">
+      <p className="text-xs text-slate-400">
+        {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} of{" "}
+        {total} {itemLabel}
+      </p>
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => onPageChange(Math.max(1, page - 1))}
+          disabled={page === 1}
+          className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          <ChevronLeft className="h-3.5 w-3.5" />
+        </button>
+        {pageNumbers.map((p, idx) =>
+          p === "…" ? (
+            <span key={`e-${idx}`} className="px-1 text-[11px] text-slate-400">
+              …
             </span>
-          </div>
-        )}
-
-        <div className="p-5 space-y-4 flex-1">
-          {/* Add + bulk row — hidden when allowCreate is false */}
-          {allowCreate && (
-            <div className="flex gap-2">
-              <input
-                ref={inputRef}
-                type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    handleAdd();
-                  }
-                }}
-                placeholder={`New ${title.toLowerCase().replace(/s$/, "")}…`}
-                className="flex-1 min-w-0 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-cyan-400/60 focus:ring-4 focus:ring-cyan-400/10"
-              />
-              <button
-                onClick={handleAdd}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-slate-900 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
-              >
-                <Plus className="h-4 w-4" />
-                <span className="hidden sm:inline">Add</span>
-              </button>
-              {allowBulk && (
-                <button
-                  onClick={() => setShowBulk(true)}
-                  title="Bulk import"
-                  className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                >
-                  <Upload className="h-4 w-4" />
-                  <span className="hidden sm:inline">Bulk</span>
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* Search — only if more than 5 items */}
-          {items.length > 5 && (
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={`Search ${title.toLowerCase()}…`}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-9 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-cyan-400/60 focus:bg-white focus:ring-4 focus:ring-cyan-400/10"
-              />
-              {search && (
-                <button
-                  onClick={() => setSearch("")}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* List */}
-          {loading ? (
-            <div className="space-y-2">
-              {[1, 2, 3].map((i) => (
-                <div
-                  key={i}
-                  className="h-11 animate-pulse rounded-xl bg-slate-100"
-                />
-              ))}
-            </div>
-          ) : filtered.length === 0 ? (
-            <p className="py-8 text-center text-sm text-slate-400">
-              {search
-                ? `No ${title.toLowerCase()} matching "${search}"`
-                : `No ${title.toLowerCase()} yet. Add one above.`}
-            </p>
           ) : (
-            <ul className="space-y-2">
-              {paginated.map((item) => (
-                <li
-                  key={item.value}
-                  className={`flex items-center gap-3 rounded-xl border px-3.5 py-2.5 transition ${
-                    editingValue === item.value
-                      ? "border-cyan-300 bg-cyan-50/50"
-                      : "border-slate-100 bg-slate-50/60"
-                  }`}
-                >
-                  {editingValue === item.value ? (
-                    <>
-                      <input
-                        autoFocus
-                        value={editInput}
-                        onChange={(e) => setEditInput(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") commitEdit(item.value);
-                          if (e.key === "Escape") cancelEdit();
-                        }}
-                        className="flex-1 min-w-0 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-900 outline-none focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/10"
-                      />
-                      <button
-                        onClick={() => commitEdit(item.value)}
-                        disabled={saving}
-                        title="Save (Enter)"
-                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 disabled:opacity-50"
-                      >
-                        {saving ? (
-                          <span className="h-3.5 w-3.5 animate-spin rounded-full border border-emerald-400 border-t-transparent" />
-                        ) : (
-                          <Check className="h-3.5 w-3.5" />
-                        )}
-                      </button>
-                      <button
-                        onClick={cancelEdit}
-                        title="Cancel (Esc)"
-                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 hover:bg-slate-100"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <span className="flex-1 min-w-0 text-sm font-medium text-slate-800 truncate">
-                        {item.value}
-                      </span>
-                      {item.count > 0 && (
-                        <span className="shrink-0 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] text-slate-500">
-                          {item.count} product{item.count !== 1 ? "s" : ""}
-                        </span>
-                      )}
-                      <button
-                        onClick={() => startEdit(item.value)}
-                        title="Edit"
-                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-cyan-600 transition hover:border-cyan-200 hover:bg-cyan-50"
-                      >
-                        <Edit2 className="h-3 w-3" />
-                      </button>
-                      {allowDelete &&
-                        (item.count > 0 ? (
-                          <div
-                            title={`Used by ${item.count} product(s) — cannot delete`}
-                            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-100 bg-slate-50 text-slate-300 cursor-not-allowed"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => onDelete(item.value)}
-                            title="Delete"
-                            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-rose-500 transition hover:border-rose-200 hover:bg-rose-50"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </button>
-                        ))}
-                    </>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between gap-2 pt-1">
-              <span className="text-[11px] text-slate-400">
-                {(page - 1) * PAGE_SIZE + 1}–
-                {Math.min(page * PAGE_SIZE, filtered.length)} of{" "}
-                {filtered.length}
-              </span>
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page === 1}
-                  className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed"
-                >
-                  <ChevronLeft className="h-3.5 w-3.5" />
-                </button>
-                {pageNumbers.map((p, idx) =>
-                  p === "…" ? (
-                    <span
-                      key={`e-${idx}`}
-                      className="px-1 text-[11px] text-slate-400"
-                    >
-                      …
-                    </span>
-                  ) : (
-                    <button
-                      key={p}
-                      onClick={() => setPage(p as number)}
-                      className={`flex h-7 min-w-[28px] items-center justify-center rounded-lg border px-2 text-[11px] font-semibold transition ${
-                        page === p
-                          ? "border-slate-900 bg-slate-900 text-white"
-                          : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                      }`}
-                    >
-                      {p}
-                    </button>
-                  ),
-                )}
-                <button
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={page === totalPages}
-                  className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed"
-                >
-                  <ChevronRight className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+            <button
+              key={p}
+              onClick={() => onPageChange(p as number)}
+              className={`flex h-7 min-w-[28px] items-center justify-center rounded-lg border px-2 text-[11px] font-semibold transition ${
+                page === p
+                  ? "border-slate-900 bg-slate-900 text-white"
+                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              {p}
+            </button>
+          ),
+        )}
+        <button
+          onClick={() => onPageChange(Math.min(totalPages, page + 1))}
+          disabled={page === totalPages}
+          className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          <ChevronRight className="h-3.5 w-3.5" />
+        </button>
       </div>
-    </>
+    </div>
   );
 }
 
-// ── Category hierarchy panel ─────────────────────────────────────────────────
-function CategoryTreeList({
+function AddModal({
+  title,
+  placeholder,
+  onSave,
+  onClose,
+}: {
+  title: string;
+  placeholder: string;
+  onSave: (name: string) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [value, setValue] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave() {
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    setSaving(true);
+    await onSave(trimmed);
+    setSaving(false);
+    onClose();
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-sm rounded-[24px] border border-slate-200 bg-white p-6 shadow-[0_24px_60px_rgba(3,10,24,0.18)]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="text-base font-semibold text-slate-900">{title}</h3>
+        <input
+          autoFocus
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handleSave();
+            if (e.key === "Escape") onClose();
+          }}
+          placeholder={placeholder}
+          className="mt-4 w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-cyan-400/60 focus:ring-4 focus:ring-cyan-400/10"
+        />
+        <div className="mt-5 flex gap-2">
+          <button
+            onClick={onClose}
+            className="flex-1 rounded-xl border border-slate-200 bg-white py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving || !value.trim()}
+            className="flex-1 rounded-xl bg-slate-900 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {saving ? "Adding..." : "Add"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Categories Table ──────────────────────────────────────────────────────────
+
+function CategoriesTable({
   rows,
   loading,
-  onAddCategory,
-  onAddSubcategory,
-  onBulkImport,
-  onRenameCategory,
-  onRenameSubcategory,
-  onDeleteCategory,
-  onDeleteSubcategory,
-  onEditingChange,
   categoryCounts,
   subcategoryCounts,
+  onAddCategory,
+  onBulkImport,
+  onRenameCategory,
+  onDeleteCategory,
+  onAddSubcategory,
+  onRenameSubcategory,
+  onDeleteSubcategory,
+  tabHeader,
 }: {
   rows: CategoryRecord[];
   loading: boolean;
-  onAddCategory: (name: string) => Promise<void>;
-  onAddSubcategory: (parentId: string, name: string) => Promise<void>;
-  onBulkImport: (entries: CategoryBulkEntry[]) => Promise<void>;
-  onRenameCategory: (row: CategoryRecord, nextName: string) => Promise<void>;
-  onRenameSubcategory: (row: CategoryRecord, nextName: string) => Promise<void>;
-  onDeleteCategory: (row: CategoryRecord) => Promise<void>;
-  onDeleteSubcategory: (row: CategoryRecord) => Promise<void>;
-  onEditingChange: (editing: boolean) => void;
   categoryCounts: Map<string, number>;
   subcategoryCounts: Map<string, number>;
+  onAddCategory: (name: string) => Promise<void>;
+  onBulkImport: (entries: CategoryBulkEntry[]) => Promise<void>;
+  onRenameCategory: (row: CategoryRecord, nextName: string) => Promise<void>;
+  onDeleteCategory: (row: CategoryRecord) => Promise<void>;
+  onAddSubcategory: (parentId: string, name: string) => Promise<void>;
+  onRenameSubcategory: (row: CategoryRecord, nextName: string) => Promise<void>;
+  onDeleteSubcategory: (row: CategoryRecord) => Promise<void>;
+  tabHeader?: React.ReactNode;
 }) {
-  const [catInput, setCatInput] = useState("");
+  const [addInput, setAddInput] = useState("");
+  const [adding, setAdding] = useState(false);
   const [search, setSearch] = useState("");
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editInput, setEditInput] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [addingSubFor, setAddingSubFor] = useState<string | null>(null);
-  const [subInput, setSubInput] = useState("");
-  const [addingSub, setAddingSub] = useState(false);
+  const [page, setPage] = useState(1);
   const [showBulk, setShowBulk] = useState(false);
-  const catInputRef = useRef<HTMLInputElement>(null);
+  const [showAdd, setShowAdd] = useState(false);
+
+  // Modals
+  const [viewTarget, setViewTarget] = useState<CategoryRecord | null>(null);
+  const [editTarget, setEditTarget] = useState<CategoryRecord | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<CategoryRecord | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const parents = rows.filter((r) => !r.parentId);
   const childrenOf = (parentId: string) =>
     rows.filter((r) => r.parentId === parentId);
 
-  // Notify parent whether any edit is active
-  useEffect(() => {
-    onEditingChange(editingId !== null || addingSubFor !== null);
-  }, [editingId, addingSubFor, onEditingChange]);
+  const filtered = parents.filter((p) =>
+    p.name.toLowerCase().includes(search.toLowerCase()),
+  );
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  // Filter: show parent if its name matches OR any child name matches
-  const filteredParents = parents.filter((p) => {
-    const q = search.toLowerCase();
-    if (!q) return true;
-    if (p.name.toLowerCase().includes(q)) return true;
-    return childrenOf(p.id).some((c) => c.name.toLowerCase().includes(q));
-  });
+  useEffect(() => setPage(1), [search]);
 
-  function toggleExpand(id: string) {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  async function handleAddCategory() {
-    const trimmed = catInput.trim();
-    if (!trimmed) return;
-    if (parents.some((p) => p.name.toLowerCase() === trimmed.toLowerCase())) {
-      alert(`"${trimmed}" already exists.`);
+  async function handleAdd(name: string) {
+    if (parents.some((p) => p.name.toLowerCase() === name.toLowerCase())) {
+      alert(`"${name}" already exists.`);
       return;
     }
-    await onAddCategory(trimmed);
-    setCatInput("");
-    catInputRef.current?.focus();
+    setAdding(true);
+    await onAddCategory(name);
+    setAdding(false);
   }
 
-  function startEdit(row: CategoryRecord) {
-    setEditingId(row.id);
-    setEditInput(row.name);
-    // auto-expand parent if editing a subcategory
-    if (row.parentId) {
-      setExpanded((prev) => new Set([...prev, row.parentId!]));
-    }
+  async function handleDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    await onDeleteCategory(deleteTarget);
+    setDeleting(false);
+    setDeleteTarget(null);
   }
 
-  async function commitEdit(row: CategoryRecord) {
-    const trimmed = editInput.trim();
-    if (!trimmed || trimmed === row.name) {
-      setEditingId(null);
-      return;
-    }
-    const siblings = row.parentId ? childrenOf(row.parentId) : parents;
-    if (
-      siblings.some(
-        (s) =>
-          s.id !== row.id && s.name.toLowerCase() === trimmed.toLowerCase(),
-      )
-    ) {
-      alert(`"${trimmed}" already exists.`);
-      return;
-    }
-    setSaving(true);
-    if (row.parentId) {
-      await onRenameSubcategory(row, trimmed);
-    } else {
-      await onRenameCategory(row, trimmed);
-    }
-    setSaving(false);
-    setEditingId(null);
-  }
-
-  function cancelEdit() {
-    setEditingId(null);
-    setEditInput("");
-  }
-
-  function openAddSub(parentId: string) {
-    setAddingSubFor(parentId);
-    setSubInput("");
-    setExpanded((prev) => new Set([...prev, parentId]));
-  }
-
-  async function commitAddSub(parentId: string) {
-    const trimmed = subInput.trim();
-    if (!trimmed) {
-      setAddingSubFor(null);
-      return;
-    }
-    const existing = childrenOf(parentId);
-    if (existing.some((c) => c.name.toLowerCase() === trimmed.toLowerCase())) {
-      alert(`"${trimmed}" already exists in this category.`);
-      return;
-    }
-    setAddingSub(true);
-    await onAddSubcategory(parentId, trimmed);
-    setAddingSub(false);
-    setAddingSubFor(null);
-    setSubInput("");
-  }
-
-  // Row renderer — shared between parent and child
-  function renderRow(
-    row: CategoryRecord,
-    opts: {
-      isChild?: boolean;
-      isExpanded?: boolean;
-      childCount?: number;
-    } = {},
-  ) {
-    const { isChild = false, isExpanded = false, childCount = 0 } = opts;
-    const isEditing = editingId === row.id;
-
-    const parentName = row.parentId
-      ? (parents.find((p) => p.id === row.parentId)?.name ?? "")
-      : "";
-
-    const usageCount = isChild
-      ? (subcategoryCounts.get(`${parentName}|||${row.name}`) ?? 0)
-      : (categoryCounts.get(row.name) ?? 0);
-
-    return (
-      <div
-        key={row.id}
-        className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 transition ${
-          isEditing
-            ? "border-cyan-300 bg-cyan-50/50"
-            : isChild
-              ? "border-slate-100 bg-white ml-5"
-              : "border-slate-100 bg-slate-50/60"
-        }`}
-      >
-        {/* Expand toggle (parent only) */}
-        {!isChild && (
-          <button
-            onClick={() => toggleExpand(row.id)}
-            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
-          >
-            {isExpanded ? (
-              <ChevronDown className="h-3.5 w-3.5" />
-            ) : (
-              <ChevronRightSmall className="h-3.5 w-3.5" />
-            )}
-          </button>
-        )}
-
-        {/* Folder icon */}
-        {!isChild && (
-          <span className="shrink-0 text-purple-400">
-            {isExpanded ? (
-              <FolderOpen className="h-3.5 w-3.5" />
-            ) : (
-              <Folder className="h-3.5 w-3.5" />
-            )}
-          </span>
-        )}
-        {isChild && (
-          <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-purple-300" />
-        )}
-
-        {/* Name or edit input */}
-        {isEditing ? (
-          <input
-            autoFocus
-            value={editInput}
-            onChange={(e) => setEditInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") commitEdit(row);
-              if (e.key === "Escape") cancelEdit();
-            }}
-            className="flex-1 min-w-0 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-sm text-slate-900 outline-none focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/10"
-          />
-        ) : (
-          <span className="flex-1 min-w-0 truncate text-sm font-medium text-slate-800">
-            {row.name}
-          </span>
-        )}
-
-        {/* Child count badge (parent only, collapsed) */}
-        {!isChild && !isExpanded && childCount > 0 && !isEditing && (
-          <span className="shrink-0 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] text-slate-500">
-            {childCount} sub
-          </span>
-        )}
-
-        {/* Usage count badge */}
-        {!isEditing && usageCount > 0 && (
-          <span className="shrink-0 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] text-slate-500">
-            {usageCount} product{usageCount !== 1 ? "s" : ""}
-          </span>
-        )}
-
-        {/* Action buttons */}
-        {isEditing ? (
-          <>
-            <button
-              onClick={() => commitEdit(row)}
-              disabled={saving}
-              title="Save (Enter)"
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 disabled:opacity-50"
-            >
-              {saving ? (
-                <span className="h-3.5 w-3.5 animate-spin rounded-full border border-emerald-400 border-t-transparent" />
-              ) : (
-                <Check className="h-3.5 w-3.5" />
-              )}
-            </button>
-            <button
-              onClick={cancelEdit}
-              title="Cancel (Esc)"
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 hover:bg-slate-100"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </>
-        ) : (
-          <>
-            {/* Add subcategory (parent only) */}
-            {!isChild && (
-              <button
-                onClick={() => openAddSub(row.id)}
-                title="Add subcategory"
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-purple-500 transition hover:border-purple-200 hover:bg-purple-50"
-              >
-                <Plus className="h-3 w-3" />
-              </button>
-            )}
-            <button
-              onClick={() => startEdit(row)}
-              title="Rename"
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-cyan-600 transition hover:border-cyan-200 hover:bg-cyan-50"
-            >
-              <Edit2 className="h-3 w-3" />
-            </button>
-            {usageCount > 0 ? (
-              <div
-                title={`Used by ${usageCount} product(s) — cannot delete`}
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-100 bg-slate-50 text-slate-300 cursor-not-allowed"
-              >
-                <Trash2 className="h-3 w-3" />
-              </div>
-            ) : (
-              <button
-                onClick={() =>
-                  isChild ? onDeleteSubcategory(row) : onDeleteCategory(row)
-                }
-                title="Delete"
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-rose-500 transition hover:border-rose-200 hover:bg-rose-50"
-              >
-                <Trash2 className="h-3 w-3" />
-              </button>
-            )}
-          </>
-        )}
-      </div>
-    );
-  }
+  const HEADERS = ["Name", "Subcategories", "Products", "Actions"];
 
   return (
     <>
@@ -976,202 +942,682 @@ function CategoryTreeList({
         />
       )}
 
-      <div className="flex flex-col rounded-[22px] border border-slate-200/80 bg-white/80 overflow-hidden">
-        {/* Panel header */}
-        <div className="flex items-center gap-2.5 px-5 py-4 border-b border-slate-100">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-purple-100 text-purple-700">
-            <Layers className="h-4 w-4" />
+      {showAdd && (
+        <AddModal
+          title="Add Category"
+          placeholder="e.g. Electronics"
+          onSave={handleAdd}
+          onClose={() => setShowAdd(false)}
+        />
+      )}
+
+      {viewTarget && (
+        <CategoryViewModal
+          category={viewTarget}
+          subcategories={childrenOf(viewTarget.id)}
+          subcategoryCounts={subcategoryCounts}
+          onAddSubcategory={onAddSubcategory}
+          onRenameSubcategory={onRenameSubcategory}
+          onDeleteSubcategory={onDeleteSubcategory}
+          onClose={() => setViewTarget(null)}
+        />
+      )}
+
+      {editTarget && (
+        <RenameModal
+          title="Rename Category"
+          current={editTarget.name}
+          onSave={(nextName) => onRenameCategory(editTarget, nextName)}
+          onClose={() => setEditTarget(null)}
+        />
+      )}
+
+      {deleteTarget && (
+        <DeleteModal
+          itemName={deleteTarget.name}
+          itemType="category"
+          onConfirm={handleDelete}
+          onCancel={() => setDeleteTarget(null)}
+          confirming={deleting}
+        />
+      )}
+
+      <Surface>
+        {/* Toolbar */}
+        <div className="flex flex-col gap-3 border-b border-slate-100 p-4 md:flex-row md:items-center md:gap-3">
+          {tabHeader}
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search…"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-8 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-cyan-400/60 focus:bg-white focus:ring-4 focus:ring-cyan-400/10"
+            />
+            {search && (
+              <button
+                onClick={() => setSearch("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
-          <h3 className="text-sm font-semibold text-slate-900">Categories</h3>
-          <span className="ml-auto rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-[11px] font-semibold text-slate-500">
-            {parents.length}
-          </span>
+          <button
+            onClick={() => setShowAdd(true)}
+            disabled={adding}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-slate-900 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {adding ? (
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+            ) : (
+              <Plus className="h-4 w-4" />
+            )}
+            <span className="hidden sm:inline">Add</span>
+          </button>
+          <button
+            onClick={() => setShowBulk(true)}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+          >
+            <Upload className="h-4 w-4" />
+            <span className="hidden sm:inline">Bulk</span>
+          </button>
         </div>
 
-        {/* Editing info banner */}
-        {(editingId !== null || addingSubFor !== null) && (
-          <div className="flex items-center gap-2 bg-amber-50 border-b border-amber-100 px-5 py-2.5 text-xs text-amber-700">
-            <Info className="h-3.5 w-3.5 shrink-0" />
-            <span>
-              {editingId !== null
-                ? "Editing — Enter to save, Esc to cancel"
-                : "Adding subcategory — Enter to save, Esc to cancel"}
-            </span>
-          </div>
-        )}
+        {/* Desktop Table */}
+        <div className="hidden md:block overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="bg-[#1e3a5f]">
+                {HEADERS.map((h) => (
+                  <th
+                    key={h}
+                    className={`px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80 first:pl-5 ${
+                      h === "Actions" ? "text-right pr-5" : "text-left"
+                    }`}
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100/90">
+              {loading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <tr key={i}>
+                    {HEADERS.map((h) => (
+                      <td key={h} className="px-4 py-3 first:pl-5">
+                        <div className="h-4 animate-pulse rounded-md bg-slate-100" />
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              ) : filtered.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={HEADERS.length}
+                    className="py-12 text-center text-sm text-slate-400"
+                  >
+                    {search
+                      ? `No categories matching "${search}"`
+                      : "No categories yet. Add one above."}
+                  </td>
+                </tr>
+              ) : (
+                paginated.map((cat, idx) => {
+                  const children = childrenOf(cat.id);
+                  const productCount = categoryCounts.get(cat.name) ?? 0;
+                  const canDelete = productCount === 0;
 
-        <div className="p-5 space-y-4 flex-1">
-          {/* Add category row + Bulk button */}
-          <div className="flex gap-2">
-            <input
-              ref={catInputRef}
-              type="text"
-              value={catInput}
-              onChange={(e) => setCatInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  handleAddCategory();
-                }
-              }}
-              placeholder="New category…"
-              className="flex-1 min-w-0 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-cyan-400/60 focus:ring-4 focus:ring-cyan-400/10"
-            />
-            <button
-              onClick={handleAddCategory}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-slate-900 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
-            >
-              <Plus className="h-4 w-4" />
-              <span className="hidden sm:inline">Add</span>
-            </button>
-            <button
-              onClick={() => setShowBulk(true)}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-            >
-              <Upload className="h-4 w-4" />
-              <span className="hidden sm:inline">Bulk</span>
-            </button>
-          </div>
-
-          {/* Search — only if more than 5 parent categories */}
-          {parents.length > 5 && (
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search categories…"
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-9 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-cyan-400/60 focus:bg-white focus:ring-4 focus:ring-cyan-400/10"
-              />
-              {search && (
-                <button
-                  onClick={() => setSearch("")}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
+                  return (
+                    <tr
+                      key={cat.id}
+                      className={`group transition-colors hover:bg-slate-50/80 ${
+                        idx % 2 === 0 ? "bg-white" : "bg-slate-50/40"
+                      }`}
+                    >
+                      <td className="pl-5 pr-4 py-3">
+                        <div className="flex items-center gap-2.5">
+                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-purple-100 text-purple-600">
+                            <Layers className="h-3.5 w-3.5" />
+                          </div>
+                          <span className="text-[13px] font-medium text-slate-800">
+                            {cat.name}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        {children.length > 0 ? (
+                          <span className="rounded-full border border-purple-200 bg-purple-50 px-2.5 py-0.5 text-[11px] font-semibold text-purple-700">
+                            {children.length} sub
+                          </span>
+                        ) : (
+                          <span className="text-[12px] text-slate-300">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {productCount > 0 ? (
+                          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">
+                            {productCount} product
+                            {productCount !== 1 ? "s" : ""}
+                          </span>
+                        ) : (
+                          <span className="text-[12px] text-slate-300">—</span>
+                        )}
+                      </td>
+                      <td className="py-3 pl-4 pr-5">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => setViewTarget(cat)}
+                            title="View subcategories"
+                            className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 cursor-pointer"
+                          >
+                            <Eye className="h-3 w-3" />
+                          </button>
+                          <button
+                            onClick={() => setEditTarget(cat)}
+                            title="Rename"
+                            className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-cyan-600 transition hover:border-cyan-200 hover:bg-cyan-50 cursor-pointer"
+                          >
+                            <Edit2 className="h-3 w-3" />
+                          </button>
+                          {canDelete ? (
+                            <button
+                              onClick={() => setDeleteTarget(cat)}
+                              title="Delete"
+                              className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-rose-500 transition hover:border-rose-200 hover:bg-rose-50 cursor-pointer"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          ) : (
+                            <div
+                              title={`Used by ${productCount} product(s) — cannot delete`}
+                              className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-100 bg-slate-50 text-slate-300 cursor-not-allowed"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
-            </div>
-          )}
+            </tbody>
+          </table>
+        </div>
 
-          {/* List */}
+        {/* Mobile cards */}
+        <div className="block md:hidden">
+          <div className="bg-[#1e3a5f] px-4 py-2.5">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/70">
+              {filtered.length} categories
+            </p>
+          </div>
           {loading ? (
-            <div className="space-y-2">
-              {[1, 2, 3].map((i) => (
-                <div
-                  key={i}
-                  className="h-11 animate-pulse rounded-xl bg-slate-100"
-                />
+            <div className="divide-y divide-slate-100">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="px-4 py-3">
+                  <div className="h-4 w-1/2 animate-pulse rounded-md bg-slate-100" />
+                  <div className="mt-2 h-3 w-1/3 animate-pulse rounded-md bg-slate-100" />
+                </div>
               ))}
             </div>
-          ) : filteredParents.length === 0 ? (
-            <p className="py-8 text-center text-sm text-slate-400">
-              {search
-                ? `No categories matching "${search}"`
-                : "No categories yet. Add one above."}
+          ) : filtered.length === 0 ? (
+            <p className="py-10 text-center text-sm text-slate-400">
+              {search ? `No results for "${search}"` : "No categories yet."}
             </p>
           ) : (
-            <ul className="space-y-2">
-              {filteredParents.map((parent) => {
-                const children = childrenOf(parent.id);
-                const isExpanded = expanded.has(parent.id);
+            <div className="divide-y divide-slate-100">
+              {paginated.map((cat) => {
+                const children = childrenOf(cat.id);
+                const productCount = categoryCounts.get(cat.name) ?? 0;
+                const canDelete = productCount === 0;
 
                 return (
-                  <li key={parent.id} className="space-y-1.5">
-                    {/* Parent row */}
-                    {renderRow(parent, {
-                      isChild: false,
-                      isExpanded,
-                      childCount: children.length,
-                    })}
-
-                    {/* Children + add-sub form (when expanded) */}
-                    {isExpanded && (
-                      <div className="space-y-1.5 ml-5">
-                        {children.map((child) =>
-                          renderRow(child, { isChild: true }),
-                        )}
-
-                        {/* Add subcategory inline form */}
-                        {addingSubFor === parent.id ? (
-                          <div className="flex items-center gap-2 rounded-xl border border-purple-200 bg-purple-50/50 px-3 py-2 ml-0">
-                            <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-purple-300" />
-                            <input
-                              autoFocus
-                              value={subInput}
-                              onChange={(e) => setSubInput(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") commitAddSub(parent.id);
-                                if (e.key === "Escape") {
-                                  setAddingSubFor(null);
-                                  setSubInput("");
-                                }
-                              }}
-                              placeholder="Subcategory name…"
-                              className="flex-1 min-w-0 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-sm text-slate-900 outline-none focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/10"
-                            />
-                            <button
-                              onClick={() => commitAddSub(parent.id)}
-                              disabled={addingSub}
-                              title="Save (Enter)"
-                              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 disabled:opacity-50"
-                            >
-                              {addingSub ? (
-                                <span className="h-3.5 w-3.5 animate-spin rounded-full border border-emerald-400 border-t-transparent" />
-                              ) : (
-                                <Check className="h-3.5 w-3.5" />
-                              )}
-                            </button>
-                            <button
-                              onClick={() => {
-                                setAddingSubFor(null);
-                                setSubInput("");
-                              }}
-                              title="Cancel (Esc)"
-                              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 hover:bg-slate-100"
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </button>
+                  <div
+                    key={cat.id}
+                    className="px-4 py-3 hover:bg-slate-50/60 transition-colors"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-purple-100 text-purple-600">
+                            <Layers className="h-3 w-3" />
                           </div>
-                        ) : (
+                          <p className="truncate text-[14px] font-semibold text-slate-900">
+                            {cat.name}
+                          </p>
+                        </div>
+                        <div className="mt-1.5 flex flex-wrap gap-1.5 pl-8">
+                          {children.length > 0 && (
+                            <span className="rounded-full border border-purple-200 bg-purple-50 px-2 py-0.5 text-[10px] font-semibold text-purple-700">
+                              {children.length} sub
+                            </span>
+                          )}
+                          {productCount > 0 && (
+                            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                              {productCount} products
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          onClick={() => setViewTarget(cat)}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => setEditTarget(cat)}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-cyan-600"
+                        >
+                          <Edit2 className="h-3.5 w-3.5" />
+                        </button>
+                        {canDelete ? (
                           <button
-                            onClick={() => openAddSub(parent.id)}
-                            className="flex w-full items-center gap-2 rounded-xl border border-dashed border-slate-200 px-3 py-2 text-xs font-medium text-slate-400 transition hover:border-purple-300 hover:bg-purple-50/40 hover:text-purple-600 ml-0"
+                            onClick={() => setDeleteTarget(cat)}
+                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-rose-500"
                           >
-                            <Plus className="h-3 w-3" />
-                            Add subcategory
+                            <Trash2 className="h-3.5 w-3.5" />
                           </button>
+                        ) : (
+                          <div
+                            title="Cannot delete — has products"
+                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-100 bg-slate-50 text-slate-300 cursor-not-allowed"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </div>
                         )}
                       </div>
-                    )}
-                  </li>
+                    </div>
+                  </div>
                 );
               })}
-            </ul>
+            </div>
           )}
         </div>
-      </div>
+
+        <TablePagination
+          page={page}
+          total={filtered.length}
+          pageSize={PAGE_SIZE}
+          onPageChange={setPage}
+          itemLabel="categories"
+        />
+      </Surface>
     </>
   );
 }
 
-// ── Main component ───────────────────────────────────────────────────────────
+// ── Brands Table ──────────────────────────────────────────────────────────────
+
+function BrandsTable({
+  brands,
+  loading,
+  onAddBrand,
+  onRenameBrand,
+  onDeleteBrand,
+  tabHeader,
+}: {
+  brands: Item[];
+  loading: boolean;
+  onAddBrand: (name: string) => Promise<void>;
+  onRenameBrand: (oldName: string, nextName: string) => Promise<void>;
+  onDeleteBrand: (name: string) => Promise<void>;
+  tabHeader?: React.ReactNode;
+}) {
+  const [addInput, setAddInput] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [showBulk, setShowBulk] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
+
+  // Modals
+  const [viewTarget, setViewTarget] = useState<Item | null>(null);
+  const [editTarget, setEditTarget] = useState<Item | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Item | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const filtered = brands.filter((b) =>
+    b.value.toLowerCase().includes(search.toLowerCase()),
+  );
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  useEffect(() => setPage(1), [search]);
+
+  async function handleAdd(name: string) {
+    if (brands.some((b) => b.value.toLowerCase() === name.toLowerCase())) {
+      alert(`"${name}" already exists.`);
+      return;
+    }
+    setAdding(true);
+    await onAddBrand(name);
+    setAdding(false);
+  }
+
+  async function handleDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    await onDeleteBrand(deleteTarget.value);
+    setDeleting(false);
+    setDeleteTarget(null);
+  }
+
+  const HEADERS = ["Name", "Products", "Actions"];
+
+  return (
+    <>
+      {showBulk && (
+        <BulkImportModal
+          title="Brands"
+          existingValues={brands.map((b) => b.value)}
+          onImport={(vals) => vals.forEach((v) => onAddBrand(v))}
+          onClose={() => setShowBulk(false)}
+        />
+      )}
+
+      {showAdd && (
+        <AddModal
+          title="Add Brand"
+          placeholder="e.g. Nike"
+          onSave={handleAdd}
+          onClose={() => setShowAdd(false)}
+        />
+      )}
+
+      {viewTarget && (
+        <BrandViewModal
+          brand={viewTarget}
+          onClose={() => setViewTarget(null)}
+        />
+      )}
+
+      {editTarget && (
+        <RenameModal
+          title="Rename Brand"
+          current={editTarget.value}
+          onSave={(nextName) => onRenameBrand(editTarget.value, nextName)}
+          onClose={() => setEditTarget(null)}
+        />
+      )}
+
+      {deleteTarget && (
+        <DeleteModal
+          itemName={deleteTarget.value}
+          itemType="brand"
+          onConfirm={handleDelete}
+          onCancel={() => setDeleteTarget(null)}
+          confirming={deleting}
+        />
+      )}
+
+      <Surface>
+        {/* Toolbar */}
+        <div className="flex flex-col gap-3 border-b border-slate-100 p-4 md:flex-row md:items-center md:gap-3">
+          {tabHeader}
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search…"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-8 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-cyan-400/60 focus:bg-white focus:ring-4 focus:ring-cyan-400/10"
+            />
+            {search && (
+              <button
+                onClick={() => setSearch("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+          <button
+            onClick={() => setShowAdd(true)}
+            disabled={adding}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-slate-900 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {adding ? (
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+            ) : (
+              <Plus className="h-4 w-4" />
+            )}
+            <span className="hidden sm:inline">Add</span>
+          </button>
+          <button
+            onClick={() => setShowBulk(true)}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+          >
+            <Upload className="h-4 w-4" />
+            <span className="hidden sm:inline">Bulk</span>
+          </button>
+        </div>
+
+        {/* Desktop Table */}
+        <div className="hidden md:block overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="bg-[#1e3a5f]">
+                {HEADERS.map((h) => (
+                  <th
+                    key={h}
+                    className={`px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80 first:pl-5 ${
+                      h === "Actions" ? "text-right pr-5" : "text-left"
+                    }`}
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100/90">
+              {loading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <tr key={i}>
+                    {HEADERS.map((h) => (
+                      <td key={h} className="px-4 py-3 first:pl-5">
+                        <div className="h-4 animate-pulse rounded-md bg-slate-100" />
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              ) : filtered.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={HEADERS.length}
+                    className="py-12 text-center text-sm text-slate-400"
+                  >
+                    {search
+                      ? `No brands matching "${search}"`
+                      : "No brands yet. Add one above."}
+                  </td>
+                </tr>
+              ) : (
+                paginated.map((brand, idx) => {
+                  const canDelete = brand.count === 0;
+
+                  return (
+                    <tr
+                      key={brand.value}
+                      className={`group transition-colors hover:bg-slate-50/80 ${
+                        idx % 2 === 0 ? "bg-white" : "bg-slate-50/40"
+                      }`}
+                    >
+                      <td className="pl-5 pr-4 py-3">
+                        <div className="flex items-center gap-2.5">
+                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-fuchsia-100 text-fuchsia-600">
+                            <Tag className="h-3.5 w-3.5" />
+                          </div>
+                          <span className="text-[13px] font-medium text-slate-800">
+                            {brand.value}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        {brand.count > 0 ? (
+                          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">
+                            {brand.count} product{brand.count !== 1 ? "s" : ""}
+                          </span>
+                        ) : (
+                          <span className="text-[12px] text-slate-300">—</span>
+                        )}
+                      </td>
+                      <td className="py-3 pl-4 pr-5">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => setViewTarget(brand)}
+                            title="View"
+                            className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 cursor-pointer"
+                          >
+                            <Eye className="h-3 w-3" />
+                          </button>
+                          <button
+                            onClick={() => setEditTarget(brand)}
+                            title="Rename"
+                            className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-cyan-600 transition hover:border-cyan-200 hover:bg-cyan-50 cursor-pointer"
+                          >
+                            <Edit2 className="h-3 w-3" />
+                          </button>
+                          {canDelete ? (
+                            <button
+                              onClick={() => setDeleteTarget(brand)}
+                              title="Delete"
+                              className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-rose-500 transition hover:border-rose-200 hover:bg-rose-50 cursor-pointer"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          ) : (
+                            <div
+                              title={`Used by ${brand.count} product(s) — cannot delete`}
+                              className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-100 bg-slate-50 text-slate-300 cursor-not-allowed"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Mobile cards */}
+        <div className="block md:hidden">
+          <div className="bg-[#1e3a5f] px-4 py-2.5">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/70">
+              {filtered.length} brands
+            </p>
+          </div>
+          {loading ? (
+            <div className="divide-y divide-slate-100">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="px-4 py-3">
+                  <div className="h-4 w-1/2 animate-pulse rounded-md bg-slate-100" />
+                  <div className="mt-2 h-3 w-1/3 animate-pulse rounded-md bg-slate-100" />
+                </div>
+              ))}
+            </div>
+          ) : filtered.length === 0 ? (
+            <p className="py-10 text-center text-sm text-slate-400">
+              {search ? `No results for "${search}"` : "No brands yet."}
+            </p>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {paginated.map((brand) => {
+                const canDelete = brand.count === 0;
+                return (
+                  <div
+                    key={brand.value}
+                    className="px-4 py-3 hover:bg-slate-50/60 transition-colors"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-fuchsia-100 text-fuchsia-600">
+                            <Tag className="h-3 w-3" />
+                          </div>
+                          <p className="truncate text-[14px] font-semibold text-slate-900">
+                            {brand.value}
+                          </p>
+                        </div>
+                        {brand.count > 0 && (
+                          <p className="mt-1 pl-8 text-[12px] text-slate-500">
+                            {brand.count} product{brand.count !== 1 ? "s" : ""}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          onClick={() => setViewTarget(brand)}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => setEditTarget(brand)}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-cyan-600"
+                        >
+                          <Edit2 className="h-3.5 w-3.5" />
+                        </button>
+                        {canDelete ? (
+                          <button
+                            onClick={() => setDeleteTarget(brand)}
+                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-rose-500"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        ) : (
+                          <div
+                            title="Cannot delete — has products"
+                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-100 bg-slate-50 text-slate-300 cursor-not-allowed"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <TablePagination
+          page={page}
+          total={filtered.length}
+          pageSize={PAGE_SIZE}
+          onPageChange={setPage}
+          itemLabel="brands"
+        />
+      </Surface>
+    </>
+  );
+}
+
+// ── Main Component ────────────────────────────────────────────────────────────
+
 export default function BrandsCategoriesManager({
   onBackToMaster,
 }: {
   onBackToMaster?: () => void;
 }) {
   const router = useRouter();
+  const [activeTab, setActiveTab] = useState<ActiveTab>("categories");
   const [categoryRecords, setCategoryRecords] = useState<CategoryRecord[]>([]);
   const [brandRecords, setBrandRecords] = useState<BrandRecord[]>([]);
   const [brands, setBrands] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
-  const [catEditing, setCatEditing] = useState(false);
-  const [brandEditing, setBrandEditing] = useState(false);
-  const [pendingAction, setPendingAction] = useState<
-    "dashboard" | "master" | null
-  >(null);
   const [categoryCounts, setCategoryCounts] = useState<Map<string, number>>(
     new Map(),
   );
@@ -1180,13 +1626,13 @@ export default function BrandsCategoriesManager({
   >(new Map());
 
   const licenseId = getActiveLicenseId();
-  const isEditing = catEditing || brandEditing;
 
   function sameText(a?: string | null, b?: string | null) {
     return (a ?? "").trim().toLowerCase() === (b ?? "").trim().toLowerCase();
   }
 
-  // ── Load: categories from master table, brands from products ────────────────
+  // ── Load ────────────────────────────────────────────────────────────────────
+
   async function load() {
     setLoading(true);
     try {
@@ -1209,7 +1655,6 @@ export default function BrandsCategoriesManager({
             (nextCategoryCounts.get(p.category) ?? 0) + 1,
           );
         }
-
         if (p.category && (p as any).subcategory) {
           const key = `${p.category}|||${(p as any).subcategory}`;
           nextSubcategoryCounts.set(
@@ -1225,12 +1670,10 @@ export default function BrandsCategoriesManager({
       const brandCountMap = new Map<string, number>();
       for (const p of products) {
         if (!p.brand) continue;
-
         const existingKey = Array.from(brandCountMap.keys()).find((key) =>
           sameText(key, p.brand),
         );
         const key = existingKey ?? p.brand;
-
         brandCountMap.set(key, (brandCountMap.get(key) ?? 0) + 1);
       }
 
@@ -1241,7 +1684,6 @@ export default function BrandsCategoriesManager({
         const countKey = Array.from(brandCountMap.keys()).find((key) =>
           sameText(key, row.name),
         );
-
         return {
           value: row.name,
           count: countKey ? (brandCountMap.get(countKey) ?? 0) : 0,
@@ -1278,7 +1720,8 @@ export default function BrandsCategoriesManager({
     load();
   }, [licenseId]);
 
-  // ── Bulk update products when a field is renamed/removed ────────────────────
+  // ── Bulk product field updater ───────────────────────────────────────────────
+
   async function bulkUpdateField(
     field: "category" | "subcategory" | "brand",
     oldVal: string | null,
@@ -1326,7 +1769,8 @@ export default function BrandsCategoriesManager({
     await load();
   }
 
-  // ── Real category actions ───────────────────────────────────────────────────
+  // ── Category actions ─────────────────────────────────────────────────────────
+
   async function addCategory(name: string) {
     await platform.saveCategory({ licenseId, name, parentId: null });
     await load();
@@ -1371,7 +1815,6 @@ export default function BrandsCategoriesManager({
     await load();
   }
 
-  // ── NEW: Bulk category + subcategory import ─────────────────────────────────
   async function bulkImportCategories(entries: CategoryBulkEntry[]) {
     const current = await platform.listCategories(licenseId);
     if (!current.success) return;
@@ -1399,9 +1842,7 @@ export default function BrandsCategoriesManager({
           name: entry.category,
           parentId: null,
         });
-
         if (!created.success || !created.id) continue;
-
         parent = {
           id: created.id,
           licenseId,
@@ -1414,15 +1855,12 @@ export default function BrandsCategoriesManager({
       if (entry.subcategory) {
         const existingChild = findChild(parent.id, entry.subcategory);
         if (existingChild) continue;
-
         const createdChild = await platform.saveCategory({
           licenseId,
           name: entry.subcategory,
           parentId: parent.id,
         });
-
         if (!createdChild.success || !createdChild.id) continue;
-
         rows.push({
           id: createdChild.id,
           licenseId,
@@ -1435,34 +1873,29 @@ export default function BrandsCategoriesManager({
     await load();
   }
 
+  // ── Brand actions ────────────────────────────────────────────────────────────
+
   function findBrandRecordByName(name: string) {
     return brandRecords.find((row) => sameText(row.name, name)) ?? null;
   }
 
   async function addBrand(name: string) {
-    const result = await platform.saveBrand({
-      licenseId,
-      name,
-    });
-
+    const result = await platform.saveBrand({ licenseId, name });
     if (!result.success) {
       alert(result.error || "Failed to add brand");
       return;
     }
-
     await load();
   }
 
   async function renameBrand(oldName: string, nextName: string) {
     const existing = findBrandRecordByName(oldName);
-
     if (existing) {
       const saveResult = await platform.saveBrand({
         id: existing.id,
         licenseId,
         name: nextName,
       });
-
       if (!saveResult.success) {
         alert(saveResult.error || "Failed to rename brand");
         return;
@@ -1472,108 +1905,122 @@ export default function BrandsCategoriesManager({
         licenseId,
         name: nextName,
       });
-
       if (!createResult.success) {
         alert(createResult.error || "Failed to rename brand");
         return;
       }
     }
-
     await bulkUpdateField("brand", oldName, nextName);
   }
 
   async function deleteBrandByName(name: string) {
     const existing = findBrandRecordByName(name);
-
     if (!existing) {
       alert("This brand is not in the brand master yet.");
       return;
     }
-
     const result = await platform.deleteBrand(existing.id);
     if (!result.success) {
       alert(result.error || "Failed to delete brand");
       return;
     }
-
     await load();
   }
 
-  // ── Navigation guard ────────────────────────────────────────────────────────
-  function doNavigate(action: "dashboard" | "master") {
-    if (action === "dashboard") {
-      router.push("/dashboard");
+  // ── Navigation ───────────────────────────────────────────────────────────────
+
+  function goBack() {
+    if (onBackToMaster) {
+      onBackToMaster();
     } else {
-      if (onBackToMaster) {
-        onBackToMaster();
-      } else {
-        router.push("/dashboard/master");
-      }
+      router.push("/dashboard/master");
     }
   }
 
-  function tryNavigate(action: "dashboard" | "master") {
-    if (isEditing) {
-      setPendingAction(action);
-    } else {
-      doNavigate(action);
-    }
-  }
+  // ── Counts for tab badges ────────────────────────────────────────────────────
+  const parentCount = categoryRecords.filter((r) => !r.parentId).length;
+  const brandCount = brands.length;
+
+  const tabSwitcher = (
+    <div className="flex items-center shrink-0">
+      <div className="flex items-center gap-1 rounded-2xl border border-slate-200 bg-white p-1 w-fit">
+        <button
+          onClick={() => setActiveTab("categories")}
+          className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-all ${
+            activeTab === "categories"
+              ? "bg-white shadow-[0_2px_8px_rgba(15,23,42,0.10)] text-slate-900"
+              : "text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          <Layers className="h-4 w-4" />
+          Categories
+          <span
+            className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+              activeTab === "categories"
+                ? "bg-purple-100 text-purple-700"
+                : "bg-slate-200 text-slate-500"
+            }`}
+          >
+            {parentCount}
+          </span>
+        </button>
+        <button
+          onClick={() => setActiveTab("brands")}
+          className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-all ${
+            activeTab === "brands"
+              ? "bg-white shadow-[0_2px_8px_rgba(15,23,42,0.10)] text-slate-900"
+              : "text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          <Tag className="h-4 w-4" />
+          Brands
+          <span
+            className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+              activeTab === "brands"
+                ? "bg-fuchsia-100 text-fuchsia-700"
+                : "bg-slate-200 text-slate-500"
+            }`}
+          >
+            {brandCount}
+          </span>
+        </button>
+      </div>
+    </div>
+  );
 
   return (
     <div className="space-y-4">
-      {/* Unsaved guard modal */}
-      {pendingAction && (
-        <UnsavedModal
-          onLeave={() => {
-            const action = pendingAction;
-            setPendingAction(null);
-            doNavigate(action);
-          }}
-          onCancel={() => setPendingAction(null)}
-        />
-      )}
-
       {/* ── Hero ── */}
       <section className="relative overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(135deg,#091120_0%,#0f1a31_58%,#16213d_100%)] px-5 py-5 text-white shadow-[0_22px_50px_rgba(5,10,20,0.18)] md:px-6 md:py-6">
-        <div className="pointer-events-none absolute -left-12 top-0 h-32 w-32 rounded-full bg-purple-400/12 blur-3xl" />
-        <div className="pointer-events-none absolute right-0 top-0 h-36 w-36 rounded-full bg-fuchsia-500/12 blur-3xl" />
+        <div className="pointer-events-none absolute -left-12 top-0 h-32 w-32 rounded-full bg-purple-400/10 blur-3xl" />
+        <div className="pointer-events-none absolute right-0 top-0 h-36 w-36 rounded-full bg-fuchsia-500/10 blur-3xl" />
 
-        <div className="relative flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-xl">
-            <div className="kyn-brand-pill mb-3 inline-flex items-center rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/80">
-              KYNFLOW • MASTER DATA
+        <div className="relative flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-purple-400/25 bg-purple-500/10 px-3 py-1 text-[11px] font-semibold text-purple-300">
+              <Layers className="h-3 w-3" />
+              Catalog Master
             </div>
-            <h1 className="text-[26px] font-semibold tracking-[-0.05em] text-white md:text-[32px]">
+
+            <h1 className="text-[26px] font-semibold tracking-[-0.05em] text-white md:text-[30px]">
               Brands &amp; Categories
             </h1>
-            <p className="mt-2 text-sm leading-6 text-slate-300">
-              Manage catalog taxonomy. Rename or remove changes propagate to all
-              products.
+            <p className="mt-1.5 text-sm leading-6 text-slate-300">
+              Manage catalog taxonomy. Renames propagate to all products.
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            {isEditing && (
-              <div className="rounded-2xl border border-amber-400/30 bg-amber-400/10 px-4 py-2.5 text-sm text-amber-300 shadow-[0_10px_24px_rgba(0,0,0,0.16)]">
-                <span className="flex items-center gap-2 font-semibold">
-                  <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
-                  Editing active
-                </span>
-              </div>
-            )}
-
+          <div className="flex items-center gap-2 self-start lg:self-auto">
             <button
-              onClick={() => tryNavigate("master")}
-              className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-2.5 text-sm font-semibold text-slate-200 shadow-[0_10px_24px_rgba(0,0,0,0.16)] transition hover:bg-white/[0.12] hover:text-white"
+              onClick={goBack}
+              className="inline-flex items-center gap-2 rounded-2xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-white/20 cursor-pointer"
             >
               <ArrowLeft className="h-4 w-4" />
               Master
             </button>
-
             <button
-              onClick={() => tryNavigate("dashboard")}
-              className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-2.5 text-sm font-semibold text-slate-900 shadow-[0_10px_24px_rgba(255,255,255,0.12)] transition hover:bg-slate-50"
+              onClick={() => router.push("/dashboard")}
+              className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-2.5 text-sm font-semibold text-slate-900 shadow-[0_10px_24px_rgba(255,255,255,0.10)] transition hover:bg-slate-50 cursor-pointer"
             >
               <LayoutDashboard className="h-4 w-4" />
               Dashboard
@@ -1582,40 +2029,32 @@ export default function BrandsCategoriesManager({
         </div>
       </section>
 
-      {/* ── Two-column panels ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Categories — real hierarchy panel */}
-        <CategoryTreeList
+      {/* ── Active Table ── */}
+      {activeTab === "categories" ? (
+        <CategoriesTable
           rows={categoryRecords}
           loading={loading}
           categoryCounts={categoryCounts}
           subcategoryCounts={subcategoryCounts}
           onAddCategory={addCategory}
-          onAddSubcategory={addSubcategory}
           onBulkImport={bulkImportCategories}
           onRenameCategory={renameCategory}
-          onRenameSubcategory={renameSubcategory}
           onDeleteCategory={deleteCategoryRow}
+          onAddSubcategory={addSubcategory}
+          onRenameSubcategory={renameSubcategory}
           onDeleteSubcategory={deleteCategoryRow}
-          onEditingChange={setCatEditing}
+          tabHeader={tabSwitcher}
         />
-
-        {/* Brands — read-only list (rename only, no create/delete/bulk) */}
-        <ItemList
-          title="Brands"
-          icon={Tag}
-          items={brands}
+      ) : (
+        <BrandsTable
+          brands={brands}
           loading={loading}
-          onAdd={addBrand}
-          onRename={renameBrand}
-          onDelete={deleteBrandByName}
-          accentClass="bg-fuchsia-100 text-fuchsia-700"
-          onEditingChange={setBrandEditing}
-          allowCreate={true}
-          allowDelete={true}
-          allowBulk={true}
+          onAddBrand={addBrand}
+          onRenameBrand={renameBrand}
+          onDeleteBrand={deleteBrandByName}
+          tabHeader={tabSwitcher}
         />
-      </div>
+      )}
     </div>
   );
 }

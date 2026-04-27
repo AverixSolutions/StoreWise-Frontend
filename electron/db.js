@@ -1646,4 +1646,364 @@ db.prepare(
 `,
 ).run();
 
+// ── Units master table ──────────────────────────────────────────────────────
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS units (
+    id TEXT PRIMARY KEY,
+    licenseId TEXT NOT NULL,
+    code TEXT NOT NULL,
+    label TEXT NOT NULL,
+    isDefault INTEGER DEFAULT 0,
+    sortOrder INTEGER DEFAULT 999,
+    createdAt TEXT,
+    updatedAt TEXT,
+    deletedAt TEXT,
+    UNIQUE(licenseId, code)
+  )
+`,
+).run();
+
+db.prepare(
+  `
+  CREATE INDEX IF NOT EXISTS idx_units_license
+  ON units(licenseId, deletedAt)
+`,
+).run();
+
+// ── Migration: remove hard-coded unit CHECK constraints ─────────────────────
+// SQLite can't ALTER CHECK constraints — we must recreate the affected tables.
+const removeUnitCheckRan = db
+  .prepare(
+    `SELECT 1 FROM _migrations WHERE name='remove_unit_check_v1' LIMIT 1`,
+  )
+  .get();
+
+if (!removeUnitCheckRan) {
+  const ts = new Date().toISOString();
+
+  db.pragma("foreign_keys = OFF");
+
+  try {
+    db.transaction(() => {
+      // ── products ──────────────────────────────────────────────────────────
+      db.prepare(
+        `
+        CREATE TABLE products_new (
+          id TEXT PRIMARY KEY,
+          licenseId TEXT NOT NULL,
+          code TEXT NOT NULL,
+          codeNumber INTEGER NOT NULL,
+          name TEXT NOT NULL,
+          brand TEXT,
+          category TEXT,
+          subcategory TEXT,
+          productName TEXT,
+          model TEXT,
+          size TEXT,
+          shortCode TEXT,
+          unit TEXT NOT NULL,
+          tax TEXT NOT NULL CHECK (tax IN ('NT','P5','P12','P18','P28')),
+          hsn TEXT,
+          costPrice REAL NOT NULL,
+          salePrice REAL,
+          stock INTEGER DEFAULT 0,
+          barcode TEXT,
+          imagePath TEXT,
+          imageFileName TEXT,
+          createdAt TEXT,
+          updatedAt TEXT,
+          deletedAt TEXT,
+          isSynced INTEGER DEFAULT 0,
+          syncedAt TEXT,
+          UNIQUE(licenseId, code),
+          UNIQUE(licenseId, codeNumber)
+        )
+      `,
+      ).run();
+      db.prepare(
+        `
+        INSERT INTO products_new
+        SELECT id,licenseId,code,codeNumber,name,brand,category,
+               subcategory,productName,model,size,shortCode,
+               unit,tax,hsn,costPrice,salePrice,stock,barcode,
+               imagePath,imageFileName,createdAt,updatedAt,deletedAt,isSynced,syncedAt
+        FROM products
+      `,
+      ).run();
+      db.prepare(`DROP TABLE products`).run();
+      db.prepare(`ALTER TABLE products_new RENAME TO products`).run();
+
+      // ── purchase_items ────────────────────────────────────────────────────
+      db.prepare(
+        `
+        CREATE TABLE purchase_items_new (
+          id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+          purchaseId TEXT NOT NULL,
+          productId TEXT NOT NULL,
+          quantity INTEGER NOT NULL,
+          unit TEXT NOT NULL,
+          rate REAL NOT NULL,
+          taxPercent TEXT NOT NULL CHECK (taxPercent IN ('NT','P5','P12','P18','P28')),
+          taxAmount REAL NOT NULL,
+          discount REAL DEFAULT 0,
+          discountType TEXT,
+          salePrice REAL,
+          profit REAL,
+          totalCost REAL NOT NULL,
+          billedValue REAL,
+          mrp REAL,
+          barcode TEXT,
+          batchNo TEXT,
+          batchId TEXT,
+          mfgDate TEXT,
+          expiryDate TEXT,
+          lineNo INTEGER,
+          isFree INTEGER DEFAULT 0,
+          effectiveUnitValue REAL,
+          purchaseBatchNo TEXT,
+          createdAt TEXT,
+          updatedAt TEXT,
+          deletedAt TEXT,
+          isSynced INTEGER DEFAULT 0,
+          syncedAt TEXT,
+          FOREIGN KEY (purchaseId) REFERENCES purchases(id) ON DELETE CASCADE,
+          FOREIGN KEY (productId) REFERENCES products(id)
+        )
+      `,
+      ).run();
+      db.prepare(
+        `
+        INSERT INTO purchase_items_new
+        SELECT id,purchaseId,productId,quantity,unit,rate,taxPercent,taxAmount,
+               discount,discountType,salePrice,profit,totalCost,billedValue,mrp,
+               barcode,batchNo,batchId,mfgDate,expiryDate,lineNo,isFree,
+               effectiveUnitValue,purchaseBatchNo,createdAt,updatedAt,deletedAt,isSynced,syncedAt
+        FROM purchase_items
+      `,
+      ).run();
+      db.prepare(`DROP TABLE purchase_items`).run();
+      db.prepare(
+        `ALTER TABLE purchase_items_new RENAME TO purchase_items`,
+      ).run();
+
+      // ── sale_items ────────────────────────────────────────────────────────
+      db.prepare(
+        `
+        CREATE TABLE sale_items_new (
+          id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+          saleId TEXT NOT NULL,
+          productId TEXT NOT NULL,
+          barcode TEXT,
+          quantity INTEGER NOT NULL,
+          unit TEXT NOT NULL,
+          rate REAL NOT NULL,
+          mrp REAL,
+          taxPercent TEXT NOT NULL CHECK (taxPercent IN ('NT','P5','P12','P18','P28')),
+          taxAmount REAL NOT NULL,
+          discount REAL DEFAULT 0,
+          discountType TEXT,
+          salePrice REAL,
+          profit REAL,
+          totalCost REAL NOT NULL,
+          billedValue REAL,
+          batchNo TEXT,
+          batchId TEXT,
+          mfgDate TEXT,
+          expiryDate TEXT,
+          lineNo INTEGER,
+          effectiveUnitValue REAL,
+          isFree INTEGER DEFAULT 0,
+          createdAt TEXT,
+          updatedAt TEXT,
+          deletedAt TEXT,
+          isSynced INTEGER DEFAULT 0,
+          syncedAt TEXT,
+          FOREIGN KEY (saleId) REFERENCES sales(id) ON DELETE CASCADE,
+          FOREIGN KEY (productId) REFERENCES products(id)
+        )
+      `,
+      ).run();
+      db.prepare(
+        `
+        INSERT INTO sale_items_new
+        SELECT id,saleId,productId,barcode,quantity,unit,rate,mrp,taxPercent,taxAmount,
+               discount,discountType,salePrice,profit,totalCost,billedValue,batchNo,
+               batchId,mfgDate,expiryDate,lineNo,effectiveUnitValue,isFree,
+               createdAt,updatedAt,deletedAt,isSynced,syncedAt
+        FROM sale_items
+      `,
+      ).run();
+      db.prepare(`DROP TABLE sale_items`).run();
+      db.prepare(`ALTER TABLE sale_items_new RENAME TO sale_items`).run();
+
+      // ── purchase_return_items ─────────────────────────────────────────────
+      db.prepare(
+        `
+        CREATE TABLE purchase_return_items_new (
+          id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+          returnId TEXT NOT NULL,
+          productId TEXT NOT NULL,
+          barcode TEXT,
+          quantity INTEGER NOT NULL,
+          unit TEXT NOT NULL,
+          rate REAL NOT NULL,
+          mrp REAL,
+          taxPercent TEXT NOT NULL CHECK (taxPercent IN ('NT','P5','P12','P18','P28')),
+          taxAmount REAL NOT NULL,
+          discount REAL DEFAULT 0,
+          discountType TEXT,
+          salePrice REAL,
+          profit REAL,
+          totalCost REAL NOT NULL,
+          billedValue REAL,
+          batchNo TEXT,
+          batchId TEXT,
+          mfgDate TEXT,
+          expiryDate TEXT,
+          lineNo INTEGER,
+          effectiveUnitValue REAL,
+          appliedQuantity INTEGER,
+          overReturnQuantity INTEGER,
+          overReturnReason TEXT,
+          createdAt TEXT,
+          updatedAt TEXT,
+          deletedAt TEXT,
+          isSynced INTEGER DEFAULT 0,
+          syncedAt TEXT,
+          FOREIGN KEY (returnId) REFERENCES purchase_returns(id) ON DELETE CASCADE
+        )
+      `,
+      ).run();
+      db.prepare(
+        `
+        INSERT INTO purchase_return_items_new
+        SELECT id,returnId,productId,barcode,quantity,unit,rate,mrp,taxPercent,taxAmount,
+               discount,discountType,salePrice,profit,totalCost,billedValue,batchNo,
+               batchId,mfgDate,expiryDate,lineNo,effectiveUnitValue,appliedQuantity,
+               overReturnQuantity,overReturnReason,createdAt,updatedAt,deletedAt,isSynced,syncedAt
+        FROM purchase_return_items
+      `,
+      ).run();
+      db.prepare(`DROP TABLE purchase_return_items`).run();
+      db.prepare(
+        `ALTER TABLE purchase_return_items_new RENAME TO purchase_return_items`,
+      ).run();
+
+      // ── sale_return_items ─────────────────────────────────────────────────
+      db.prepare(
+        `
+        CREATE TABLE sale_return_items_new (
+          id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+          returnId TEXT NOT NULL,
+          productId TEXT NOT NULL,
+          barcode TEXT,
+          quantity INTEGER NOT NULL,
+          unit TEXT NOT NULL,
+          rate REAL NOT NULL,
+          mrp REAL,
+          taxPercent TEXT NOT NULL CHECK (taxPercent IN ('NT','P5','P12','P18','P28')),
+          taxAmount REAL NOT NULL,
+          discount REAL DEFAULT 0,
+          discountType TEXT,
+          salePrice REAL,
+          profit REAL,
+          totalCost REAL NOT NULL,
+          billedValue REAL,
+          batchNo TEXT,
+          batchId TEXT,
+          mfgDate TEXT,
+          expiryDate TEXT,
+          lineNo INTEGER,
+          effectiveUnitValue REAL,
+          appliedQuantity INTEGER,
+          overReturnQuantity INTEGER,
+          overReturnReason TEXT,
+          createdAt TEXT,
+          updatedAt TEXT,
+          deletedAt TEXT,
+          isSynced INTEGER DEFAULT 0,
+          syncedAt TEXT,
+          FOREIGN KEY (returnId) REFERENCES sale_returns(id) ON DELETE CASCADE
+        )
+      `,
+      ).run();
+      db.prepare(
+        `
+        INSERT INTO sale_return_items_new
+        SELECT id,returnId,productId,barcode,quantity,unit,rate,mrp,taxPercent,taxAmount,
+               discount,discountType,salePrice,profit,totalCost,billedValue,batchNo,
+               batchId,mfgDate,expiryDate,lineNo,effectiveUnitValue,appliedQuantity,
+               overReturnQuantity,overReturnReason,createdAt,updatedAt,deletedAt,isSynced,syncedAt
+        FROM sale_return_items
+      `,
+      ).run();
+      db.prepare(`DROP TABLE sale_return_items`).run();
+      db.prepare(
+        `ALTER TABLE sale_return_items_new RENAME TO sale_return_items`,
+      ).run();
+
+      // ── Recreate all dropped indexes ──────────────────────────────────────
+      // products
+      db.prepare(
+        `CREATE UNIQUE INDEX IF NOT EXISTS idx_products_short_code_live ON products(licenseId, shortCode COLLATE NOCASE) WHERE shortCode IS NOT NULL AND shortCode <> '' AND COALESCE(deletedAt,'') = ''`,
+      ).run();
+      db.prepare(
+        `CREATE INDEX IF NOT EXISTS idx_products_dirty ON products(licenseId, updatedAt, syncedAt, deletedAt)`,
+      ).run();
+      db.prepare(
+        `CREATE INDEX IF NOT EXISTS idx_products_isSynced ON products(isSynced)`,
+      ).run();
+      // purchase_items
+      db.prepare(
+        `CREATE INDEX IF NOT EXISTS idx_purchase_items_synced ON purchase_items(isSynced)`,
+      ).run();
+      db.prepare(
+        `CREATE INDEX IF NOT EXISTS idx_purchase_items_purchase ON purchase_items(purchaseId, lineNo)`,
+      ).run();
+      db.prepare(
+        `CREATE INDEX IF NOT EXISTS idx_purchase_items_dirty ON purchase_items(purchaseId, updatedAt, syncedAt, deletedAt)`,
+      ).run();
+      db.prepare(
+        `CREATE INDEX IF NOT EXISTS idx_pi_batch ON purchase_items(batchId)`,
+      ).run();
+      // sale_items
+      db.prepare(
+        `CREATE INDEX IF NOT EXISTS idx_sale_items_sale ON sale_items(saleId, lineNo)`,
+      ).run();
+      db.prepare(
+        `CREATE INDEX IF NOT EXISTS idx_sale_items_synced ON sale_items(isSynced)`,
+      ).run();
+      db.prepare(
+        `CREATE INDEX IF NOT EXISTS idx_sale_items_dirty ON sale_items(saleId, updatedAt, syncedAt, deletedAt)`,
+      ).run();
+      db.prepare(
+        `CREATE INDEX IF NOT EXISTS idx_si_batch ON sale_items(batchId)`,
+      ).run();
+      // purchase_return_items
+      db.prepare(
+        `CREATE INDEX IF NOT EXISTS idx_purchase_return_items_return ON purchase_return_items(returnId, lineNo)`,
+      ).run();
+      db.prepare(
+        `CREATE INDEX IF NOT EXISTS idx_pri_batch ON purchase_return_items(batchId)`,
+      ).run();
+      // sale_return_items
+      db.prepare(
+        `CREATE INDEX IF NOT EXISTS idx_sale_return_items_return ON sale_return_items(returnId, lineNo)`,
+      ).run();
+      db.prepare(
+        `CREATE INDEX IF NOT EXISTS idx_sri_batch ON sale_return_items(batchId)`,
+      ).run();
+
+      db.prepare(
+        `INSERT INTO _migrations(name, ranAt) VALUES('remove_unit_check_v1', ?)`,
+      ).run(ts);
+    })();
+  } catch (e) {
+    console.error("[db] remove_unit_check_v1 failed:", e);
+  } finally {
+    db.pragma("foreign_keys = ON");
+  }
+}
+
 module.exports = db;
