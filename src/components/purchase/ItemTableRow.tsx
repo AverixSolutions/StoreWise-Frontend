@@ -8,7 +8,8 @@ import { focusCell, nextCell } from "./keyboardGrid";
 
 const cellInput =
   "w-full h-8 px-2 text-xs border border-gray-300 rounded " +
-  "focus:border-averix-red-dark focus:ring-1 focus:ring-averix-red-dark/20 " +
+  "bg-white text-slate-800 placeholder:text-slate-400 " +
+  "focus:border-[#20b7ff] focus:ring-1 focus:ring-[#20b7ff]/20 " +
   "outline-none transition-colors";
 
 const asDisplay = (n?: number | null) => (n === 0 || n ? String(n) : "");
@@ -95,13 +96,11 @@ export default function ItemTableRow({
 
   const goFrom = (col: import("./keyboardGrid").ColKey, dir: 1 | -1 = 1) => {
     const { rowIndex: nr, col: nc } = nextCell(idx, col, dir);
-
     if (nr >= rowsLength && dir === 1 && onAddRow) {
       onAddRow();
       setTimeout(() => focusCell(nr, nc), 0);
       return;
     }
-
     if (nr < 0) return;
     setTimeout(() => focusCell(nr, nc), 0);
   };
@@ -109,11 +108,11 @@ export default function ItemTableRow({
   return (
     <tr
       className={`transition-all duration-200 hover:bg-blue-50/30 border-b border-gray-100 divide-x divide-gray-100 ${
-        idx % 2 === 0 ? "bg-white" : "bg-gray-50/50"
+        idx % 2 === 0 ? "bg-white" : "bg-slate-50"
       }`}
     >
-      {/* Sl.NO (left: 0) */}
-      <td className="px-2.5 py-2 sticky left-0 bg-inherit z-40 w-[52px] min-w-[52px] border-r border-gray-200">
+      {/* Sl.NO */}
+      <td className="px-2.5 py-2 sticky left-0 bg-white z-40 w-[52px] min-w-[52px] border-r border-gray-200">
         <div className="flex items-center justify-center">
           <span className="inline-flex items-center justify-center w-7 h-5 rounded bg-gray-100 text-gray-800 text-xs font-mono font-medium">
             {r.lineNo}
@@ -121,21 +120,19 @@ export default function ItemTableRow({
         </div>
       </td>
 
-      {/* Product: sticky Sl.NO */}
-      <td className="px-2.5 py-2 min-w-[180px] sticky [left:var(--slw)] bg-inherit z-40 border-r border-gray-200">
+      {/* Product */}
+      <td className="px-2.5 py-2 min-w-[300px] sticky [left:var(--slw)] bg-white z-40 border-r border-gray-200">
         <div className="w-full">
           <SearchableDropdown
             value={r.productId}
-            onChange={(v) => {
-              onSelectProduct(idx, v);
-            }}
+            onChange={(v) => onSelectProduct(idx, v)}
             onEnter={(dir) => goFrom("product", dir)}
             autoOpenOnFocus
             options={products.map((p) => ({ value: p.id, label: p.name }))}
             placeholder="Select product..."
             className="w-full [&_*]:text-xs"
-            controlClassName="h-8 text-xs px-2"
-            menuClassName="text-xs"
+            controlClassName="h-8 text-xs px-2 w-full"
+            menuClassName="text-xs min-w-[280px]"
             buttonProps={{
               "data-cell": `${idx}:product`,
               onKeyDown: (e) => onGridKey(e as any, idx, "product"),
@@ -144,7 +141,7 @@ export default function ItemTableRow({
         </div>
       </td>
 
-      {/* Barcode  */}
+      {/* Barcode */}
       <td className="px-2.5 py-2 min-w-[170px]">
         <div className="flex items-center gap-2">
           <input
@@ -155,12 +152,8 @@ export default function ItemTableRow({
             }
             placeholder="Barcode (optional)"
             data-cell={`${idx}:barcode`}
-            onFocus={(e) => {
-              e.currentTarget.select();
-            }}
-            onClick={(e) => {
-              e.currentTarget.select();
-            }}
+            onFocus={(e) => e.currentTarget.select()}
+            onClick={(e) => e.currentTarget.select()}
             onBlur={() => {
               if (onBarcodeCommit) onBarcodeCommit(idx);
             }}
@@ -183,7 +176,6 @@ export default function ItemTableRow({
               onGridKey(e, idx, "barcode");
             }}
           />
-
           <label className="flex items-center gap-1 text-[11px] whitespace-nowrap text-gray-600">
             <input
               type="checkbox"
@@ -199,116 +191,101 @@ export default function ItemTableRow({
 
       {/* Quantity */}
       <td className="px-2.5 py-2 min-w-[70px]">
-        <div className="w-full">
-          <input
-            className={cellInput + " h-9 text-center"}
-            type="number"
-            value={asDisplay(r.quantity)}
-            onChange={(e) => onUpdateRow(idx, { quantity: parseNum(e) })}
-            onBlur={(e) => {
-              if (e.currentTarget.value === "")
-                onUpdateRow(idx, { quantity: 0 });
-            }}
-            min={0}
-            step={1}
-            inputMode="numeric"
-            onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
-            placeholder="0"
-            data-cell={`${idx}:quantity`}
-            onKeyDown={(e) => onGridKey(e, idx, "quantity")}
-          />
-        </div>
+        <input
+          className={cellInput + " h-9 text-center"}
+          type="number"
+          value={asDisplay(r.quantity)}
+          onChange={(e) => onUpdateRow(idx, { quantity: parseNum(e) })}
+          onBlur={(e) => {
+            if (e.currentTarget.value === "") onUpdateRow(idx, { quantity: 0 });
+          }}
+          min={0}
+          step={1}
+          inputMode="numeric"
+          onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
+          placeholder="0"
+          data-cell={`${idx}:quantity`}
+          onKeyDown={(e) => onGridKey(e, idx, "quantity")}
+        />
       </td>
 
       {/* Unit */}
       <td className="px-2.5 py-2 min-w-[74px]">
-        <div className="w-full">
-          <CompactDropdown
-            value={r.unit || ""}
-            onChange={(val) => onUpdateRow(idx, { unit: val as any })}
-            onEnter={(dir) => goFrom("unit", dir)}
-            autoOpenOnFocus
-            options={unitOptions}
-            placeholder="Unit"
-            className="w-full [&_*]:text-xs [&_button]:h-8 [&_select]:h-8 [&_button]:px-2 [&_select]:px-2"
-            buttonProps={{
-              "data-cell": `${idx}:unit`,
-              onKeyDown: (e: any) => onGridKey(e, idx, "unit"),
-            }}
-          />
-        </div>
+        <CompactDropdown
+          value={r.unit || ""}
+          onChange={(val) => onUpdateRow(idx, { unit: val as any })}
+          onEnter={(dir) => goFrom("unit", dir)}
+          autoOpenOnFocus
+          options={unitOptions}
+          placeholder="Unit"
+          className="w-full [&_*]:text-xs [&_button]:h-8 [&_select]:h-8 [&_button]:px-2 [&_select]:px-2"
+          buttonProps={{
+            "data-cell": `${idx}:unit`,
+            onKeyDown: (e: any) => onGridKey(e, idx, "unit"),
+          }}
+        />
       </td>
 
       {/* Rate */}
       <td className="px-2.5 py-2 min-w-[84px]">
-        <div className="w-full">
-          <input
-            className={cellInput}
-            type="number"
-            step="0.01"
-            value={asDisplay2(r.rate)}
-            onChange={(e) =>
-              onUpdateRow(idx, { rate: parseRoundedNum(e) ?? 0 })
+        <input
+          className={cellInput}
+          type="number"
+          step="0.01"
+          value={asDisplay2(r.rate)}
+          onChange={(e) => onUpdateRow(idx, { rate: parseRoundedNum(e) ?? 0 })}
+          min={0}
+          inputMode="decimal"
+          placeholder="0.00"
+          data-cell={`${idx}:rate`}
+          onKeyDown={(e) => {
+            const el = e.currentTarget;
+            if (e.key === "ArrowUp") {
+              e.preventDefault();
+              onUpdateRow(idx, { rate: round2(Number(el.value || 0) + 1) });
+            } else if (e.key === "ArrowDown") {
+              e.preventDefault();
+              onUpdateRow(idx, {
+                rate: Math.max(0, round2(Number(el.value || 0) - 1)),
+              });
+            } else if (e.key === "e" || e.key === "+" || e.key === "-") {
+              e.preventDefault();
+            } else if (e.key === "Enter" || (e as any).key === "NumpadEnter") {
+              onGridKey(e as any, idx, "rate");
             }
-            min={0}
-            inputMode="decimal"
-            placeholder="0.00"
-            data-cell={`${idx}:rate`}
-            onKeyDown={(e) => {
-              const el = e.currentTarget;
-              if (e.key === "ArrowUp") {
-                e.preventDefault();
-                const cur = Number(el.value || 0);
-                onUpdateRow(idx, { rate: round2(cur + 1) });
-              } else if (e.key === "ArrowDown") {
-                e.preventDefault();
-                const cur = Number(el.value || 0);
-                onUpdateRow(idx, { rate: Math.max(0, round2(cur - 1)) });
-              } else if (e.key === "e" || e.key === "+" || e.key === "-") {
-                e.preventDefault();
-              } else if (
-                e.key === "Enter" ||
-                (e as any).key === "NumpadEnter"
-              ) {
-                onGridKey(e as any, idx, "rate");
-              }
-            }}
-          />
-        </div>
+          }}
+        />
       </td>
 
       {/* Tax */}
       <td className="px-2.5 py-2 min-w-[84px]">
-        <div className="w-full">
-          <CompactDropdown
-            value={r.taxPercent}
-            onChange={(val) => onUpdateRow(idx, { taxPercent: val as any })}
-            onEnter={(dir) => goFrom("tax", dir)}
-            autoOpenOnFocus
-            options={taxOptions}
-            placeholder="Tax"
-            className="w-full [&_*]:text-xs [&_button]:h-8 [&_select]:h-8 [&_button]:px-2 [&_select]:px-2"
-            buttonProps={{
-              "data-cell": `${idx}:tax`,
-              onKeyDown: (e: any) => onGridKey(e, idx, "tax"),
-            }}
-          />
-        </div>
+        <CompactDropdown
+          value={r.taxPercent}
+          onChange={(val) => onUpdateRow(idx, { taxPercent: val as any })}
+          onEnter={(dir) => goFrom("tax", dir)}
+          autoOpenOnFocus
+          options={taxOptions}
+          placeholder="Tax"
+          className="w-full [&_*]:text-xs [&_button]:h-8 [&_select]:h-8 [&_button]:px-2 [&_select]:px-2"
+          buttonProps={{
+            "data-cell": `${idx}:tax`,
+            onKeyDown: (e: any) => onGridKey(e, idx, "tax"),
+          }}
+        />
       </td>
 
       {/* Discount */}
       <td className="px-2.5 py-2 min-w-[130px]">
         <div className="flex items-center gap-2">
-          {/* Type toggle (avoid focus trap) */}
           <div className="inline-flex overflow-hidden rounded border border-gray-300">
             <button
               type="button"
               tabIndex={-1}
               onClick={() => onUpdateRow(idx, { discountType: "ABS" })}
               className={
-                "px-2 h-8 text-xs " +
+                "px-2 h-8 text-xs transition-colors " +
                 (r.discountType === "ABS"
-                  ? "bg-averix-red-dark text-white"
+                  ? "bg-[#1e3a5f] text-white"
                   : "bg-white text-gray-700 hover:bg-gray-50")
               }
               title="Amount"
@@ -320,9 +297,9 @@ export default function ItemTableRow({
               tabIndex={-1}
               onClick={() => onUpdateRow(idx, { discountType: "PCT" })}
               className={
-                "px-2 h-8 text-xs border-l border-gray-300 " +
+                "px-2 h-8 text-xs border-l border-gray-300 transition-colors " +
                 (r.discountType === "PCT"
-                  ? "bg-averix-red-dark text-white"
+                  ? "bg-[#1e3a5f] text-white"
                   : "bg-white text-gray-700 hover:bg-gray-50")
               }
               title="Percent"
@@ -331,7 +308,6 @@ export default function ItemTableRow({
             </button>
           </div>
 
-          {/* Value input */}
           <div className="relative flex-1 min-w-[80px]">
             {r.discountType === "ABS" ? (
               <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[11px] text-gray-500">
@@ -342,7 +318,6 @@ export default function ItemTableRow({
                 %
               </span>
             )}
-
             <input
               className={
                 cellInput +
@@ -363,17 +338,14 @@ export default function ItemTableRow({
               placeholder="0"
               data-cell={`${idx}:discount`}
               onKeyDown={(e) => {
-                // --- Keyboard shortcuts for type ---
                 const lower = e.key.toLowerCase();
-
-                // Alt+D / Alt+T toggles type
                 if (e.altKey && (lower === "d" || lower === "t")) {
                   e.preventDefault();
-                  const next = r.discountType === "ABS" ? "PCT" : "ABS";
-                  onUpdateRow(idx, { discountType: next });
+                  onUpdateRow(idx, {
+                    discountType: r.discountType === "ABS" ? "PCT" : "ABS",
+                  });
                   return;
                 }
-                // Alt+P or '%' -> Percent
                 if (e.altKey && lower === "p") {
                   e.preventDefault();
                   onUpdateRow(idx, { discountType: "PCT" });
@@ -384,7 +356,6 @@ export default function ItemTableRow({
                   onUpdateRow(idx, { discountType: "PCT" });
                   return;
                 }
-                // Alt+A or '₹' or '$' -> Amount
                 if (e.altKey && lower === "a") {
                   e.preventDefault();
                   onUpdateRow(idx, { discountType: "ABS" });
@@ -395,28 +366,26 @@ export default function ItemTableRow({
                   onUpdateRow(idx, { discountType: "ABS" });
                   return;
                 }
-
                 if (e.key === "e" || e.key === "+" || e.key === "-") {
                   e.preventDefault();
                   return;
                 }
-
                 if (e.key === "Enter" || (e as any).key === "NumpadEnter") {
                   onGridKey(e as any, idx, "discount");
                   return;
                 }
-
                 if (e.key === "ArrowUp" || e.key === "ArrowDown") {
                   e.preventDefault();
                   const cur = Number(
                     (e.currentTarget as HTMLInputElement).value || 0,
                   );
                   const step = r.discountType === "ABS" ? 1 : 0.01;
-                  const next =
-                    e.key === "ArrowUp"
-                      ? round2(cur + step)
-                      : Math.max(0, round2(cur - step));
-                  onUpdateRow(idx, { discount: next });
+                  onUpdateRow(idx, {
+                    discount:
+                      e.key === "ArrowUp"
+                        ? round2(cur + step)
+                        : Math.max(0, round2(cur - step)),
+                  });
                 }
               }}
             />
@@ -425,35 +394,31 @@ export default function ItemTableRow({
       </td>
 
       {/* MFG Date */}
-      <td className="px-2.5 py-2 min-w-[120px]">
-        <div className="w-full">
-          <input
-            type="date"
-            className={cellInput}
-            value={toDateInput(r.mfgDate)}
-            onChange={(e) =>
-              onUpdateRow(idx, { mfgDate: fromDateInput(e.target.value) })
-            }
-            data-cell={`${idx}:mfgDate`}
-            onKeyDown={(e) => onGridKey(e, idx, "mfgDate")}
-          />
-        </div>
+      <td className="px-2.5 py-2 min-w-[120px] hidden md:table-cell">
+        <input
+          type="date"
+          className={cellInput}
+          value={toDateInput(r.mfgDate)}
+          onChange={(e) =>
+            onUpdateRow(idx, { mfgDate: fromDateInput(e.target.value) })
+          }
+          data-cell={`${idx}:mfgDate`}
+          onKeyDown={(e) => onGridKey(e, idx, "mfgDate")}
+        />
       </td>
 
       {/* Expiry Date */}
-      <td className="px-2.5 py-2 min-w-[120px]">
-        <div className="w-full">
-          <input
-            type="date"
-            className={cellInput}
-            value={toDateInput(r.expiryDate)}
-            onChange={(e) =>
-              onUpdateRow(idx, { expiryDate: fromDateInput(e.target.value) })
-            }
-            data-cell={`${idx}:expiryDate`}
-            onKeyDown={(e) => onGridKey(e, idx, "expiryDate")}
-          />
-        </div>
+      <td className="px-2.5 py-2 min-w-[120px] hidden md:table-cell">
+        <input
+          type="date"
+          className={cellInput}
+          value={toDateInput(r.expiryDate)}
+          onChange={(e) =>
+            onUpdateRow(idx, { expiryDate: fromDateInput(e.target.value) })
+          }
+          data-cell={`${idx}:expiryDate`}
+          onKeyDown={(e) => onGridKey(e, idx, "expiryDate")}
+        />
       </td>
 
       {/* Sale Price + Profit % */}
@@ -473,17 +438,21 @@ export default function ItemTableRow({
               inputMode="numeric"
               onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
               placeholder="0"
+              data-cell={`${idx}:profitPercent`}
               onKeyDown={(e) => {
                 const el = e.currentTarget;
                 if (e.key === "ArrowUp") {
                   e.preventDefault();
-                  const cur = Number(el.value || 0);
-                  onUpdateRow(idx, { profitPercent: round2(cur + 1) });
+                  onUpdateRow(idx, {
+                    profitPercent: round2(Number(el.value || 0) + 1),
+                  });
                 } else if (e.key === "ArrowDown") {
                   e.preventDefault();
-                  const cur = Number(el.value || 0);
                   onUpdateRow(idx, {
-                    profitPercent: Math.max(0, round2(cur - 1)),
+                    profitPercent: Math.max(
+                      0,
+                      round2(Number(el.value || 0) - 1),
+                    ),
                   });
                 } else if (e.key === "e" || e.key === "+" || e.key === "-") {
                   e.preventDefault();
@@ -494,7 +463,6 @@ export default function ItemTableRow({
                   onGridKey(e as any, idx, "profitPercent");
                 }
               }}
-              data-cell={`${idx}:profitPercent`}
             />
           </div>
           <input
@@ -514,12 +482,14 @@ export default function ItemTableRow({
               const el = e.currentTarget;
               if (e.key === "ArrowUp") {
                 e.preventDefault();
-                const cur = Number(el.value || 0);
-                onUpdateRow(idx, { salePrice: round2(cur + 1) });
+                onUpdateRow(idx, {
+                  salePrice: round2(Number(el.value || 0) + 1),
+                });
               } else if (e.key === "ArrowDown") {
                 e.preventDefault();
-                const cur = Number(el.value || 0);
-                onUpdateRow(idx, { salePrice: Math.max(0, round2(cur - 1)) });
+                onUpdateRow(idx, {
+                  salePrice: Math.max(0, round2(Number(el.value || 0) - 1)),
+                });
               } else if (e.key === "e" || e.key === "+" || e.key === "-") {
                 e.preventDefault();
               } else if (
@@ -535,68 +505,60 @@ export default function ItemTableRow({
 
       {/* MRP */}
       <td className="px-2.5 py-2 min-w-[84px]">
-        <div className="w-full">
-          <input
-            className={cellInput}
-            type="number"
-            step={1}
-            value={asDisplayInt(r.mrp)}
-            onChange={(e) => onUpdateRow(idx, { mrp: parseIntNum(e) ?? 0 })}
-            min={0}
-            inputMode="numeric"
-            pattern="\d*"
-            onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
-            onKeyDown={(e) => {
-              if (e.key === "e" || e.key === "+" || e.key === "-") {
-                e.preventDefault();
-              }
-              if (e.key === "Enter" || (e as any).key === "NumpadEnter") {
-                onGridKey(e as any, idx, "mrp");
-              }
-            }}
-            placeholder="0"
-            data-cell={`${idx}:mrp`}
-          />
-        </div>
+        <input
+          className={cellInput}
+          type="number"
+          step={1}
+          value={asDisplayInt(r.mrp)}
+          onChange={(e) => onUpdateRow(idx, { mrp: parseIntNum(e) ?? 0 })}
+          min={0}
+          inputMode="numeric"
+          pattern="\d*"
+          onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
+          onKeyDown={(e) => {
+            if (e.key === "e" || e.key === "+" || e.key === "-") {
+              e.preventDefault();
+            }
+            if (e.key === "Enter" || (e as any).key === "NumpadEnter") {
+              onGridKey(e as any, idx, "mrp");
+            }
+          }}
+          placeholder="0"
+          data-cell={`${idx}:mrp`}
+        />
       </td>
 
       {/* Line Type */}
-      <td className="px-2.5 py-2 min-w-[80px] text-center">
-        <div className="w-full">
-          <CompactDropdown
-            value={r.lineType || "VALUED"}
-            onChange={(val) =>
-              onUpdateRow(idx, { lineType: (val as any) || "VALUED" })
-            }
-            onEnter={(dir) => goFrom("lineType", dir)}
-            autoOpenOnFocus
-            options={lineTypeOptions}
-            placeholder="Type"
-            className="w-full [&_*]:text-xs [&_button]:h-8 [&_select]:h-8 [&_button]:px-2 [&_select]:px-2"
-            buttonProps={{
-              "data-cell": `${idx}:lineType`,
-              onKeyDown: (e: any) => onGridKey(e, idx, "lineType"),
-            }}
-          />
-        </div>
+      <td className="px-2.5 py-2 min-w-[80px] hidden lg:table-cell text-center">
+        <CompactDropdown
+          value={r.lineType || "VALUED"}
+          onChange={(val) =>
+            onUpdateRow(idx, { lineType: (val as any) || "VALUED" })
+          }
+          onEnter={(dir) => goFrom("lineType", dir)}
+          autoOpenOnFocus
+          options={lineTypeOptions}
+          placeholder="Type"
+          className="w-full [&_*]:text-xs [&_button]:h-8 [&_select]:h-8 [&_button]:px-2 [&_select]:px-2"
+          buttonProps={{
+            "data-cell": `${idx}:lineType`,
+            onKeyDown: (e: any) => onGridKey(e, idx, "lineType"),
+          }}
+        />
       </td>
 
-      {/* Unit Value  */}
-      <td className="px-2.5 py-2 min-w-[110px] text-center">
-        <div className="w-full text-center">
-          <span className="inline-flex items-center px-2 py-1 rounded-md bg-blue-50 text-blue-700 text-xs font-semibold">
-            ₹{round2(r.unitBilled || 0).toFixed(2)}
-          </span>
-        </div>
+      {/* Unit Billed */}
+      <td className="px-2.5 py-2 min-w-[110px] hidden lg:table-cell text-center">
+        <span className="inline-flex items-center px-2 py-1 rounded-md bg-cyan-50 text-cyan-700 ring-1 ring-cyan-200/70 text-xs font-semibold">
+          ₹{round2(r.unitBilled || 0).toFixed(2)}
+        </span>
       </td>
 
       {/* Total */}
       <td className="px-2.5 py-2 min-w-[90px] sticky [right:var(--actw)] bg-white z-40 border-l border-gray-200 text-center">
-        <div className="w-full text-center">
-          <span className="inline-flex items-center px-2 py-1 rounded-md bg-green-100 text-green-800 text-xs font-semibold">
-            ₹{round2(r.billedValue || 0).toFixed(2)}
-          </span>
-        </div>
+        <span className="inline-flex items-center px-2 py-1 rounded-md bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200/60 text-xs font-semibold">
+          ₹{round2(r.billedValue || 0).toFixed(2)}
+        </span>
       </td>
 
       {/* Action */}
@@ -604,7 +566,7 @@ export default function ItemTableRow({
         <div className="flex justify-center">
           <button
             onClick={() => onRemoveRow(idx)}
-            className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-red-50 text-red-600 hover:bg-red-100 hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-rose-50 text-rose-500 hover:bg-rose-100 transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
             title="Remove Item"
             disabled={!canRemove}
           >

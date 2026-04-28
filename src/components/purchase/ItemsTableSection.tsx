@@ -1,5 +1,5 @@
 // src/components/purchase/ItemsTableSection.tsx
-import { Plus, PauseCircle, List, FileText, Printer } from "lucide-react";
+import { Plus, PauseCircle, List, FileText, Receipt } from "lucide-react";
 import { ItemRow, Product } from "./types";
 import ItemsTable from "./ItemsTable";
 
@@ -19,7 +19,9 @@ interface ItemsTableSectionProps {
   showHoldControls?: boolean;
   onRequestBatchSelect?: (rowIndex: number) => void;
   onBarcodeCommit?: (rowIndex: number) => void;
-  onPrintBarcodes?: () => void;
+  printBarcodesSlot?: React.ReactNode;
+  onOpenMobileSheet?: () => void;
+  hasMissingFields?: boolean;
 }
 
 export default function ItemsTableSection({
@@ -38,78 +40,91 @@ export default function ItemsTableSection({
   showHoldControls = true,
   onRequestBatchSelect,
   onBarcodeCommit,
-  onPrintBarcodes,
+  printBarcodesSlot,
+  onOpenMobileSheet,
+  hasMissingFields = false,
 }: ItemsTableSectionProps) {
   const itemCount = rows.filter((r) => r.productId).length;
 
   return (
-    <section className="col-span-1 min-w-0 bg-white rounded-xl shadow-lg border border-gray-200 flex flex-col h-full min-h-0 overflow-hidden">
-      {/* Header */}
-      <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0 bg-gradient-to-r from-gray-50 to-gray-100/50 z-10">
-        <div className="flex items-center gap-3">
-          <h2 className="text-lg font-semibold text-gray-900">Item Details</h2>
-          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+    <section className="col-span-1 min-w-0 bg-white rounded-none shadow-none border-0 flex flex-col h-full min-h-0 overflow-hidden">
+      {/* Header bar */}
+      <div
+        className="px-4 py-2.5 flex items-center justify-between flex-shrink-0 z-10 border-b border-white"
+        style={{ background: "#1e3a5f" }}
+      >
+        <div className="flex items-center gap-2.5">
+          {/* Change 2 — Mobile "Bill Details" button in header */}
+          {onOpenMobileSheet && (
+            <button
+              onClick={onOpenMobileSheet}
+              className="md:hidden mr-1 px-3 py-1.5 rounded-md bg-white/20 border border-white/30 text-white text-xs font-medium flex items-center gap-1 cursor-pointer"
+            >
+              <Receipt className="w-3.5 h-3.5" />
+              Bill
+              {hasMissingFields && (
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
+              )}
+            </button>
+          )}
+
+          <h2 className="text-sm font-semibold text-white">Item Details</h2>
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-white/15 text-white/90 border border-white/20">
             {itemCount} items
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
-          {onPrintBarcodes && (
-            <button
-              onClick={onPrintBarcodes}
-              className="px-3 py-2 rounded-lg bg-slate-700 text-white hover:bg-slate-800 transition-colors flex items-center gap-2 font-medium shadow-sm cursor-pointer"
-              title="Print Barcodes"
-            >
-              <Printer className="w-4 h-4" />
-              Print
-            </button>
-          )}
+        {/* Change 1 — Responsive toolbar with wrapped buttons and hidden labels */}
+        <div className="flex items-center gap-1.5 flex-wrap justify-end">
+          {printBarcodesSlot}
+
           <button
             onClick={onShowReports}
-            className="px-3 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors flex items-center gap-2 font-medium shadow-sm cursor-pointer"
+            className="px-2 sm:px-3 py-1.5 rounded-md bg-white/10 border border-white/20 text-white/90 hover:bg-white/20 transition-colors flex items-center gap-1.5 text-xs font-medium cursor-pointer"
             title="View Reports"
           >
-            <FileText className="w-4 h-4" />
-            Reports
+            <FileText className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Reports</span>
           </button>
+
           {showHoldControls && (
             <>
               <button
                 onClick={onHold}
-                className="px-3 py-2 rounded-lg bg-amber-600 text-white hover:bg-amber-700 transition-colors flex items-center gap-2 font-medium shadow-sm cursor-pointer"
+                className="px-2 sm:px-3 py-1.5 rounded-md bg-amber-500/20 border border-amber-400/30 text-amber-200 hover:bg-amber-500/30 transition-colors flex items-center gap-1.5 text-xs font-medium cursor-pointer"
                 title="Hold (save draft)"
               >
-                <PauseCircle className="w-4 h-4" />
-                Hold
+                <PauseCircle className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Hold</span>
               </button>
 
               <button
                 onClick={onShowHolds}
-                className="px-3 py-2 rounded-lg bg-slate-700 text-white hover:bg-slate-800 transition-colors flex items-center gap-2 font-medium shadow-sm cursor-pointer"
+                className="px-2 sm:px-3 py-1.5 rounded-md bg-white/10 border border-white/20 text-white/90 hover:bg-white/20 transition-colors flex items-center gap-1.5 text-xs font-medium cursor-pointer"
                 title="View Holds"
               >
-                <List className="w-4 h-4" />
-                Holds
+                <List className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Holds</span>
               </button>
             </>
           )}
 
           <button
             onClick={onAddRow}
-            className="px-4 py-2 rounded-lg bg-averix-red-dark text-white hover:bg-averix-red-accent transition-colors flex items-center gap-2 font-medium shadow-sm hover:shadow-md z-20 cursor-pointer"
+            className="px-2 sm:px-3 py-1.5 rounded-md bg-[#20b7ff] text-white hover:bg-[#0ea5ff] transition-colors flex items-center gap-1.5 text-xs font-semibold cursor-pointer shadow-sm"
           >
-            <Plus className="w-4 h-4" />
-            Add Row
+            <Plus className="w-3.5 h-3.5" />
+            <span className="hidden xs:inline">Add Row</span>
           </button>
         </div>
       </div>
 
-      {/* Table Container */}
-
-      <div
-        className="flex-1 overflow-auto relative overflow-y-scroll"
-        data-grid-scroll-container
-      >
+      {/* Table container */}
+      <div className="flex-1 min-h-0 overflow-auto" data-grid-scroll-container>
+        {/* Horizontal scroll hint — mobile only */}
+        <div className="md:hidden text-[10px] text-slate-400 px-3 py-1 bg-slate-50 border-b">
+          ← Scroll horizontally for more columns
+        </div>
         <ItemsTable
           rows={rows}
           products={products}
@@ -122,42 +137,41 @@ export default function ItemsTableSection({
         />
       </div>
 
-      {/* Footer Summary */}
-
-      <div className="px-6 py-4 border-t border-gray-200 bg-gradient-to-r from-gray-50 to-gray-100/50 flex-shrink-0 z-10">
-        <div className="flex justify-between items-center">
-          <div className="flex items-center gap-6 text-sm text-gray-600">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-
-              <span>
-                Total Items:{" "}
-                <span className="font-semibold text-gray-900">{itemCount}</span>
-              </span>
-            </div>
+      {/* Change 3 — Compact footer on mobile */}
+      <div className="px-5 py-3 border-t border-slate-200 bg-slate-50 flex-shrink-0 z-10">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+          <div className="flex items-center gap-2 text-xs text-slate-500">
+            <span className="w-2 h-2 rounded-full bg-[#20b7ff]" />
+            <span>
+              Items:{" "}
+              <span className="font-semibold text-slate-700">{itemCount}</span>
+            </span>
           </div>
 
-          <div className="flex items-center gap-8 text-sm">
-            <div className="text-right">
-              <div className="text-gray-600">Sub Total</div>
-
-              <div className="font-semibold text-gray-900 text-base">
+          <div className="flex items-center gap-3 sm:gap-6 text-sm justify-end">
+            <div className="hidden sm:block text-right">
+              <div className="text-[11px] text-slate-400 uppercase tracking-wide font-medium">
+                Sub Total
+              </div>
+              <div className="font-semibold text-slate-700">
                 ₹ {subTotal.toFixed(2)}
               </div>
             </div>
 
-            <div className="text-right">
-              <div className="text-gray-600">Discount</div>
-
-              <div className="font-semibold text-red-600 text-base">
+            <div className="hidden sm:block text-right">
+              <div className="text-[11px] text-slate-400 uppercase tracking-wide font-medium">
+                Discount
+              </div>
+              <div className="font-semibold text-rose-500">
                 - ₹ {Number(headerDiscount ?? 0).toFixed(2)}
               </div>
             </div>
 
             <div className="text-right">
-              <div className="text-gray-600">Grand Total</div>
-
-              <div className="font-bold text-green-700 text-xl">
+              <div className="text-[10px] sm:text-[11px] text-slate-400 uppercase tracking-wide font-medium">
+                Grand Total
+              </div>
+              <div className="font-bold text-[#1e3a5f] text-base sm:text-lg">
                 ₹ {Number(grandTotal).toFixed(2)}
               </div>
             </div>

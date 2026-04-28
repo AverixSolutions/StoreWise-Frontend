@@ -196,6 +196,9 @@ export default function PurchasePage() {
   const [validationMsgs, setValidationMsgs] = useState<string[]>([]);
   const [editingSlNo, setEditingSlNo] = useState<number | null>(null);
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
+  const [showBarcodePrint, setShowBarcodePrint] = useState(false);
+  const [billDetailsOpen, setBillDetailsOpen] = useState(true);
+  const [isMobileSheetOpen, setIsMobileSheetOpen] = useState(false);
 
   const [batchConflicts, setBatchConflicts] = useState<{
     rows: {
@@ -854,12 +857,14 @@ export default function PurchasePage() {
     if (errs.length) {
       setValidationMsgs(errs);
       setValidationOpen(true);
+      setBillDetailsOpen(true);
       return false;
     }
 
     if (header.purchaseType === "CREDIT" && !header.supplier) {
       setValidationMsgs(["Supplier is required for CREDIT purchases."]);
       setValidationOpen(true);
+      setBillDetailsOpen(true);
       return false;
     }
 
@@ -1076,9 +1081,18 @@ export default function PurchasePage() {
     setRows(freshRows);
     setEditingPurchaseId(null);
     setEditingSlNo(null);
+    setBillDetailsOpen(true);
 
     initialSnapshot.current = makeSnapshot(freshHeader, freshRows);
     setIsDirty(false);
+  }
+
+  function openBillDetailsAndFocus() {
+    setBillDetailsOpen(true);
+    setTimeout(() => {
+      const el = document.getElementById("bill-details-billno");
+      if (el) el.focus();
+    }, 50);
   }
 
   useEffect(() => {
@@ -1091,17 +1105,32 @@ export default function PurchasePage() {
     return () => window.removeEventListener("beforeunload", handler);
   }, [isDirty]);
 
-  // Ctrl/⌘+S to Save
+  // Ctrl/⌘+S → open bill details if panel is closed, then save
+  // Ctrl+\   → toggle bill details panel
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Toggle panel
+      if ((e.ctrlKey || e.metaKey) && e.key === "\\") {
+        e.preventDefault();
+        setBillDetailsOpen((v) => !v);
+        return;
+      }
+      // Save — auto-open panel if required fields missing
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();
+        const missingBillNo = !header.billNo?.trim();
+        const missingSupplier =
+          header.purchaseType === "CREDIT" && !header.supplier;
+        if (!billDetailsOpen && (missingBillNo || missingSupplier)) {
+          openBillDetailsAndFocus();
+          return;
+        }
         handleSave();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [header, rows]);
+  }, [header, rows, billDetailsOpen]);
 
   function updateRow(index: number, patch: Partial<ItemRow>) {
     setRows((prev) =>
@@ -1127,7 +1156,7 @@ export default function PurchasePage() {
 
       <div className="flex-1 min-h-0 overflow-hidden p-0">
         {editingPurchaseId && (
-          <div className="px-4 py-2 border-b bg-white flex items-center gap-3 flex-wrap">
+          <div className="px-4 py-2 border-b bg-slate-50 border-slate-200 flex items-center gap-3 flex-wrap">
             <span className="text-sm text-gray-500">Saved bill open</span>
 
             <button
@@ -1142,60 +1171,70 @@ export default function PurchasePage() {
                   alert("Print failed: " + String(e?.message || e));
                 }
               }}
-              className="px-3 py-1.5 rounded bg-slate-800 text-white text-sm"
+              className="px-3 py-1.5 rounded-md bg-[#1e3a5f] text-white text-sm hover:bg-[#16304f] transition-colors"
             >
               Print Bill
             </button>
 
             <BarcodePrintCenterButton
               licenseId={licenseId}
-              initialRows={getPrintCenterRowsFromPurchaseRows()}
+              initialRows={
+                showBarcodePrint ? getPrintCenterRowsFromPurchaseRows() : []
+              }
               defaultShopName={shopName}
               buttonText="Print Barcodes"
               className="inline-flex items-center gap-2 rounded border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              open={showBarcodePrint}
+              onOpen={() => setShowBarcodePrint(true)}
+              onClose={() => setShowBarcodePrint(false)}
             />
 
             <button
               type="button"
               onClick={() => resetAll()}
-              className="px-3 py-1.5 rounded border border-gray-300 bg-white text-sm"
+              className="px-3 py-1.5 rounded-md border border-slate-200 bg-white text-sm text-slate-600 hover:bg-slate-50 transition-colors"
             >
               New Bill
             </button>
           </div>
         )}
         <div
-          className={`grid grid-cols-[300px_1fr] ${editingPurchaseId ? "h-[calc(100%-41px)]" : "h-full"}`}
+          className={[
+            "grid overflow-hidden transition-all duration-200",
+            editingPurchaseId ? "h-[calc(100%-41px)]" : "h-full",
+            // Mobile: single column always
+            "grid-cols-1",
+            // md+: side panel visible
+            billDetailsOpen
+              ? "md:grid-cols-[240px_1fr] lg:grid-cols-[300px_1fr]"
+              : "md:grid-cols-[40px_1fr]  lg:grid-cols-[40px_1fr]",
+          ]
+            .join(" ")
+            .trim()}
         >
-          <BillDetailsSection
-            header={header}
-            setHeader={setHeader}
-            suppliers={suppliers}
-            setShowSupplierModal={setShowSupplierModal}
-            subTotal={subTotal}
-            grandTotal={grandTotal}
-            onSave={handleSave}
-            onCancel={handleCancel}
-            entryNo={
-              editingPurchaseId
-                ? (editingSlNo ?? undefined)
-                : (nextEntryNo ?? undefined)
-            }
-            requireSupplier={header.purchaseType === "CREDIT"}
-            isEditing={Boolean(editingPurchaseId)}
-          />
+          <div className="hidden md:flex md:flex-col md:min-h-0 md:overflow-hidden">
+            <BillDetailsSection
+              header={header}
+              setHeader={setHeader}
+              suppliers={suppliers}
+              setShowSupplierModal={setShowSupplierModal}
+              subTotal={subTotal}
+              grandTotal={grandTotal}
+              onSave={handleSave}
+              onCancel={handleCancel}
+              entryNo={
+                editingPurchaseId
+                  ? (editingSlNo ?? undefined)
+                  : (nextEntryNo ?? undefined)
+              }
+              requireSupplier={header.purchaseType === "CREDIT"}
+              isEditing={Boolean(editingPurchaseId)}
+              isOpen={billDetailsOpen}
+              onToggle={() => setBillDetailsOpen((v) => !v)}
+            />
+          </div>
 
-          <div className="min-h-0 flex flex-col bg-white">
-            <div className="px-4 pt-3 pb-2 border-b flex justify-end">
-              <BarcodePrintCenterButton
-                licenseId={licenseId}
-                initialRows={getPrintCenterRowsFromPurchaseRows()}
-                defaultShopName={shopName}
-                buttonText="Print Barcodes"
-                className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-              />
-            </div>
-
+          <div className="min-h-0 flex flex-col bg-white overflow-hidden">
             <ItemsTableSection
               rows={rows}
               products={products}
@@ -1212,10 +1251,73 @@ export default function PurchasePage() {
               showHoldControls={!editingPurchaseId}
               onRequestBatchSelect={handleRequestBatchSelect}
               onBarcodeCommit={handleBarcodeCommit}
+              onOpenMobileSheet={() => setIsMobileSheetOpen(true)}
+              printBarcodesSlot={
+                <BarcodePrintCenterButton
+                  licenseId={licenseId}
+                  initialRows={
+                    showBarcodePrint ? getPrintCenterRowsFromPurchaseRows() : []
+                  }
+                  defaultShopName={shopName}
+                  buttonText="Print Barcodes"
+                  className="inline-flex items-center gap-2 rounded-md bg-white/10 border border-white/20 text-white/90 hover:bg-white/20 px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer"
+                  open={showBarcodePrint}
+                  onOpen={() => setShowBarcodePrint(true)}
+                  onClose={() => setShowBarcodePrint(false)}
+                />
+              }
             />
           </div>
         </div>
       </div>
+
+      {/* Mobile bottom sheet for bill details */}
+      {isMobileSheetOpen && (
+        <div className="fixed inset-0 z-40 md:hidden">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setIsMobileSheetOpen(false)}
+          />
+          {/* Sheet */}
+          <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-xl shadow-2xl max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-4 py-3 border-b sticky top-0 bg-white z-10">
+              <span className="font-semibold text-gray-800">Bill Details</span>
+              <button
+                onClick={() => setIsMobileSheetOpen(false)}
+                className="text-gray-500 hover:text-gray-700 text-xl leading-none"
+              >
+                ✕
+              </button>
+            </div>
+            <BillDetailsSection
+              header={header}
+              setHeader={setHeader}
+              suppliers={suppliers}
+              setShowSupplierModal={setShowSupplierModal}
+              subTotal={subTotal}
+              grandTotal={grandTotal}
+              onSave={async (opts?: any) => {
+                const ok = await handleSave(opts);
+                if (ok) setIsMobileSheetOpen(false);
+              }}
+              onCancel={() => {
+                handleCancel();
+                setIsMobileSheetOpen(false);
+              }}
+              entryNo={
+                editingPurchaseId
+                  ? (editingSlNo ?? undefined)
+                  : (nextEntryNo ?? undefined)
+              }
+              requireSupplier={header.purchaseType === "CREDIT"}
+              isEditing={Boolean(editingPurchaseId)}
+              isOpen={true}
+              onToggle={() => {}}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Supplier modal */}
       {showSupplierModal && (
@@ -1406,7 +1508,7 @@ export default function PurchasePage() {
                 </button>
                 <button
                   type="button"
-                  className="px-3 py-1.5 rounded bg-averix-red-dark text-sm text-white hover:bg-averix-red-accent"
+                  className="px-3 py-1.5 rounded-md bg-[#1e3a5f] text-sm text-white hover:bg-[#16304f] transition-colors"
                   onClick={async () => {
                     if (!batchConflicts) return;
 

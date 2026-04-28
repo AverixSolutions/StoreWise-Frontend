@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { X, Tags } from "lucide-react";
+import { X, Tags, Plus, Trash2, Printer } from "lucide-react";
 import { buildBarcodePrintHtml } from "@/lib/barcode/printBarcodeHtml";
 import { printLabels } from "@/lib/barcode/printLabels";
 import type {
@@ -109,7 +109,6 @@ export default function BarcodePrintCenterModal({
 
   useEffect(() => {
     if (!open) return;
-
     setRows(initialRows || []);
     setError("");
     setMessage("");
@@ -126,8 +125,6 @@ export default function BarcodePrintCenterModal({
         api.listLabelPrinters?.(licenseId),
         api.listLabelTemplates?.(licenseId),
       ]);
-
-      console.log("BarcodePrintCenterModal getProducts response:", productsRes);
 
       const nextProducts = Array.isArray(productsRes?.products)
         ? productsRes.products
@@ -200,25 +197,29 @@ export default function BarcodePrintCenterModal({
       });
   }, [selectedProductId, licenseId]);
 
-  const productOptions = useMemo(() => {
-    return products.map((p) => ({
-      value: p.id,
-      label: p.code ? `${p.name} (${p.code})` : p.name,
-    }));
-  }, [products]);
+  const productOptions = useMemo(
+    () =>
+      products.map((p) => ({
+        value: p.id,
+        label: p.code ? `${p.name} (${p.code})` : p.name,
+      })),
+    [products],
+  );
 
-  const batchOptions = useMemo(() => {
-    return batches.map((b) => ({
-      value: b.id,
-      label: [
-        b.barcode || "No barcode",
-        b.batchNo ? `Batch ${b.batchNo}` : null,
-        b.stock != null ? `Stock ${b.stock}` : null,
-      ]
-        .filter(Boolean)
-        .join(" • "),
-    }));
-  }, [batches]);
+  const batchOptions = useMemo(
+    () =>
+      batches.map((b) => ({
+        value: b.id,
+        label: [
+          b.barcode || "No barcode",
+          b.batchNo ? `Batch ${b.batchNo}` : null,
+          b.stock != null ? `Stock ${b.stock}` : null,
+        ]
+          .filter(Boolean)
+          .join(" • "),
+      })),
+    [batches],
+  );
 
   const engineOptions = useMemo(
     () => [
@@ -234,24 +235,28 @@ export default function BarcodePrintCenterModal({
     return printers.filter((p) => p.engine === labelSettings.engine);
   }, [printers, labelSettings.engine]);
 
-  const printerOptions = useMemo(() => {
-    return filteredPrinters.map((p) => ({
-      value: p.id,
-      label: `${p.name} (${p.printerName})`,
-    }));
-  }, [filteredPrinters]);
+  const printerOptions = useMemo(
+    () =>
+      filteredPrinters.map((p) => ({
+        value: p.id,
+        label: `${p.name} (${p.printerName})`,
+      })),
+    [filteredPrinters],
+  );
 
   const filteredTemplates = useMemo(() => {
     if (labelSettings.engine === "HTML") return [];
     return templates.filter((t) => t.engine === labelSettings.engine);
   }, [templates, labelSettings.engine]);
 
-  const templateOptions = useMemo(() => {
-    return filteredTemplates.map((t) => ({
-      value: t.id,
-      label: t.name,
-    }));
-  }, [filteredTemplates]);
+  const templateOptions = useMemo(
+    () =>
+      filteredTemplates.map((t) => ({
+        value: t.id,
+        label: t.name,
+      })),
+    [filteredTemplates],
+  );
 
   function addRow() {
     const product = products.find((p) => p.id === selectedProductId);
@@ -333,9 +338,7 @@ export default function BarcodePrintCenterModal({
       setError("");
       setMessage("");
 
-      if (!rows.length) {
-        throw new Error("No rows selected");
-      }
+      if (!rows.length) throw new Error("No rows selected");
 
       if (mode === "DEFAULT") {
         const html = buildBarcodePrintHtml(previewItems, {
@@ -358,10 +361,8 @@ export default function BarcodePrintCenterModal({
           preview: false,
           pageSize: "A4",
         });
-
-        if (!res?.success) {
+        if (!res?.success)
           throw new Error(res?.error || "Default print failed");
-        }
       } else {
         const override = Number(labelSettings.copiesOverride || 0);
 
@@ -389,9 +390,8 @@ export default function BarcodePrintCenterModal({
         };
 
         const res = await printLabels(payload);
-        if (res?.success === false) {
+        if (res?.success === false)
           throw new Error(res.error || "Label print failed");
-        }
       }
 
       setMessage("Print request sent successfully.");
@@ -404,20 +404,56 @@ export default function BarcodePrintCenterModal({
 
   if (!open) return null;
 
+  /* ─── shared input/label class helpers ─── */
+  const inputCls =
+    "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:border-[var(--kyn-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--kyn-primary)]/20 transition";
+
+  const labelCls =
+    "mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500";
+
+  const dropdownButtonCls =
+    "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800";
+
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
-      <div className="flex h-[90vh] w-full max-w-7xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b px-6 py-4">
+    <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center p-0 sm:p-4">
+      <div
+        className="flex w-full max-w-7xl flex-col overflow-hidden rounded-t-2xl sm:rounded-2xl shadow-2xl"
+        style={{ height: "92dvh", maxHeight: "92dvh" }}
+      >
+        {/* ── TOP BAR (dark KYNFLOW) ── */}
+        <div
+          className="flex shrink-0 items-center justify-between px-5 py-4 sm:px-6"
+          style={{
+            background:
+              "linear-gradient(135deg, var(--kyn-surface) 0%, var(--kyn-surface-2) 100%)",
+            borderBottom: "1px solid var(--kyn-border)",
+          }}
+        >
           <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-slate-100 p-2">
-              <Tags className="h-5 w-5 text-slate-700" />
+            <div
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
+              style={{
+                background:
+                  "linear-gradient(135deg, rgba(32,183,255,0.18), rgba(176,38,255,0.14))",
+                border: "1px solid var(--kyn-border)",
+                boxShadow: "0 0 12px var(--kyn-glow-primary)",
+              }}
+            >
+              <Tags
+                className="h-4 w-4"
+                style={{ color: "var(--kyn-primary)" }}
+              />
             </div>
+
             <div>
-              <h2 className="text-lg font-semibold text-slate-900">
+              <h2
+                className="text-base font-semibold"
+                style={{ color: "var(--kyn-text)" }}
+              >
                 Barcode Print Center
               </h2>
-              <p className="text-sm text-slate-500">
-                One place to select products and print any barcode format
+              <p className="text-xs" style={{ color: "var(--kyn-text-muted)" }}>
+                Select products and print any barcode format
               </p>
             </div>
           </div>
@@ -425,41 +461,51 @@ export default function BarcodePrintCenterModal({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100"
+            className="flex h-8 w-8 items-center justify-center rounded-lg transition hover:bg-white/10"
+            style={{ color: "var(--kyn-text-muted)" }}
           >
-            <X className="h-5 w-5" />
+            <X className="h-4 w-4" />
           </button>
         </div>
 
-        <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[420px_1fr]">
-          <div className="overflow-y-auto border-r p-5 space-y-5">
-            {loading ? (
-              <div className="rounded-xl border bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                Loading print data...
+        {/* ── BODY ── */}
+        <div
+          className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[400px_1fr]"
+          style={{ background: "#f1f5f9" }}
+        >
+          {/* ── LEFT PANEL ── */}
+          <div
+            className="flex flex-col gap-4 overflow-y-auto border-r p-4 sm:p-5"
+            style={{ background: "#f8fafc", borderColor: "#e2e8f0" }}
+          >
+            {/* Alerts */}
+            {loading && (
+              <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500 shadow-sm">
+                <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600" />
+                Loading print data…
               </div>
-            ) : null}
+            )}
 
-            {error ? (
+            {error && (
               <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                 {error}
               </div>
-            ) : null}
+            )}
 
-            {message ? (
+            {message && (
               <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
                 {message}
               </div>
-            ) : null}
+            )}
 
-            <div className="rounded-2xl border p-4 space-y-3">
-              <div className="text-sm font-semibold text-slate-900">
-                Add item
-              </div>
+            {/* ── Add item card ── */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
+              <p className="text-xs font-bold uppercase tracking-widest text-slate-400">
+                Add Item
+              </p>
 
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                  Product
-                </label>
+                <label className={labelCls}>Product</label>
                 <SearchableDropdown
                   value={selectedProductId}
                   onChange={(value) => {
@@ -470,26 +516,21 @@ export default function BarcodePrintCenterModal({
                   placeholder="Select product"
                   autoOpenOnFocus={false}
                   className="w-full"
-                  buttonProps={{
-                    className:
-                      "w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm bg-white",
-                  }}
+                  buttonProps={{ className: dropdownButtonCls }}
                   menuClassName="rounded-xl"
                   inputClassName="rounded-lg"
                   optionClassName=""
                 />
-                {!loading && products.length === 0 ? (
-                  <p className="mt-2 text-xs text-red-600">
+                {!loading && products.length === 0 && (
+                  <p className="mt-1.5 text-xs text-red-500">
                     No products loaded. Check getProducts response and
                     licenseId.
                   </p>
-                ) : null}
+                )}
               </div>
 
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                  Barcode / Batch
-                </label>
+                <label className={labelCls}>Barcode / Batch</label>
                 <SearchableDropdown
                   value={selectedBatchId}
                   onChange={setSelectedBatchId}
@@ -502,8 +543,7 @@ export default function BarcodePrintCenterModal({
                   autoOpenOnFocus={false}
                   className="w-full"
                   buttonProps={{
-                    className:
-                      "w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm bg-white",
+                    className: dropdownButtonCls,
                     disabled: !selectedProductId || batchOptions.length === 0,
                   }}
                   menuClassName="rounded-xl"
@@ -512,197 +552,213 @@ export default function BarcodePrintCenterModal({
               </div>
 
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                  Copies
-                </label>
+                <label className={labelCls}>Copies</label>
                 <input
                   type="number"
                   min={1}
                   value={copiesToAdd}
                   onChange={(e) => setCopiesToAdd(Number(e.target.value || 1))}
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"
+                  className={inputCls}
                 />
               </div>
 
               <button
                 type="button"
                 onClick={addRow}
-                className="w-full rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
+                className="flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 active:scale-[.98]"
+                style={{
+                  background:
+                    "linear-gradient(135deg, var(--kyn-surface-2) 0%, var(--kyn-surface-3) 100%)",
+                  border: "1px solid var(--kyn-border)",
+                  boxShadow: "0 2px 8px rgba(0,0,0,0.18)",
+                  color: "var(--kyn-text)",
+                }}
               >
+                <Plus className="h-4 w-4" />
                 Add to print list
               </button>
             </div>
 
-            <div className="rounded-2xl border p-4 space-y-3">
-              <div className="text-sm font-semibold text-slate-900">
-                Print mode
-              </div>
+            {/* ── Print mode ── */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
+              <p className="text-xs font-bold uppercase tracking-widest text-slate-400">
+                Print Mode
+              </p>
 
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setMode("DEFAULT")}
-                  className={`rounded-xl border px-4 py-2.5 text-sm font-medium ${
-                    mode === "DEFAULT"
-                      ? "border-slate-900 bg-slate-900 text-white"
-                      : "border-slate-300 text-slate-700"
-                  }`}
-                >
-                  Default Print
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setMode("LABEL")}
-                  className={`rounded-xl border px-4 py-2.5 text-sm font-medium ${
-                    mode === "LABEL"
-                      ? "border-slate-900 bg-slate-900 text-white"
-                      : "border-slate-300 text-slate-700"
-                  }`}
-                >
-                  Label Print
-                </button>
+              <div className="grid grid-cols-2 gap-2">
+                {(["DEFAULT", "LABEL"] as PrintCenterMode[]).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setMode(m)}
+                    className="rounded-xl px-4 py-2.5 text-sm font-semibold transition"
+                    style={
+                      mode === m
+                        ? {
+                            background:
+                              "linear-gradient(135deg, var(--kyn-surface-2), var(--kyn-surface-3))",
+                            color: "var(--kyn-primary)",
+                            border: "1px solid rgba(32,183,255,0.35)",
+                            boxShadow: "0 0 10px var(--kyn-glow-primary)",
+                          }
+                        : {
+                            background: "#f1f5f9",
+                            color: "#64748b",
+                            border: "1px solid #e2e8f0",
+                          }
+                    }
+                  >
+                    {m === "DEFAULT" ? "Default Print" : "Label Print"}
+                  </button>
+                ))}
               </div>
             </div>
 
+            {/* ── Settings panel ── */}
             {mode === "DEFAULT" ? (
-              <div className="rounded-2xl border p-4 space-y-3">
-                <div className="text-sm font-semibold text-slate-900">
-                  Default print settings
-                </div>
-
-                <input
-                  value={defaultSettings.shopName}
-                  onChange={(e) =>
-                    setDefaultSettings((p) => ({
-                      ...p,
-                      shopName: e.target.value,
-                    }))
-                  }
-                  placeholder="Shop name"
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"
-                />
-
-                <div className="grid grid-cols-2 gap-3">
-                  <input
-                    type="number"
-                    value={defaultSettings.labelWidthMm}
-                    onChange={(e) =>
-                      setDefaultSettings((p) => ({
-                        ...p,
-                        labelWidthMm: Number(e.target.value || 50),
-                      }))
-                    }
-                    className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"
-                    placeholder="Width"
-                  />
-                  <input
-                    type="number"
-                    value={defaultSettings.labelHeightMm}
-                    onChange={(e) =>
-                      setDefaultSettings((p) => ({
-                        ...p,
-                        labelHeightMm: Number(e.target.value || 30),
-                      }))
-                    }
-                    className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"
-                    placeholder="Height"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <input
-                    type="number"
-                    value={defaultSettings.columns}
-                    onChange={(e) =>
-                      setDefaultSettings((p) => ({
-                        ...p,
-                        columns: Number(e.target.value || 4),
-                      }))
-                    }
-                    className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"
-                    placeholder="Columns"
-                  />
-                  <input
-                    type="number"
-                    value={defaultSettings.barcodeHeight}
-                    onChange={(e) =>
-                      setDefaultSettings((p) => ({
-                        ...p,
-                        barcodeHeight: Number(e.target.value || 32),
-                      }))
-                    }
-                    className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"
-                    placeholder="Barcode height"
-                  />
-                </div>
-
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={defaultSettings.showShopName}
-                    onChange={(e) =>
-                      setDefaultSettings((p) => ({
-                        ...p,
-                        showShopName: e.target.checked,
-                      }))
-                    }
-                  />
-                  Show shop name
-                </label>
-
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={defaultSettings.showName}
-                    onChange={(e) =>
-                      setDefaultSettings((p) => ({
-                        ...p,
-                        showName: e.target.checked,
-                      }))
-                    }
-                  />
-                  Show item name
-                </label>
-
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={defaultSettings.showSalePrice}
-                    onChange={(e) =>
-                      setDefaultSettings((p) => ({
-                        ...p,
-                        showSalePrice: e.target.checked,
-                      }))
-                    }
-                  />
-                  Show sale price
-                </label>
-
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={defaultSettings.showMrp}
-                    onChange={(e) =>
-                      setDefaultSettings((p) => ({
-                        ...p,
-                        showMrp: e.target.checked,
-                      }))
-                    }
-                  />
-                  Show MRP
-                </label>
-              </div>
-            ) : (
-              <div className="rounded-2xl border p-4 space-y-3">
-                <div className="text-sm font-semibold text-slate-900">
-                  Label print settings
-                </div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
+                <p className="text-xs font-bold uppercase tracking-widest text-slate-400">
+                  Default Print Settings
+                </p>
 
                 <div>
-                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                    Engine
-                  </label>
+                  <label className={labelCls}>Shop Name</label>
+                  <input
+                    value={defaultSettings.shopName}
+                    onChange={(e) =>
+                      setDefaultSettings((p) => ({
+                        ...p,
+                        shopName: e.target.value,
+                      }))
+                    }
+                    placeholder="Shop name"
+                    className={inputCls}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={labelCls}>Width (mm)</label>
+                    <input
+                      type="number"
+                      value={defaultSettings.labelWidthMm}
+                      onChange={(e) =>
+                        setDefaultSettings((p) => ({
+                          ...p,
+                          labelWidthMm: Number(e.target.value || 50),
+                        }))
+                      }
+                      className={inputCls}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Height (mm)</label>
+                    <input
+                      type="number"
+                      value={defaultSettings.labelHeightMm}
+                      onChange={(e) =>
+                        setDefaultSettings((p) => ({
+                          ...p,
+                          labelHeightMm: Number(e.target.value || 30),
+                        }))
+                      }
+                      className={inputCls}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Columns</label>
+                    <input
+                      type="number"
+                      value={defaultSettings.columns}
+                      onChange={(e) =>
+                        setDefaultSettings((p) => ({
+                          ...p,
+                          columns: Number(e.target.value || 4),
+                        }))
+                      }
+                      className={inputCls}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Barcode H</label>
+                    <input
+                      type="number"
+                      value={defaultSettings.barcodeHeight}
+                      onChange={(e) =>
+                        setDefaultSettings((p) => ({
+                          ...p,
+                          barcodeHeight: Number(e.target.value || 32),
+                        }))
+                      }
+                      className={inputCls}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2 pt-1">
+                  {(
+                    [
+                      ["showShopName", "Show shop name"],
+                      ["showName", "Show item name"],
+                      ["showSalePrice", "Show sale price"],
+                      ["showMrp", "Show MRP"],
+                    ] as [keyof DefaultPrintSettings, string][]
+                  ).map(([key, label]) => (
+                    <label
+                      key={key}
+                      className="flex cursor-pointer items-center gap-3 text-sm text-slate-700"
+                    >
+                      <span
+                        className="relative inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition"
+                        style={
+                          defaultSettings[key]
+                            ? {
+                                background: "var(--kyn-primary)",
+                                borderColor: "var(--kyn-primary)",
+                              }
+                            : { background: "#f1f5f9", borderColor: "#cbd5e1" }
+                        }
+                      >
+                        <input
+                          type="checkbox"
+                          checked={defaultSettings[key] as boolean}
+                          onChange={(e) =>
+                            setDefaultSettings((p) => ({
+                              ...p,
+                              [key]: e.target.checked,
+                            }))
+                          }
+                          className="absolute inset-0 cursor-pointer opacity-0"
+                        />
+                        {defaultSettings[key] && (
+                          <svg
+                            className="h-3 w-3 text-white"
+                            viewBox="0 0 12 12"
+                            fill="none"
+                          >
+                            <path
+                              d="M2 6l3 3 5-5"
+                              stroke="currentColor"
+                              strokeWidth="1.8"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        )}
+                      </span>
+                      {label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
+                <p className="text-xs font-bold uppercase tracking-widest text-slate-400">
+                  Label Print Settings
+                </p>
+
+                <div>
+                  <label className={labelCls}>Engine</label>
                   <SearchableDropdown
                     value={labelSettings.engine}
                     onChange={(value) =>
@@ -717,79 +773,68 @@ export default function BarcodePrintCenterModal({
                     placeholder="Select engine"
                     autoOpenOnFocus={false}
                     className="w-full"
-                    buttonProps={{
-                      className:
-                        "w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm bg-white",
-                    }}
+                    buttonProps={{ className: dropdownButtonCls }}
                   />
                 </div>
 
                 <div>
-                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                    Printer
-                  </label>
+                  <label className={labelCls}>Printer</label>
                   <SearchableDropdown
                     value={labelSettings.printerId || ""}
                     onChange={(value) =>
-                      setLabelSettings((p) => ({
-                        ...p,
-                        printerId: value,
-                      }))
+                      setLabelSettings((p) => ({ ...p, printerId: value }))
                     }
                     options={printerOptions}
                     placeholder="Select printer"
                     autoOpenOnFocus={false}
                     className="w-full"
                     buttonProps={{
-                      className:
-                        "w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm bg-white",
+                      className: dropdownButtonCls,
                       disabled: printerOptions.length === 0,
                     }}
                   />
                 </div>
 
-                {labelSettings.engine !== "HTML" ? (
+                {labelSettings.engine !== "HTML" && (
                   <div>
-                    <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                      Template
-                    </label>
+                    <label className={labelCls}>Template</label>
                     <SearchableDropdown
                       value={labelSettings.templateId || ""}
                       onChange={(value) =>
-                        setLabelSettings((p) => ({
-                          ...p,
-                          templateId: value,
-                        }))
+                        setLabelSettings((p) => ({ ...p, templateId: value }))
                       }
                       options={templateOptions}
                       placeholder="Select template"
                       autoOpenOnFocus={false}
                       className="w-full"
                       buttonProps={{
-                        className:
-                          "w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm bg-white",
+                        className: dropdownButtonCls,
                         disabled: templateOptions.length === 0,
                       }}
                     />
                   </div>
-                ) : null}
+                )}
 
-                <input
-                  type="number"
-                  min={1}
-                  placeholder="Copies override (optional)"
-                  value={labelSettings.copiesOverride || ""}
-                  onChange={(e) =>
-                    setLabelSettings((p) => ({
-                      ...p,
-                      copiesOverride: e.target.value,
-                    }))
-                  }
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm"
-                />
+                <div>
+                  <label className={labelCls}>Copies Override</label>
+                  <input
+                    type="number"
+                    min={1}
+                    placeholder="Optional — overrides per-row copies"
+                    value={labelSettings.copiesOverride || ""}
+                    onChange={(e) =>
+                      setLabelSettings((p) => ({
+                        ...p,
+                        copiesOverride: e.target.value,
+                      }))
+                    }
+                    className={inputCls}
+                  />
+                </div>
               </div>
             )}
 
+            {/* ── Print button ── */}
             <button
               type="button"
               onClick={handlePrint}
@@ -800,38 +845,77 @@ export default function BarcodePrintCenterModal({
                   labelSettings.engine !== "HTML" &&
                   (!labelSettings.printerId || !labelSettings.templateId))
               }
-              className="w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold transition hover:opacity-90 active:scale-[.98] disabled:cursor-not-allowed disabled:opacity-40"
+              style={{
+                background:
+                  "linear-gradient(135deg, var(--kyn-primary-strong) 0%, var(--kyn-secondary-strong) 100%)",
+                color: "#fff",
+                boxShadow: printing
+                  ? "none"
+                  : "0 4px 16px var(--kyn-glow-primary)",
+              }}
             >
-              {printing ? "Printing..." : "Print Now"}
+              <Printer className="h-4 w-4" />
+              {printing ? "Printing…" : "Print Now"}
             </button>
           </div>
 
-          <div className="min-h-0 overflow-y-auto bg-slate-100 p-5 space-y-5">
-            <div className="rounded-2xl border bg-white">
-              <div className="border-b px-4 py-3">
-                <h3 className="text-sm font-semibold text-slate-900">
-                  Selected rows
+          {/* ── RIGHT PANEL ── */}
+          <div className="flex min-h-0 flex-col gap-4 overflow-y-auto bg-slate-100 p-4 sm:p-5">
+            {/* Selected rows table */}
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div
+                className="flex items-center justify-between border-b border-slate-100 px-4 py-3"
+                style={{
+                  background:
+                    "linear-gradient(135deg, var(--kyn-surface) 0%, var(--kyn-surface-2) 100%)",
+                  borderBottomColor: "var(--kyn-border)",
+                }}
+              >
+                <h3
+                  className="text-sm font-semibold"
+                  style={{ color: "var(--kyn-text)" }}
+                >
+                  Selected Rows
                 </h3>
+                {rows.length > 0 && (
+                  <span
+                    className="rounded-full px-2.5 py-0.5 text-xs font-semibold"
+                    style={{
+                      background: "rgba(32,183,255,0.15)",
+                      color: "var(--kyn-primary)",
+                      border: "1px solid rgba(32,183,255,0.25)",
+                    }}
+                  >
+                    {rows.length} item{rows.length !== 1 ? "s" : ""}
+                  </span>
+                )}
               </div>
 
               <div className="max-h-[260px] overflow-auto">
                 <table className="min-w-full text-sm">
-                  <thead className="bg-slate-50 text-left">
-                    <tr>
-                      <th className="px-4 py-2.5">Item</th>
-                      <th className="px-4 py-2.5">Barcode</th>
-                      <th className="px-4 py-2.5">Copies</th>
-                      <th className="px-4 py-2.5">Action</th>
+                  <thead>
+                    <tr className="bg-slate-50 text-left">
+                      {["Item", "Barcode", "Copies", ""].map((h) => (
+                        <th
+                          key={h}
+                          className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-400"
+                        >
+                          {h}
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
                     {rows.map((row, index) => (
                       <tr
                         key={`${row.batchId || row.productId}-${index}`}
-                        className="border-t"
+                        className="border-t border-slate-100 hover:bg-slate-50 transition-colors"
                       >
-                        <td className="px-4 py-2.5">{row.itemName}</td>
-                        <td className="px-4 py-2.5 font-medium">
+                        <td className="px-4 py-2.5 font-medium text-slate-800">
+                          {row.itemName}
+                        </td>
+                        <td className="px-4 py-2.5 font-mono text-xs text-slate-600">
                           {row.barcode}
                         </td>
                         <td className="px-4 py-2.5">
@@ -842,41 +926,55 @@ export default function BarcodePrintCenterModal({
                             onChange={(e) =>
                               updateCopies(index, Number(e.target.value || 1))
                             }
-                            className="w-20 rounded-lg border border-slate-300 px-2 py-1 text-sm"
+                            className="w-20 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-800 focus:border-[var(--kyn-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--kyn-primary)]/30 transition"
                           />
                         </td>
                         <td className="px-4 py-2.5">
                           <button
                             type="button"
                             onClick={() => removeRow(index)}
-                            className="rounded-lg border px-3 py-1 text-xs text-slate-700 hover:bg-slate-50"
+                            className="flex h-7 w-7 items-center justify-center rounded-lg border border-red-100 bg-red-50 text-red-400 transition hover:bg-red-100 hover:text-red-600"
                           >
-                            Remove
+                            <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         </td>
                       </tr>
                     ))}
 
-                    {!rows.length ? (
+                    {!rows.length && (
                       <tr>
                         <td
                           colSpan={4}
-                          className="px-4 py-8 text-center text-slate-500"
+                          className="px-4 py-10 text-center text-sm text-slate-400"
                         >
                           No barcode rows selected
                         </td>
                       </tr>
-                    ) : null}
+                    )}
                   </tbody>
                 </table>
               </div>
             </div>
 
+            {/* Preview / Summary */}
             {mode === "DEFAULT" ? (
-              <div className="rounded-2xl border bg-white overflow-hidden min-h-[420px] flex flex-col">
-                <div className="border-b px-4 py-3">
-                  <h3 className="text-sm font-semibold text-slate-900">
-                    Live preview
+              <div
+                className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
+                style={{ minHeight: 340 }}
+              >
+                <div
+                  className="shrink-0 border-b px-4 py-3"
+                  style={{
+                    background:
+                      "linear-gradient(135deg, var(--kyn-surface) 0%, var(--kyn-surface-2) 100%)",
+                    borderBottomColor: "var(--kyn-border)",
+                  }}
+                >
+                  <h3
+                    className="text-sm font-semibold"
+                    style={{ color: "var(--kyn-text)" }}
+                  >
+                    Live Preview
                   </h3>
                 </div>
 
@@ -887,39 +985,58 @@ export default function BarcodePrintCenterModal({
                     className="flex-1 w-full border-0 bg-white"
                   />
                 ) : (
-                  <div className="p-6 text-sm text-slate-500">
+                  <div className="flex flex-1 items-center justify-center p-6 text-sm text-slate-400">
                     Add rows to preview barcode layout.
                   </div>
                 )}
               </div>
             ) : (
-              <div className="rounded-2xl border bg-white">
-                <div className="border-b px-4 py-3">
-                  <h3 className="text-sm font-semibold text-slate-900">
-                    Label print summary
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <div
+                  className="border-b px-4 py-3"
+                  style={{
+                    background:
+                      "linear-gradient(135deg, var(--kyn-surface) 0%, var(--kyn-surface-2) 100%)",
+                    borderBottomColor: "var(--kyn-border)",
+                  }}
+                >
+                  <h3
+                    className="text-sm font-semibold"
+                    style={{ color: "var(--kyn-text)" }}
+                  >
+                    Label Print Summary
                   </h3>
                 </div>
 
-                <div className="p-4 text-sm text-slate-700 space-y-2">
-                  <div>
-                    <span className="font-medium">Engine:</span>{" "}
-                    {labelSettings.engine}
-                  </div>
-                  <div>
-                    <span className="font-medium">Printer:</span>{" "}
-                    {filteredPrinters.find(
-                      (p) => p.id === labelSettings.printerId,
-                    )?.name || "-"}
-                  </div>
-                  <div>
-                    <span className="font-medium">Template:</span>{" "}
-                    {filteredTemplates.find(
-                      (t) => t.id === labelSettings.templateId,
-                    )?.name || "-"}
-                  </div>
-                  <div>
-                    <span className="font-medium">Rows:</span> {rows.length}
-                  </div>
+                <div className="divide-y divide-slate-100 p-1">
+                  {[
+                    ["Engine", labelSettings.engine],
+                    [
+                      "Printer",
+                      filteredPrinters.find(
+                        (p) => p.id === labelSettings.printerId,
+                      )?.name || "—",
+                    ],
+                    [
+                      "Template",
+                      filteredTemplates.find(
+                        (t) => t.id === labelSettings.templateId,
+                      )?.name || "—",
+                    ],
+                    ["Rows", String(rows.length)],
+                  ].map(([k, v]) => (
+                    <div
+                      key={k}
+                      className="flex items-center justify-between px-4 py-3"
+                    >
+                      <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                        {k}
+                      </span>
+                      <span className="text-sm font-medium text-slate-800">
+                        {v}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}

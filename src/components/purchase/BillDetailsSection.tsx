@@ -10,6 +10,8 @@ import {
   CalendarClock,
   IndianRupee,
   Wallet,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { HeaderForm } from "./types";
 import SearchableDropdown from "@/components/ui/SearchableDropdown";
@@ -27,18 +29,20 @@ interface BillDetailsSectionProps {
   entryNo?: number;
   requireSupplier?: boolean;
   isEditing?: boolean;
+  // ← new
+  isOpen: boolean;
+  onToggle: () => void;
 }
 
 const labelCls =
-  "text-xs text-gray-600 font-medium mb-1 flex items-center gap-1";
+  "text-xs text-slate-600 font-medium mb-1 flex items-center gap-1";
 const inputBase =
-  "w-full h-9 px-3 text-sm border border-gray-300 rounded-md " +
-  "bg-white outline-none transition-colors " +
-  "focus:border-averix-red-dark focus:ring-2 focus:ring-averix-red-light/50";
-
+  "w-full h-9 px-3 text-sm border border-slate-300 rounded-md " +
+  "bg-white text-slate-800 outline-none transition-colors " +
+  "focus:border-[#20b7ff] focus:ring-2 focus:ring-[#20b7ff]/20";
 const fieldWrap = "relative";
 const leftIcon =
-  "absolute inset-y-0 left-2 flex items-center text-gray-500 pointer-events-none";
+  "absolute inset-y-0 left-2 flex items-center text-slate-400 pointer-events-none";
 const inputWithIcon = inputBase + " pl-9";
 
 export default function BillDetailsSection({
@@ -52,13 +56,61 @@ export default function BillDetailsSection({
   onCancel,
   entryNo,
   requireSupplier,
+  isOpen,
+  onToggle,
 }: BillDetailsSectionProps) {
+  // ── COLLAPSED STRIP ──────────────────────────────────────────
+  if (!isOpen) {
+    return (
+      <aside
+        className="w-10 bg-[#1e3a5f] flex flex-col items-center py-3 gap-4
+                   border-r border-slate-300 cursor-pointer select-none
+                   transition-all duration-200"
+        onClick={onToggle}
+        title="Show Bill Details (Ctrl+\\)"
+      >
+        <ChevronRight className="w-4 h-4 text-white/70 flex-shrink-0" />
+        <span
+          className="text-white/60 text-[10px] font-semibold uppercase tracking-widest"
+          style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}
+        >
+          Bill Details
+        </span>
+        {/* Red dot if required fields missing */}
+        {(!header.billNo || (requireSupplier && !header.supplier)) && (
+          <span
+            className="w-2 h-2 rounded-full bg-rose-400 flex-shrink-0"
+            title="Required fields incomplete"
+          />
+        )}
+      </aside>
+    );
+  }
+
+  // ── EXPANDED PANEL ───────────────────────────────────────────
   return (
-    <section className="col-span-1 bg-white max-w-[300px] border border-gray-200 -mt-px p-4 space-y-4 overflow-y-auto no-scrollbar">
-      {/* Title */}
-      <div className="flex items-center gap-2">
-        <Receipt className="w-5 h-5 text-averix-red-dark" />
-        <h2 className="text-base font-semibold text-gray-900">Bill Details</h2>
+    <section
+      className="col-span-1 bg-white w-full md:max-w-[240px] lg:max-w-[300px] border-r border-slate-300
+                        shadow-lg -mt-px p-4 space-y-4 overflow-y-auto no-scrollbar
+                        h-full flex flex-col transition-all duration-200"
+    >
+      {/* Title bar */}
+      <div
+        className="flex items-center justify-between -mx-4 -mt-4 px-4 py-2.5
+                      bg-[#1e3a5f] rounded-t-none mb-4"
+      >
+        <div className="flex items-center gap-2">
+          <Receipt className="w-4 h-4 text-white/70" />
+          <h2 className="text-sm font-semibold text-white">Bill Details</h2>
+        </div>
+        <button
+          type="button"
+          onClick={onToggle}
+          title="Hide Bill Details (Ctrl+\\)"
+          className="text-white/60 hover:text-white transition-colors cursor-pointer"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
       </div>
 
       <div className="space-y-3">
@@ -70,29 +122,32 @@ export default function BillDetailsSection({
               Entry No
             </label>
             <input
-              className={inputBase + " bg-gray-50 text-gray-700"}
+              className={
+                inputBase + " bg-slate-100 text-slate-500 cursor-not-allowed"
+              }
               value={entryNo ?? "—"}
               readOnly
               disabled
             />
           </div>
-          {/* Purchase Type */}
+
+          {/* Purchase Type toggle */}
           <div>
             <label className={labelCls}>
               <Wallet className="w-3.5 h-3.5" />
               Purchase Type
             </label>
-            <div className="inline-flex rounded-md overflow-hidden border border-gray-300">
+            <div className="inline-flex rounded-md overflow-hidden border border-slate-200">
               <button
                 type="button"
                 onClick={() =>
                   setHeader((s) => ({ ...s, purchaseType: "CASH" }))
                 }
                 className={
-                  "px-3 h-9 text-sm " +
+                  "px-3 h-9 text-sm transition-colors cursor-pointer " +
                   (header.purchaseType === "CASH"
-                    ? "bg-averix-red-dark text-white cursor-pointer"
-                    : "bg-white text-gray-700 hover:bg-gray-50 cursor-pointer")
+                    ? "bg-[#1e3a5f] text-white"
+                    : "bg-white text-slate-600 hover:bg-slate-50")
                 }
               >
                 Cash
@@ -107,10 +162,10 @@ export default function BillDetailsSection({
                   setHeader((s) => ({ ...s, purchaseType: "CREDIT" }))
                 }
                 className={
-                  "px-3 h-9 text-sm border-l border-gray-300 " +
+                  "px-3 h-9 text-sm border-l border-slate-200 transition-colors " +
                   (header.purchaseType === "CREDIT"
-                    ? "bg-averix-red-dark text-white cursor-pointer"
-                    : "bg-white text-gray-700 hover:bg-gray-50 cursor-pointer")
+                    ? "bg-[#1e3a5f] text-white cursor-pointer"
+                    : "bg-white text-slate-600 hover:bg-slate-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed")
                 }
               >
                 Credit
@@ -121,32 +176,30 @@ export default function BillDetailsSection({
 
         {/* Bill No */}
         <div>
-          <div className={fieldWrap}>
-            <label className={labelCls}>
-              <Receipt className="w-3.5 h-3.5" />
-              Bill No <span className="text-red-500">*</span>
-            </label>
-
-            <input
-              className={inputWithIcon}
-              value={header.billNo}
-              onChange={(e) =>
-                setHeader((s) => ({ ...s, billNo: e.target.value }))
-              }
-              placeholder="Enter bill number"
-            />
-          </div>
+          <label className={labelCls}>
+            <Receipt className="w-3.5 h-3.5" />
+            Bill No <span className="text-rose-500">*</span>
+          </label>
+          <input
+            className={inputBase}
+            value={header.billNo}
+            onChange={(e) =>
+              setHeader((s) => ({ ...s, billNo: e.target.value }))
+            }
+            placeholder="Enter bill number"
+            autoFocus={false}
+            id="bill-details-billno"
+          />
         </div>
-        {/* Dates */}
 
+        {/* Dates */}
         <div className="grid grid-cols-2 gap-3 min-w-0">
-          {/* Purchase Date  */}
           <div className="min-w-0">
             <label className={labelCls}>
               <CalendarClock className="w-3.5 h-3.5" />
               Purchase Date
             </label>
-            <div className="grid grid-cols-[1fr_auto] gap-2">
+            <div className="grid grid-cols-[1fr_auto] gap-1.5">
               <input
                 className={inputBase + " text-xs px-2"}
                 type="date"
@@ -161,7 +214,7 @@ export default function BillDetailsSection({
                 }}
               />
               <input
-                className={inputBase + " text-xs px-2 w-[90px]"}
+                className={inputBase + " text-xs px-2 w-[80px]"}
                 type="time"
                 value={toLocalTime(header.purchaseDate)}
                 onChange={(e) => {
@@ -175,33 +228,30 @@ export default function BillDetailsSection({
               />
             </div>
           </div>
-
-          {/* Entry date */}
           <div className="min-w-0">
             <label className={labelCls}>
               <CalendarClock className="w-3.5 h-3.5" />
               Entry Date
             </label>
-            <div className="grid grid-cols-[1fr_auto] gap-2">
-              <input
-                className={inputBase + " text-xs px-2"}
-                type="date"
-                value={toLocalDate(header.entryTime)}
-                onChange={(e) => {
-                  const d = e.target.value;
-                  const t = toLocalTime(header.entryTime);
-                  setHeader((s) => ({ ...s, entryTime: fromDateTime(d, t) }));
-                }}
-              />
-            </div>
+            <input
+              className={inputBase + " text-xs px-2"}
+              type="date"
+              value={toLocalDate(header.entryTime)}
+              onChange={(e) => {
+                const d = e.target.value;
+                const t = toLocalTime(header.entryTime);
+                setHeader((s) => ({ ...s, entryTime: fromDateTime(d, t) }));
+              }}
+            />
           </div>
         </div>
-        {/* Supplier + add */}
+
+        {/* Supplier */}
         <div>
           <label className={labelCls}>
             <UserRound className="w-3.5 h-3.5" />
-            Supplier{" "}
-            {requireSupplier ? <span className="text-red-500">*</span> : null}
+            Supplier
+            {requireSupplier ? <span className="text-rose-500">*</span> : null}
           </label>
           <div className="flex gap-2">
             <div className="flex-1">
@@ -211,10 +261,7 @@ export default function BillDetailsSection({
                   const sup = suppliers.find((s) => s.id === v);
                   setHeader((s) => ({ ...s, supplier: sup || null }));
                 }}
-                options={suppliers.map((s) => ({
-                  value: s.id,
-                  label: s.name,
-                }))}
+                options={suppliers.map((s) => ({ value: s.id, label: s.name }))}
                 placeholder="Select supplier..."
                 controlClassName="h-9 text-sm px-2"
                 inputClassName="h-9 text-sm"
@@ -225,13 +272,15 @@ export default function BillDetailsSection({
             <button
               type="button"
               onClick={() => setShowSupplierModal(true)}
-              className="px-3 h-9 rounded-md bg-averix-red-dark text-white hover:bg-averix-red-accent transition-colors inline-flex items-center justify-center cursor-pointer"
+              className="px-3 h-9 rounded-md bg-[#1e3a5f] text-white hover:bg-[#16304f]
+                         transition-colors inline-flex items-center justify-center cursor-pointer"
               title="Add New Supplier"
             >
               <Plus className="w-4 h-4" />
             </button>
           </div>
         </div>
+
         {/* Dept + Debit A/c */}
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -263,6 +312,7 @@ export default function BillDetailsSection({
             />
           </div>
         </div>
+
         {/* Nature of Entry */}
         <div>
           <label className={labelCls}>
@@ -278,6 +328,7 @@ export default function BillDetailsSection({
             placeholder="Nature of entry"
           />
         </div>
+
         {/* Header Discount */}
         <div>
           <label className={labelCls}>
@@ -301,9 +352,8 @@ export default function BillDetailsSection({
                   e.key === "-" ||
                   e.key === "+" ||
                   e.key.toLowerCase() === "e"
-                ) {
+                )
                   e.preventDefault();
-                }
               }}
               onChange={(e) => {
                 const n = e.currentTarget.valueAsNumber;
@@ -318,22 +368,30 @@ export default function BillDetailsSection({
         </div>
       </div>
 
-      {/* Summary Card (compact) */}
-      <div className="mt-2 p-3 bg-gradient-to-r from-averix-red-dark to-averix-red-accent rounded-lg text-white">
-        <div className="space-y-1">
-          <div className="flex justify-between text-xs">
-            <span className="opacity-90">Sub Total</span>
-            <span className="font-medium">₹ {Number(subTotal).toFixed(2)}</span>
+      {/* Summary card */}
+      <div
+        className="mt-2 rounded-xl border border-slate-300 bg-white
+                      shadow-[0_4px_20px_rgba(3,10,24,0.06)] overflow-hidden"
+      >
+        <div className="h-1 bg-gradient-to-r from-[#20b7ff] to-[#b026ff]" />
+        <div className="p-3 space-y-1.5">
+          <div className="flex justify-between text-xs text-slate-500">
+            <span>Sub Total</span>
+            <span className="font-medium text-slate-700">
+              ₹ {Number(subTotal).toFixed(2)}
+            </span>
           </div>
-          <div className="flex justify-between text-xs">
-            <span className="opacity-90">Discount</span>
-            <span className="font-medium">
+          <div className="flex justify-between text-xs text-slate-500">
+            <span>Discount</span>
+            <span className="font-medium text-rose-500">
               - ₹ {Number(header.discount ?? 0).toFixed(2)}
             </span>
           </div>
-          <div className="border-t border-white/20 pt-2 flex justify-between items-center">
-            <span className="font-semibold">Grand Total</span>
-            <span className="font-bold text-lg">
+          <div className="border-t border-slate-100 pt-2 flex justify-between items-center">
+            <span className="text-sm font-semibold text-slate-700">
+              Grand Total
+            </span>
+            <span className="text-lg font-bold text-[#1e3a5f]">
               ₹ {Number(grandTotal).toFixed(2)}
             </span>
           </div>
@@ -346,10 +404,11 @@ export default function BillDetailsSection({
           onClick={onSave}
           disabled={header.purchaseType === "CREDIT" && !header.supplier}
           className={
-            "flex-1 h-9 px-3 rounded-md transition-colors font-medium inline-flex items-center justify-center gap-2 " +
+            "flex-1 h-9 px-3 rounded-md transition-colors font-medium inline-flex " +
+            "items-center justify-center gap-2 text-sm " +
             (header.purchaseType === "CREDIT" && !header.supplier
-              ? "bg-gray-300 text-gray-600 cursor-not-allowed"
-              : "bg-averix-red-dark text-white hover:bg-averix-red-accent")
+              ? "bg-slate-200 text-slate-400 cursor-not-allowed"
+              : "bg-[#1e3a5f] text-white hover:bg-[#16304f] cursor-pointer")
           }
         >
           <Receipt className="w-4 h-4" />
@@ -357,11 +416,48 @@ export default function BillDetailsSection({
         </button>
         <button
           onClick={onCancel}
-          className="flex-1 h-9 bg-white border border-gray-200 px-3 rounded-md hover:bg-gray-50 transition-colors font-medium cursor-pointer"
+          className="flex-1 h-9 bg-white border border-slate-200 px-3 rounded-md
+                     hover:bg-slate-50 transition-colors font-medium text-slate-600 text-sm cursor-pointer"
         >
           Cancel
         </button>
       </div>
     </section>
+  );
+}
+
+export function MobileBillSheet({
+  isOpen,
+  onClose,
+  ...props // all BillDetailsSection props
+}: BillDetailsSectionProps & { isOpen: boolean; onClose: () => void }) {
+  if (!isOpen) return null;
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 z-40 bg-black/40 md:hidden"
+        onClick={onClose}
+      />
+      {/* Sheet */}
+      <div
+        className={`
+        fixed bottom-0 left-0 right-0 z-50 md:hidden
+        bg-white rounded-t-2xl shadow-2xl
+        max-h-[90dvh] flex flex-col
+        transition-transform duration-300
+        ${isOpen ? "translate-y-0" : "translate-y-full"}
+      `}
+      >
+        {/* Drag handle */}
+        <div className="flex justify-center pt-3 pb-1">
+          <div className="w-10 h-1 rounded-full bg-slate-300" />
+        </div>
+        {/* Reuse the same expanded panel content */}
+        <div className="overflow-y-auto flex-1 px-4 pb-6">
+          <BillDetailsSection {...props} isOpen={true} onToggle={onClose} />
+        </div>
+      </div>
+    </>
   );
 }
