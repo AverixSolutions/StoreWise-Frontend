@@ -262,7 +262,7 @@ db.prepare(
 
 db.prepare(
   `CREATE INDEX IF NOT EXISTS idx_purchases_dirty 
-  ON purchases(licenseId, createdAt, syncedAt, deletedAt)`,
+  ON purchases(licenseId, updatedAt, syncedAt, deletedAt)`,
 ).run();
 
 // --- Purchase Returns Table ---
@@ -2003,6 +2003,49 @@ if (!removeUnitCheckRan) {
     console.error("[db] remove_unit_check_v1 failed:", e);
   } finally {
     db.pragma("foreign_keys = ON");
+  }
+}
+
+// 1. Ensure the migrations table exists first!
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS _migrations (
+    name TEXT PRIMARY KEY,
+    ranAt TEXT
+  )
+`,
+).run();
+
+// 2. Fix purchases dirty index — was on createdAt, needs updatedAt for sync
+const fixPurchasesDirtyIndexRan = db
+  .prepare(
+    `SELECT 1 FROM _migrations WHERE name='fix_purchases_dirty_index_v1' LIMIT 1`,
+  )
+  .get();
+
+if (!fixPurchasesDirtyIndexRan) {
+  try {
+    // Drop the old wrong index
+    db.prepare(`DROP INDEX IF EXISTS idx_purchases_dirty`).run();
+
+    // Create the correct one
+    db.prepare(
+      `
+      CREATE INDEX IF NOT EXISTS idx_purchases_dirty
+      ON purchases(licenseId, updatedAt, syncedAt, deletedAt)
+    `,
+    ).run();
+
+    // Record that this migration ran
+    db.prepare(
+      `
+      INSERT INTO _migrations(name, ranAt) VALUES('fix_purchases_dirty_index_v1', ?)
+    `,
+    ).run(new Date().toISOString());
+
+    console.log("[db] fix_purchases_dirty_index_v1 completed");
+  } catch (e) {
+    console.error("[db] fix_purchases_dirty_index_v1 failed:", e);
   }
 }
 

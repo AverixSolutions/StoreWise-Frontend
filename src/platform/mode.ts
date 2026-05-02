@@ -1,20 +1,30 @@
-// src/platform/mode.ts
-import { platform } from "@/platform";
-
-export type AppMode = "desktop-offline" | "web-offline" | "web-sync";
+export type AppMode =
+  | "desktop-offline"
+  | "desktop-sync"
+  | "web-offline"
+  | "web-sync";
 
 export function getAppMode(): AppMode {
-  const runtime = platform.getRuntimeInfo();
+  if (typeof window === "undefined") return "web-offline";
 
-  if (runtime.runtime === "desktop") {
-    return "desktop-offline";
+  const isDesktop = !!(window as any).electronAPI;
+
+  if (isDesktop) {
+    const modeFlag = localStorage.getItem("kynflow_mode") || "";
+    const tier = localStorage.getItem("kynflow_tier") || "";
+    const syncEnabled = modeFlag.toUpperCase() === "ONLINE" && tier === "PRO";
+    return syncEnabled ? "desktop-sync" : "desktop-offline";
   }
 
-  const hasSyncApi = Boolean(process.env.NEXT_PUBLIC_KYNFLOW_API_BASE);
+  const hasApi = Boolean(process.env.NEXT_PUBLIC_KYNFLOW_API_BASE);
+  const modeFlag = localStorage.getItem("kynflow_mode") || "";
+  const isOnline = modeFlag.toUpperCase() === "ONLINE";
 
-  if (!hasSyncApi) {
-    return "web-offline";
-  }
+  if (hasApi && isOnline) return "web-sync";
+  return "web-offline";
+}
 
-  return "web-sync";
+export function isSyncEnabled(): boolean {
+  const mode = getAppMode();
+  return mode === "desktop-sync" || mode === "web-sync";
 }

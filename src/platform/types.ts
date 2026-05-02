@@ -43,6 +43,7 @@ export type ProductInput = {
   stock?: number;
   barcode?: string | null;
   image?: ProductImagePayload | null;
+  imagePath?: string | null;
 };
 
 // READ/LIST MODEL

@@ -289,10 +289,12 @@ export default function ProductsTable({
                   {product.tax}
                 </td>
                 <td className="px-3.5 py-2.5 text-[13px] font-medium text-slate-700">
-                  ₹{product.costPrice.toFixed(2)}
+                  ₹{Number(product.costPrice).toFixed(2)}
                 </td>
                 <td className="px-3.5 py-2.5 text-[13px] font-semibold text-emerald-600">
-                  {product.salePrice ? `₹${product.salePrice.toFixed(2)}` : "—"}
+                  {product.salePrice
+                    ? `₹${Number(product.salePrice).toFixed(2)}`
+                    : "—"}
                 </td>
                 <td className="px-3.5 py-2.5">
                   <StockBadge stock={product.stock} />

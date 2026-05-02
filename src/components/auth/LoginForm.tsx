@@ -9,6 +9,7 @@ import { Eye, EyeOff, AlertCircle } from "lucide-react";
 export default function LoginForm() {
   const [userId, setUserId] = useState("");
   const [password, setPassword] = useState("");
+  const [role, setRole] = useState("ADMIN");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -20,7 +21,7 @@ export default function LoginForm() {
     setLoading(true);
 
     try {
-      await login(userId, password, "ADMIN");
+      await login(userId, password, role);
       router.push("/dashboard");
     } catch (err) {
       setError(
@@ -78,6 +79,25 @@ export default function LoginForm() {
             {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
           </button>
         </div>
+      </div>
+
+      <div>
+        <label
+          htmlFor="role"
+          className="mb-1.5 block text-sm font-medium text-white/90"
+        >
+          Role
+        </label>
+        <select
+          id="role"
+          value={role}
+          onChange={(e) => setRole(e.target.value)}
+          className="w-full rounded-xl border border-white/10 bg-[#0a1222] px-4 py-3 text-sm sm:text-base text-white outline-none transition focus:border-[#20b7ff]/60 focus:ring-4 focus:ring-[#20b7ff]/10"
+        >
+          <option value="ADMIN">Owner</option>
+          <option value="SUPERVISOR">Shop Manager</option>
+          <option value="USER">Staff</option>
+        </select>
       </div>
 
       {error && (

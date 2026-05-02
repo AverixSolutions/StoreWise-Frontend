@@ -1,6 +1,6 @@
 // src/platform/web/idb.ts
 const DB_NAME = "kynflow-web";
-const DB_VERSION = 7; // bumped from 6
+const DB_VERSION = 8; // bumped from 7
 
 export const STORES = {
   SHOP_SETTINGS: "shop_settings",
@@ -13,6 +13,7 @@ export const STORES = {
   BRANDS: "brands",
   UNITS: "units",
   TAX_CATEGORIES: "tax_categories",
+  SUPPLIERS: "suppliers",
 } as const;
 
 export type SyncJob = {
@@ -156,6 +157,16 @@ function openDb(): Promise<IDBDatabase> {
           taxStore.createIndex("licenseId_code", ["licenseId", "code"], {
             unique: false,
           });
+        }
+      }
+
+      // v8 stores — suppliers cache for web sync
+      if (oldVersion < 8) {
+        if (!db.objectStoreNames.contains(STORES.SUPPLIERS)) {
+          const suppStore = db.createObjectStore(STORES.SUPPLIERS, {
+            keyPath: "id",
+          });
+          suppStore.createIndex("licenseId", "licenseId", { unique: false });
         }
       }
     };

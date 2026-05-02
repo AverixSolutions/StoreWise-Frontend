@@ -195,8 +195,12 @@ export default function Sidebar() {
       <ConfirmModal
         isOpen={showLogoutConfirm}
         title="Log out of KYNFLOW?"
-        message="You are about to end the current session and return to the login screen."
-        confirmText={loggingOut ? "Logging out..." : "Log out"}
+        message={
+          loggingOut
+            ? "Syncing your data before logging out…"
+            : "Any unsynced changes will be pushed to the server before you are logged out."
+        }
+        confirmText={loggingOut ? "Syncing & logging out…" : "Log out"}
         cancelText="Stay here"
         onConfirm={handleLogout}
         onCancel={() => {

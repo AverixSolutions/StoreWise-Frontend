@@ -254,6 +254,10 @@ function registerProductHandlers() {
       image: product.image,
     });
 
+    const finalImagePath = savedImage?.imagePath ?? product.imagePath ?? null;
+    const finalImageFileName =
+      savedImage?.imageFileName ?? product.imageFileName ?? null;
+
     db.prepare(
       `
     INSERT INTO products 
@@ -287,8 +291,8 @@ function registerProductHandlers() {
       product.salePrice ?? null,
       0,
       null,
-      savedImage?.imagePath ?? null,
-      savedImage?.imageFileName ?? null,
+      finalImagePath,
+      finalImageFileName,
       now,
       now,
     );
@@ -351,30 +355,28 @@ LIMIT ? OFFSET ?
     const product = db
       .prepare(
         `
-      SELECT imagePath, imageFileName
-      FROM products
-      WHERE id = ?
-        AND COALESCE(deletedAt,'') = ''
-      LIMIT 1
-    `,
+    SELECT imagePath, imageFileName
+    FROM products
+    WHERE id = ? AND COALESCE(deletedAt,'') = ''
+    LIMIT 1
+  `,
       )
       .get(productId);
 
     if (!product?.imagePath) return null;
 
+    if (product.imagePath.startsWith("http")) return product.imagePath;
+
     if (!fs.existsSync(product.imagePath)) return null;
 
     const ext = path.extname(product.imagePath).toLowerCase();
-
     const mimeType =
       ext === ".png"
         ? "image/png"
         : ext === ".webp"
           ? "image/webp"
           : "image/jpeg";
-
     const base64 = fs.readFileSync(product.imagePath).toString("base64");
-
     return `data:${mimeType};base64,${base64}`;
   });
 
@@ -475,6 +477,10 @@ LIMIT ? OFFSET ?
       image: product.image,
     });
 
+    const finalImagePath = savedImage?.imagePath ?? product.imagePath ?? null;
+    const finalImageFileName =
+      savedImage?.imageFileName ?? product.imageFileName ?? null;
+
     const result = db
       .prepare(
         `
@@ -505,8 +511,8 @@ LIMIT ? OFFSET ?
         product.hsn ?? null,
         product.costPrice,
         product.salePrice ?? null,
-        savedImage?.imagePath ?? null,
-        savedImage?.imageFileName ?? null,
+        finalImagePath,
+        finalImageFileName,
         now,
         productId,
       );

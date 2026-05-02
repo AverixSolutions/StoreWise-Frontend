@@ -27,6 +27,8 @@ type WebProduct = ProductInput & {
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
+  isSynced: number;
+  syncedAt: string | null;
 };
 
 type WebBatch = {
@@ -190,13 +192,15 @@ export async function webCreateProduct(
       ...product,
       id,
       shortCode,
-      imagePath: null,
+      imagePath: product.imagePath ?? null,
       imageFileName: product.image?.fileName ?? null,
       stock: 0,
       barcode: null,
       createdAt: now,
       updatedAt: now,
       deletedAt: null,
+      isSynced: 0,
+      syncedAt: null,
     };
     await idbPut(STORES.PRODUCTS, record);
     await bumpCodeSequence(product.licenseId, product.codeNumber);
@@ -230,11 +234,17 @@ export async function webUpdateProduct(
       ...product,
       id: productId,
       shortCode,
+      imagePath:
+        product.imagePath !== undefined
+          ? product.imagePath
+          : existing.imagePath,
       imageFileName:
         product.image === undefined
           ? existing.imageFileName
           : (product.image?.fileName ?? null),
       updatedAt: new Date().toISOString(),
+      isSynced: 0,
+      syncedAt: null,
     });
     return { success: true };
   } catch (err: any) {
@@ -253,6 +263,8 @@ export async function webDeleteProduct(
       ...existing,
       deletedAt: now,
       updatedAt: now,
+      isSynced: 0,
+      syncedAt: null,
     });
     // soft delete batches too
     const batches = await idbGetAllByIndex<WebBatch>(
@@ -449,6 +461,10 @@ export async function webGetProductImageDataUrl(
   productId: string,
 ): Promise<string | null> {
   const product = await webGetProduct(productId);
+  if (!product) return null;
+  // If R2 URL is stored, return it directly
+  if (product.imagePath) return product.imagePath;
+  // Fallback to base64 (legacy)
   return productImageToDataUrl(product);
 }
 

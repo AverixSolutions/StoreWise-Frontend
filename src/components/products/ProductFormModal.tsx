@@ -28,6 +28,8 @@ import type {
   CategoryRecord,
 } from "@/platform/types";
 import { useToast } from "../ui/ToastProvider";
+import { uploadProductImage } from "@/lib/uploadImage";
+import { getActiveToken } from "@/lib/session/runtimeSession";
 
 type Product = ProductSummary;
 
@@ -207,6 +209,7 @@ export default function ProductFormModal({
   );
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const [imageError, setImageError] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [productName, setProductName] = useState("");
   const [brand, setBrand] = useState("");
   const [model, setModel] = useState("");
@@ -592,20 +595,25 @@ export default function ProductFormModal({
   ) {
     const file = e.target.files?.[0];
     e.target.value = "";
-
     if (!file) return;
 
-    try {
-      setImageError(null);
-      const { payload, previewUrl } = await fileToProductImagePayload(file);
-      setProductImage(payload);
-      setImagePreviewUrl(previewUrl);
-    } catch (err: any) {
-      setImageError(err?.message || "Failed to load image");
+    const allowed = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+    if (!allowed.includes(file.type)) {
+      setImageError("Only JPG, PNG, and WEBP images are allowed");
+      return;
     }
+    if (file.size > 3 * 1024 * 1024) {
+      setImageError("Image must be below 3MB");
+      return;
+    }
+
+    setImageError(null);
+    setSelectedFile(file);
+    setImagePreviewUrl(URL.createObjectURL(file)); // instant local preview
   }
 
   function clearProductImageSelection() {
+    setSelectedFile(null);
     setProductImage(null);
     setImagePreviewUrl(null);
     setImageError(null);
@@ -976,6 +984,19 @@ export default function ProductFormModal({
         subcategory: trimmedSubcategory || null,
       });
 
+      // ── Upload image to R2 if a new file was selected ──
+      let imagePath: string | null = (editProduct as any)?.imagePath ?? null;
+      if (selectedFile) {
+        const token = getActiveToken();
+        if (!token) throw new Error("Not authenticated");
+        const { publicUrl } = await uploadProductImage(
+          selectedFile,
+          licenseId,
+          token,
+        );
+        imagePath = publicUrl;
+      }
+
       const productData: ProductInput = {
         licenseId,
         code,
@@ -993,7 +1014,8 @@ export default function ProductFormModal({
         hsn: hsn.trim() || null,
         costPrice: parsedCostPrice,
         salePrice: parsedSalePrice,
-        image: productImage ?? undefined,
+        imagePath, // ← R2 URL (or null)
+        image: null, // ← base64 no longer used
       };
 
       let productId = "";
