@@ -17,7 +17,7 @@ function ensureGroup(db, { code, name, nature, section }) {
     `
     INSERT INTO account_groups(id, name, code, nature, section, isSystem, sortOrder)
     VALUES(?,?,?,?,?,1,0)
-  `
+  `,
   ).run(id, name, code, nature, section);
   return id;
 }
@@ -34,11 +34,11 @@ function ensureAccount(
     gstComponent = null,
     rate = null,
     isSystem = 1,
-  }
+  },
 ) {
   const existing = db
     .prepare(
-      `SELECT id FROM accounts WHERE licenseId=? AND name=? AND COALESCE(deletedAt,'')=''`
+      `SELECT id FROM accounts WHERE licenseId=? AND name=? AND COALESCE(deletedAt,'')=''`,
     )
     .get(licenseId, name);
   if (existing) return existing.id;
@@ -50,7 +50,7 @@ function ensureAccount(
       (id, licenseId, name, code, groupId, isSystem, taxType, gstComponent, rate, createdAt, updatedAt, deletedAt)
     VALUES
       (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
-  `
+  `,
   ).run(
     accId,
     licenseId,
@@ -62,7 +62,7 @@ function ensureAccount(
     gstComponent,
     rate,
     now,
-    now
+    now,
   );
   return accId;
 }
@@ -168,7 +168,7 @@ function seedIndiaGSTBasics(licenseId) {
   // Helper: upsert a tax category with components & defaults
   const upsertTaxCategory = (
     code,
-    { name, rate, isInterstate, components, defaults }
+    { name, rate, isInterstate, components, defaults },
   ) => {
     const now = new Date().toISOString();
     const row = db
@@ -176,26 +176,28 @@ function seedIndiaGSTBasics(licenseId) {
       .get(licenseId, code);
     const id = row?.id || uuidv4();
 
+    // Edit 3 — Mark dirty on upsert inside seedIndiaGSTBasics
     if (!row) {
       db.prepare(
         `
-        INSERT INTO tax_categories(id,licenseId,code,name,rate,isInterstate,cessRate,calcMethod,createdAt,updatedAt)
-        VALUES(?,?,?,?,?,?,NULL,'FIXED',?,?)
-      `
+        INSERT INTO tax_categories(id,licenseId,code,name,rate,isInterstate,cessRate,calcMethod,createdAt,updatedAt,isSynced,syncedAt)
+        VALUES(?,?,?,?,?,?,NULL,'FIXED',?,?,0,NULL)
+      `,
       ).run(id, licenseId, code, name, rate, isInterstate ? 1 : 0, now, now);
     } else {
       db.prepare(
         `
         UPDATE tax_categories
-        SET name=@name, rate=@rate, isInterstate=@isInterstate, cessRate=NULL, calcMethod='FIXED', updatedAt=@now
+        SET name=@name, rate=@rate, isInterstate=@isInterstate, cessRate=NULL, calcMethod='FIXED', updatedAt=@now,
+            isSynced=0, syncedAt=NULL
         WHERE id=@id
-      `
+      `,
       ).run({ id, name, rate, isInterstate: isInterstate ? 1 : 0, now });
       db.prepare(`DELETE FROM tax_category_components WHERE categoryId=?`).run(
-        id
+        id,
       );
       db.prepare(`DELETE FROM tax_category_defaults WHERE categoryId=?`).run(
-        id
+        id,
       );
     }
 
@@ -218,7 +220,7 @@ function seedIndiaGSTBasics(licenseId) {
           inputCgstAccountId,  inputSgstAccountId,  inputIgstAccountId,
           cessAccountId, singleTaxAccountId, createdAt, updatedAt
         ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-      `
+      `,
       ).run(
         uuidv4(),
         id,
@@ -235,7 +237,7 @@ function seedIndiaGSTBasics(licenseId) {
         defaults.cessAccountId || null,
         defaults.singleTaxAccountId || null,
         tNow,
-        tNow
+        tNow,
       );
     }
 
@@ -313,7 +315,7 @@ function ensureTaxSeeded(licenseId) {
       UPDATE tax_category_defaults
       SET salesReturnAccountId    = COALESCE(salesReturnAccountId,    salesAccountId),
           purchaseReturnAccountId = COALESCE(purchaseReturnAccountId, purchaseAccountId)
-    `
+    `,
     ).run();
   }
 }
@@ -329,7 +331,7 @@ function registerTaxHandlers() {
       .prepare(
         `
       SELECT * FROM tax_categories WHERE licenseId=? ORDER BY rate, code
-    `
+    `,
       )
       .all(licenseId);
 
@@ -352,7 +354,7 @@ function registerTaxHandlers() {
     const total = Number(payload.rate || 0);
     const sum = (payload.components || []).reduce(
       (a, c) => a + Number(c.rate || 0),
-      0
+      0,
     );
     const interstate = !!payload.isInterstate;
 
@@ -368,7 +370,7 @@ function registerTaxHandlers() {
     if (interstate && total > 0) {
       // IGST only for interstate non-zero slabs
       const bad = (payload.components || []).some(
-        (c) => c.component !== "IGST"
+        (c) => c.component !== "IGST",
       );
       if (bad)
         return {
@@ -390,11 +392,12 @@ function registerTaxHandlers() {
 
     const tx = db.transaction(() => {
       if (!payload.id) {
+        // Edit 1 — Mark dirty on INSERT in tax:saveCategory
         db.prepare(
           `
-          INSERT INTO tax_categories(id,licenseId,code,name,rate,isInterstate,cessRate,calcMethod,createdAt,updatedAt)
-          VALUES(?,?,?,?,?,?,?,COALESCE(?, 'FIXED'),?,?)
-        `
+          INSERT INTO tax_categories(id,licenseId,code,name,rate,isInterstate,cessRate,calcMethod,createdAt,updatedAt,isSynced,syncedAt)
+          VALUES(?,?,?,?,?,?,?,COALESCE(?, 'FIXED'),?,?,0,NULL)
+        `,
         ).run(
           id,
           payload.licenseId,
@@ -405,16 +408,18 @@ function registerTaxHandlers() {
           payload.cessRate ?? null,
           payload.calcMethod ?? "FIXED",
           now,
-          now
+          now,
         );
       } else {
+        // Edit 2 — Mark dirty on UPDATE in tax:saveCategory
         db.prepare(
           `
           UPDATE tax_categories
           SET code=@code, name=@name, rate=@rate, isInterstate=@isInterstate,
-              cessRate=@cessRate, calcMethod=COALESCE(@calcMethod,'FIXED'), updatedAt=@now
+              cessRate=@cessRate, calcMethod=COALESCE(@calcMethod,'FIXED'), updatedAt=@now,
+              isSynced=0, syncedAt=NULL
           WHERE id=@id
-        `
+        `,
         ).run({
           id,
           code: payload.code,
@@ -427,10 +432,10 @@ function registerTaxHandlers() {
         });
 
         db.prepare(
-          `DELETE FROM tax_category_components WHERE categoryId=?`
+          `DELETE FROM tax_category_components WHERE categoryId=?`,
         ).run(id);
         db.prepare(`DELETE FROM tax_category_defaults WHERE categoryId=?`).run(
-          id
+          id,
         );
       }
 
@@ -460,7 +465,7 @@ function registerTaxHandlers() {
             inputCgstAccountId,  inputSgstAccountId,  inputIgstAccountId,
             cessAccountId, singleTaxAccountId, createdAt, updatedAt
           ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-        `
+        `,
         ).run(
           uuidv4(),
           id,
@@ -477,7 +482,7 @@ function registerTaxHandlers() {
           d.cessAccountId || null,
           d.singleTaxAccountId || null,
           now,
-          now
+          now,
         );
       }
     });
@@ -498,13 +503,13 @@ function registerTaxHandlers() {
         .prepare(
           `
       SELECT id FROM tax_code_map WHERE licenseId=? AND productTaxCode=?
-    `
+    `,
         )
         .get(licenseId, productTaxCode);
       if (row) {
         db.prepare(`UPDATE tax_code_map SET categoryId=? WHERE id=?`).run(
           categoryId,
-          row.id
+          row.id,
         );
         return { success: true, id: row.id };
       } else {
@@ -512,11 +517,11 @@ function registerTaxHandlers() {
         db.prepare(
           `
         INSERT INTO tax_code_map(id,licenseId,productTaxCode,categoryId) VALUES(?,?,?,?)
-      `
+      `,
         ).run(id, licenseId, productTaxCode, categoryId);
         return { success: true, id };
       }
-    }
+    },
   );
 
   ipcMain.handle("tax:getCodeMap", (e, licenseId) => {
@@ -524,7 +529,7 @@ function registerTaxHandlers() {
       .prepare(
         `
       SELECT * FROM tax_code_map WHERE licenseId=?
-    `
+    `,
       )
       .all(licenseId);
     return { success: true, rows };
@@ -552,10 +557,162 @@ function registerTaxHandlers() {
       FROM accounts
       WHERE licenseId=? AND COALESCE(deletedAt,'')=''
       ORDER BY name
-    `
+    `,
       )
       .all(licenseId);
     return { success: true, rows };
+  });
+
+  // ── Sync handlers ───────────────────────────────────────────────────────────
+
+  // Edit 4a — tax:getDirty
+  ipcMain.handle("tax:getDirty", (event, licenseId, limit = 200) => {
+    try {
+      const cats = db
+        .prepare(
+          `SELECT * FROM tax_categories
+           WHERE licenseId = ?
+             AND (syncedAt IS NULL OR updatedAt > syncedAt OR
+                  (deletedAt IS NOT NULL AND (syncedAt IS NULL OR deletedAt > syncedAt)))
+           ORDER BY updatedAt ASC
+           LIMIT ?`,
+        )
+        .all(licenseId, limit);
+
+      // Attach components + defaults so the server can store the full picture
+      const compsStmt = db.prepare(
+        `SELECT * FROM tax_category_components WHERE categoryId=?`,
+      );
+      const defStmt = db.prepare(
+        `SELECT * FROM tax_category_defaults WHERE categoryId=?`,
+      );
+
+      return cats.map((c) => ({
+        ...c,
+        components: compsStmt.all(c.id),
+        defaults: defStmt.get(c.id) || null,
+      }));
+    } catch (e) {
+      return [];
+    }
+  });
+
+  // Edit 4b — tax:markSynced
+  ipcMain.handle("tax:markSynced", (event, ids, serverSyncedAt) => {
+    try {
+      const ts = serverSyncedAt || new Date().toISOString();
+      const stmt = db.prepare(
+        `UPDATE tax_categories SET isSynced = 1, syncedAt = ? WHERE id = ?`,
+      );
+      db.transaction((list) => list.forEach((id) => stmt.run(ts, id)))(ids);
+      return { success: true };
+    } catch (e) {
+      return { success: false, error: String(e?.message || e) };
+    }
+  });
+
+  // Edit 4c — tax:bulkUpsert
+  ipcMain.handle("tax:bulkUpsert", (event, items = []) => {
+    try {
+      const now = new Date().toISOString();
+      db.transaction((rows) => {
+        for (const cat of rows) {
+          const existing = db
+            .prepare(`SELECT id, updatedAt FROM tax_categories WHERE id = ?`)
+            .get(cat.id);
+
+          const incomingTs = cat.updatedAt
+            ? new Date(cat.updatedAt).getTime()
+            : 0;
+          const localTs = existing?.updatedAt
+            ? new Date(existing.updatedAt).getTime()
+            : 0;
+
+          // Skip if local is newer (locally dirty — push cycle handles it)
+          if (existing && localTs > incomingTs) continue;
+
+          db.prepare(
+            `INSERT INTO tax_categories(id,licenseId,code,name,rate,isInterstate,cessRate,calcMethod,createdAt,updatedAt,deletedAt,isSynced,syncedAt)
+             VALUES(?,?,?,?,?,?,?,?,?,?,?,1,?)
+             ON CONFLICT(id) DO UPDATE SET
+               code=excluded.code, name=excluded.name, rate=excluded.rate,
+               isInterstate=excluded.isInterstate, cessRate=excluded.cessRate,
+               calcMethod=excluded.calcMethod, updatedAt=excluded.updatedAt,
+               deletedAt=excluded.deletedAt, isSynced=1, syncedAt=excluded.syncedAt`,
+          ).run(
+            cat.id,
+            cat.licenseId,
+            cat.code,
+            cat.name,
+            cat.rate,
+            cat.isInterstate ?? 0,
+            cat.cessRate ?? null,
+            cat.calcMethod ?? "FIXED",
+            cat.createdAt || now,
+            cat.updatedAt || now,
+            cat.deletedAt ?? null,
+            cat.syncedAt || now,
+          );
+
+          // Replace components and defaults from server
+          if (Array.isArray(cat.components)) {
+            db.prepare(
+              `DELETE FROM tax_category_components WHERE categoryId=?`,
+            ).run(cat.id);
+            const insComp = db.prepare(
+              `INSERT INTO tax_category_components(id,categoryId,component,rate,createdAt,updatedAt)
+               VALUES(?,?,?,?,?,?)`,
+            );
+            for (const c of cat.components) {
+              insComp.run(
+                c.id || uuidv4(),
+                cat.id,
+                c.component,
+                c.rate,
+                c.createdAt || now,
+                c.updatedAt || now,
+              );
+            }
+          }
+
+          if (cat.defaults) {
+            db.prepare(
+              `DELETE FROM tax_category_defaults WHERE categoryId=?`,
+            ).run(cat.id);
+            const d = cat.defaults;
+            db.prepare(
+              `INSERT INTO tax_category_defaults(
+                id,categoryId,
+                salesAccountId,purchaseAccountId,salesReturnAccountId,purchaseReturnAccountId,
+                outputCgstAccountId,outputSgstAccountId,outputIgstAccountId,
+                inputCgstAccountId,inputSgstAccountId,inputIgstAccountId,
+                cessAccountId,singleTaxAccountId,createdAt,updatedAt)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+            ).run(
+              d.id || uuidv4(),
+              cat.id,
+              d.salesAccountId || null,
+              d.purchaseAccountId || null,
+              d.salesReturnAccountId || null,
+              d.purchaseReturnAccountId || null,
+              d.outputCgstAccountId || null,
+              d.outputSgstAccountId || null,
+              d.outputIgstAccountId || null,
+              d.inputCgstAccountId || null,
+              d.inputSgstAccountId || null,
+              d.inputIgstAccountId || null,
+              d.cessAccountId || null,
+              d.singleTaxAccountId || null,
+              d.createdAt || now,
+              d.updatedAt || now,
+            );
+          }
+        }
+      })(items);
+      return { success: true, count: items.length };
+    } catch (e) {
+      return { success: false, error: String(e?.message || e) };
+    }
   });
 }
 

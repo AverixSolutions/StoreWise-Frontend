@@ -260,17 +260,17 @@ function registerProductHandlers() {
 
     db.prepare(
       `
-    INSERT INTO products 
-      (
-        id, licenseId, code, codeNumber, shortCode,
-        name, brand, category, subcategory,
-        productName, model, size,
-        unit, tax, hsn, costPrice, salePrice, stock, barcode,
-        imagePath, imageFileName,
-        createdAt, updatedAt
-      ) 
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `,
+INSERT INTO products 
+  (
+    id, licenseId, code, codeNumber, shortCode,
+    name, brand, category, subcategory,
+    productName, model, size,
+    unit, tax, hsn, costPrice, salePrice, stock, barcode,
+    imagePath, imageFileName,
+    createdAt, updatedAt, isSynced
+  ) 
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+`,
     ).run(
       newId,
       product.licenseId,
@@ -563,40 +563,6 @@ LIMIT ? OFFSET ?
       .get(productId);
 
     return product;
-  });
-
-  ipcMain.handle("get-dirty-products", (event, licenseId, limit = 200) => {
-    return db
-      .prepare(
-        `
-    SELECT *
-    FROM products
-    WHERE licenseId = ?
-      AND (
-        syncedAt IS NULL
-        OR updatedAt > syncedAt
-        OR (deletedAt IS NOT NULL AND (syncedAt IS NULL OR deletedAt > syncedAt))
-      )
-    ORDER BY updatedAt ASC, id ASC
-    LIMIT ?
-  `,
-      )
-      .all(licenseId, limit);
-  });
-
-  ipcMain.handle("mark-products-synced", (event, ids, serverSyncedAt) => {
-    const ts = serverSyncedAt || new Date().toISOString();
-    const trx = db.transaction((ids) => {
-      const stmt = db.prepare(`
-      UPDATE products
-      SET isSynced = 1,
-          syncedAt = ?
-      WHERE id = ?
-    `);
-      ids.forEach((id) => stmt.run(ts, id));
-    });
-    trx(ids);
-    return { success: true, syncedAt: ts };
   });
 
   // UPGRADED: get-product-by-barcode with batch support

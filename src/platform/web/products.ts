@@ -204,6 +204,7 @@ export async function webCreateProduct(
     };
     await idbPut(STORES.PRODUCTS, record);
     await bumpCodeSequence(product.licenseId, product.codeNumber);
+    _triggerProductSync();
     return { success: true, productId: id };
   } catch (err: any) {
     return { success: false, error: String(err?.message || err) };
@@ -246,6 +247,7 @@ export async function webUpdateProduct(
       isSynced: 0,
       syncedAt: null,
     });
+    _triggerProductSync();
     return { success: true };
   } catch (err: any) {
     return { success: false, error: String(err?.message || err) };
@@ -266,6 +268,7 @@ export async function webDeleteProduct(
       isSynced: 0,
       syncedAt: null,
     });
+    _triggerProductSync();
     // soft delete batches too
     const batches = await idbGetAllByIndex<WebBatch>(
       STORES.PRODUCT_BATCHES,
@@ -872,4 +875,13 @@ export async function webRebuildProductStock(
 ): Promise<{ success: boolean; stock: number }> {
   const stock = await rebuildProductStock(productId);
   return { success: true, stock };
+}
+
+function _triggerProductSync() {
+  if (typeof window === "undefined") return;
+  import("@/sync/SyncManager")
+    .then(({ SyncManager }) => {
+      SyncManager.pushEntity("product").catch(() => {});
+    })
+    .catch(() => {});
 }

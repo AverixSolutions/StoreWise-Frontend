@@ -18,6 +18,22 @@ import type {
   UnitListResult,
   UnitSavePayload,
   UnitMutationResult,
+  PurchaseCreatePayload,
+  PurchaseUpdatePayload,
+  PurchaseItemInput,
+  CreatePurchaseResult,
+  PurchaseListFilters,
+  PurchaseListResult,
+  PurchaseFullResult,
+  PurchaseHoldSavePayload,
+  PurchaseHoldSaveResult,
+  PurchaseHoldsListResult,
+  PurchaseHoldGetResult,
+  SupplierListFilters,
+  SupplierListResult,
+  BulkPriceUpdate,
+  SlNoResult,
+  HoldNoResult,
 } from "../types";
 import {
   getWebShopSettings,
@@ -62,6 +78,36 @@ import {
   webSeedIndiaGST,
   webListDefaultableAccounts,
 } from "./tax";
+// ── purchase imports ──────────────────────────────────────────────────────────
+import {
+  webListPurchases,
+  webGetPurchaseFull,
+  webCreatePurchase,
+  webUpdatePurchase,
+  webDeletePurchase,
+  webPeekNextPurchaseSlNo,
+  webSavePurchaseHold,
+  webListPurchaseHolds,
+  webGetPurchaseHold,
+  webDeletePurchaseHold,
+  webPeekNextHoldNo,
+  webListSuppliers,
+  webBulkUpdateProductPrices,
+} from "./purchases";
+
+import {
+  webListSales,
+  webGetSaleFull,
+  webCreateSale,
+  webUpdateSale,
+  webDeleteSale,
+  webPeekNextSaleSlNo,
+  webSaveSaleHold,
+  webListSaleHolds,
+  webGetSaleHold,
+  webDeleteSaleHold,
+  webListCustomers,
+} from "./sales";
 
 let onlineHookRegistered = false;
 function ensureOnlineSyncHook() {
@@ -146,30 +192,23 @@ export const webPlatform: PlatformAPI = {
   // ── Categories ────────────────────────────────────────────────────────────
   listCategories: (licenseId: string): Promise<CategoryListResult> =>
     webListCategories(licenseId),
-
   saveCategory: (
     payload: CategorySavePayload,
   ): Promise<CategoryMutationResult> => webSaveCategory(payload),
-
   deleteCategory: (id: string): Promise<MutationResult> =>
     webDeleteCategory(id),
 
   // ── Brands ────────────────────────────────────────────────────────────────
   listBrands: (licenseId: string): Promise<BrandListResult> =>
     webListBrands(licenseId),
-
-  saveBrand: (payload: BrandSavePayload): Promise<BrandMutationResult> =>
-    webSaveBrand(payload),
-
+  saveBrand: (payload: BrandSavePayload): Promise<any> => webSaveBrand(payload),
   deleteBrand: (id: string): Promise<MutationResult> => webDeleteBrand(id),
 
   // ── Units ────────────────────────────────────────────────────────────────
   listUnits: (licenseId: string): Promise<UnitListResult> =>
     webListUnits(licenseId),
-
   saveUnit: (payload: UnitSavePayload): Promise<UnitMutationResult> =>
     webSaveUnit(payload),
-
   deleteUnit: (id: string): Promise<MutationResult> => webDeleteUnit(id),
 
   // ── Tax ───────────────────────────────────────────────────────────────────
@@ -185,14 +224,78 @@ export const webPlatform: PlatformAPI = {
     ensureOnlineSyncHook();
     return getWebShopSettings(licenseId);
   },
-
   saveShopSettings: async (payload: ShopSettingsPayload) => {
     ensureOnlineSyncHook();
     return saveWebShopSettings(payload);
   },
-
   syncShopSettings: async (licenseId: string) => {
     ensureOnlineSyncHook();
     return syncShopSettingsForLicense(licenseId);
   },
+
+  // ── Purchases ─────────────────────────────────────────────────────────────
+  createPurchase: (
+    purchase: PurchaseCreatePayload,
+    items: PurchaseItemInput[],
+  ): Promise<CreatePurchaseResult> => webCreatePurchase(purchase, items),
+
+  updatePurchase: (payload: PurchaseUpdatePayload): Promise<MutationResult> =>
+    webUpdatePurchase(payload),
+
+  deletePurchase: (
+    id: string,
+  ): Promise<MutationResult & { deletedAt?: string }> => webDeletePurchase(id),
+
+  listPurchases: (
+    licenseId: string,
+    filters?: PurchaseListFilters,
+  ): Promise<PurchaseListResult> => webListPurchases(licenseId, filters),
+
+  getPurchaseFull: (id: string): Promise<PurchaseFullResult> =>
+    webGetPurchaseFull(id),
+
+  peekNextPurchaseSlNo: (licenseId: string): Promise<SlNoResult> =>
+    webPeekNextPurchaseSlNo(licenseId),
+
+  savePurchaseHold: (
+    payload: PurchaseHoldSavePayload,
+  ): Promise<PurchaseHoldSaveResult> => webSavePurchaseHold(payload),
+
+  listPurchaseHolds: (
+    licenseId: string,
+    pagination?: Pagination,
+  ): Promise<PurchaseHoldsListResult> =>
+    webListPurchaseHolds(licenseId, pagination),
+
+  getPurchaseHold: (id: string): Promise<PurchaseHoldGetResult> =>
+    webGetPurchaseHold(id),
+
+  deletePurchaseHold: (id: string): Promise<MutationResult> =>
+    webDeletePurchaseHold(id),
+
+  peekNextHoldNo: (licenseId: string): Promise<HoldNoResult> =>
+    webPeekNextHoldNo(licenseId),
+
+  listSuppliers: (
+    licenseId: string,
+    filters?: SupplierListFilters,
+  ): Promise<SupplierListResult> => webListSuppliers(licenseId, filters),
+
+  bulkUpdateProductPrices: (
+    updates: BulkPriceUpdate[],
+  ): Promise<MutationResult> => webBulkUpdateProductPrices(updates),
+
+  // ── Sales ─────────────────────────────────────────────────────────────────
+  createSale: (sale, items) => webCreateSale(sale, items),
+  updateSale: (payload) => webUpdateSale(payload),
+  deleteSale: (id) => webDeleteSale(id),
+  listSales: (licenseId, filters) => webListSales(licenseId, filters),
+  getSaleFull: (id) => webGetSaleFull(id),
+  peekNextSaleSlNo: (licenseId) => webPeekNextSaleSlNo(licenseId),
+  saveSaleHold: (payload) => webSaveSaleHold(payload),
+  listSaleHolds: (licenseId, pagination) =>
+    webListSaleHolds(licenseId, pagination),
+  getSaleHold: (id) => webGetSaleHold(id),
+  deleteSaleHold: (id) => webDeleteSaleHold(id),
+  listCustomers: (licenseId, filters) => webListCustomers(licenseId, filters),
 };

@@ -83,6 +83,35 @@ function registerProductSyncHandlers() {
     return { success: true, count: items.length };
   });
 
+  // ── NEW: read dirty (unsynced) products for a given license ──────────────
+  ipcMain.handle("get-dirty-products", (event, licenseId, limit = 200) => {
+    const rows = db
+      .prepare(
+        `SELECT * FROM products
+         WHERE licenseId = ? AND isSynced = 0
+         ORDER BY updatedAt ASC
+         LIMIT ?`,
+      )
+      .all(licenseId, limit);
+    return rows;
+  });
+
+  // ── NEW: stamp a batch of products as synced after a successful push ─────
+  ipcMain.handle("mark-products-synced", (event, ids = [], serverUpdatedAt) => {
+    const update = db.prepare(
+      `UPDATE products
+       SET isSynced = 1, syncedAt = ?
+       WHERE id = ?`,
+    );
+    const trx = db.transaction((idList) => {
+      for (const id of idList) {
+        update.run(serverUpdatedAt, id);
+      }
+    });
+    trx(ids);
+    return { success: true };
+  });
+
   ipcMain.handle("sync-state:get", (event, scope = "products") => {
     return (
       db

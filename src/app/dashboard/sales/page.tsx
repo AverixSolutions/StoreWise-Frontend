@@ -26,6 +26,10 @@ import {
   round2,
 } from "@/components/sales/utils";
 import { printSaleBill } from "@/lib/print/printSaleBill";
+import { platform } from "@/platform";
+import { isSyncEnabled } from "@/platform/mode";
+import { SyncManager } from "@/sync/SyncManager";
+import { useSyncStatus } from "@/sync/SyncProvider";
 
 function makeSnapshot(header: HeaderForm, rows: ItemRow[]) {
   return JSON.stringify({
@@ -68,16 +72,19 @@ async function finalizeAfterSuccessfulSale({
 
 export default function SalesPage() {
   const router = useRouter();
+  const { pullNow } = useSyncStatus();
 
-  const licenseId =
-    typeof window !== "undefined"
-      ? localStorage.getItem("licenseId") || "demo-license"
-      : "demo-license";
+  const [isClient, setIsClient] = useState(false);
+  const [licenseId, setLicenseId] = useState("demo-license");
+  const [userId, setUserId] = useState("admin");
 
-  const userId =
-    typeof window !== "undefined"
-      ? localStorage.getItem("userName") || "admin"
-      : "admin";
+  useEffect(() => {
+    setIsClient(true);
+    if (typeof window !== "undefined") {
+      setLicenseId(localStorage.getItem("licenseId") || "demo-license");
+      setUserId(localStorage.getItem("userName") || "admin");
+    }
+  }, []);
 
   const [products, setProducts] = useState<any[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -86,6 +93,7 @@ export default function SalesPage() {
 
   const [editingSaleId, setEditingSaleId] = useState<string | null>(null);
   const [editingSlNo, setEditingSlNo] = useState<number | null>(null);
+  const [billDetailsOpen, setBillDetailsOpen] = useState(true);
 
   const [header, setHeader] = useState<HeaderForm>({
     billNo: "",
@@ -123,36 +131,64 @@ export default function SalesPage() {
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
 
   useEffect(() => {
+    if (!isClient) return;
+    pullNow("sale");
+    pullNow("saleItem");
     (async () => {
-      const res = await (window as any).electronAPI.getProducts(licenseId, {
+      const res = await platform.getProducts(licenseId, {
         page: 1,
         pageSize: 200,
       });
       setProducts(res.products);
     })();
     (async () => {
-      const res = await (window as any).electronAPI.getNextSaleSlNo(licenseId);
+      const res = await platform.peekNextSaleSlNo?.(licenseId);
       setNextEntryNo(res?.nextSlNo ?? 1);
     })();
-  }, [licenseId]);
+  }, [licenseId, isClient]);
+
+  useEffect(() => {
+    if (!isClient) return;
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const handler = (e: Event) => {
+      const { entity } = (e as CustomEvent<{ entity: string; count: number }>)
+        .detail;
+      if (debounceTimer) clearTimeout(debounceTimer);
+      if (entity === "sale" && !editingSaleId) {
+        debounceTimer = setTimeout(() => {
+          platform.peekNextSaleSlNo?.(licenseId).then((res) => {
+            setNextEntryNo(res?.nextSlNo ?? null);
+          });
+        }, 150);
+      }
+    };
+    window.addEventListener("kynflow:sync:updated", handler);
+    return () => {
+      window.removeEventListener("kynflow:sync:updated", handler);
+      if (debounceTimer) clearTimeout(debounceTimer);
+    };
+  }, [isClient, licenseId, editingSaleId]);
 
   useEffect(() => {
     loadCustomers();
   }, [showCustomerModal]);
 
   const loadCustomers = async () => {
-    const { customers: cs } = await (window as any).electronAPI.listCustomers(
-      licenseId,
-      { q: "", page: 1, pageSize: 100 },
+    const res = await platform.listCustomers?.(licenseId, {
+      q: "",
+      page: 1,
+      pageSize: 100,
+    });
+    setCustomers(
+      (res?.customers ?? []).map((c) => ({ id: c.id, name: c.name })),
     );
-    setCustomers(cs.map((c: any) => ({ id: c.id, name: c.name })));
   };
 
   const handleSelectProduct = async (rowIndex: number, productId: string) => {
-    const product = await (window as any).electronAPI.getProduct(productId);
+    const product = await platform.getProduct(productId);
     if (!product) return;
 
-    const batchesRes = await (window as any).electronAPI.listBarcodesForProduct(
+    const batchesRes = await platform.listBarcodesForProduct?.(
       licenseId,
       productId,
     );
@@ -268,9 +304,10 @@ export default function SalesPage() {
     if (!productId) return;
 
     try {
-      const batchesRes = await (
-        window as any
-      ).electronAPI.listBarcodesForProduct(licenseId, productId);
+      const batchesRes = await platform.listBarcodesForProduct?.(
+        licenseId,
+        productId,
+      );
 
       const liveBatches: BatchInfo[] = (batchesRes?.rows || [])
         .filter((b: any) => Number(b.stock || 0) > 0)
@@ -339,15 +376,14 @@ export default function SalesPage() {
     );
 
   async function saveHold(title?: string) {
-    const payload = {
-      id: undefined as string | undefined,
+    const res = await platform.saveSaleHold?.({
+      id: undefined,
       licenseId,
       userId,
       title: title || undefined,
       header,
       rows,
-    };
-    const res = await (window as any).electronAPI.saveSaleHold(payload);
+    });
     if (res?.success) {
       alert(`✅ Held as #${res.holdNo}${title ? ` • ${title}` : ""}`);
       resetAll();
@@ -366,7 +402,7 @@ export default function SalesPage() {
 
   async function handleResumeHold(holdId: string) {
     if (customers.length === 0) await loadCustomers();
-    const res = await (window as any).electronAPI.getSaleHold(holdId);
+    const res = await platform.getSaleHold?.(holdId);
     if (res?.success && res.hold) {
       const raw = (res.hold.header as any)?.customer;
       let customer: HeaderForm["customer"] = null;
@@ -378,7 +414,19 @@ export default function SalesPage() {
           customer = m ? m : { id: raw.id, name: raw.name ?? "" };
         }
       }
-      const nextHeader = { ...res.hold.header, customer };
+      const nextHeader: HeaderForm = {
+        billNo: (res.hold.header as any)?.billNo ?? "",
+        department: (res.hold.header as any)?.department ?? "",
+        debitAccount: (res.hold.header as any)?.debitAccount ?? "",
+        natureOfEntry: (res.hold.header as any)?.natureOfEntry ?? "",
+        saleDate:
+          (res.hold.header as any)?.saleDate ?? new Date().toISOString(),
+        entryTime:
+          (res.hold.header as any)?.entryTime ?? new Date().toISOString(),
+        discount: (res.hold.header as any)?.discount ?? 0,
+        saleType: (res.hold.header as any)?.saleType ?? "CASH",
+        customer,
+      };
       const nextRows = res.hold.rows;
 
       setHeader(nextHeader);
@@ -392,9 +440,11 @@ export default function SalesPage() {
 
   async function handleOpenSaleFromReport(id: string) {
     if (customers.length === 0) await loadCustomers();
-    const res = await (window as any).electronAPI.getSaleFull(id);
-    if (!res?.success) return alert("Failed to load sale");
-    const { sale, items } = res;
+    const res = await platform.getSaleFull?.(id);
+    if (!res?.success || !res.sale || !res.items)
+      return alert("Failed to load sale");
+    const sale = res.sale as any;
+    const items = res.items;
     const cust = sale.customerId
       ? customers.find((c) => c.id === sale.customerId) || {
           id: sale.customerId,
@@ -510,9 +560,13 @@ export default function SalesPage() {
         items,
       };
       try {
-        const res = await (window as any).electronAPI.updateSale(payload);
+        const res = await platform.updateSale?.(payload);
 
         if (res?.success) {
+          if (isSyncEnabled()) {
+            SyncManager.pushEntity("sale").catch(() => {});
+            SyncManager.pushEntity("saleItem").catch(() => {});
+          }
           alert("✅ Updated!");
           setEditingSaleId(null);
           resetAll();
@@ -542,9 +596,13 @@ export default function SalesPage() {
       saleType: header.saleType,
     };
     try {
-      const res = await (window as any).electronAPI.createSale(sale, items);
+      const res = await platform.createSale?.(sale, items);
 
       if (res?.success) {
+        if (isSyncEnabled()) {
+          SyncManager.pushEntity("sale").catch(() => {});
+          SyncManager.pushEntity("saleItem").catch(() => {});
+        }
         const shouldPrint = confirm(
           `✅ Saved! SlNo: ${res.slNo}, Total: ${res.totalAmount}\n\nOpen print preview now?`,
         );
@@ -558,14 +616,12 @@ export default function SalesPage() {
         await finalizeAfterSuccessfulSale({
           shouldPrint,
           printFn: res.saleId
-            ? () => printSaleBill(res.saleId, { preview: true })
+            ? () => printSaleBill(res.saleId!, { preview: true })
             : undefined,
         });
 
         try {
-          const peek = await (window as any).electronAPI.getNextSaleSlNo(
-            licenseId,
-          );
+          const peek = await platform.peekNextSaleSlNo?.(licenseId);
           setNextEntryNo(peek?.nextSlNo ?? null);
         } catch {}
 
@@ -674,13 +730,15 @@ export default function SalesPage() {
     setLeaveOpen(true);
   }
 
+  if (!isClient) return null;
+
   return (
-    <div className="flex h-screen flex-col bg-gray-50">
+    <div className="flex h-screen flex-col bg-kyn-bg text-kyn-text">
       <SalesNavigation onNavigate={tryNavigate} title="Sales" />
       <div className="flex-1 min-h-0 overflow-hidden p-0">
         {editingSaleId && (
-          <div className="px-4 py-2 border-b bg-white flex items-center gap-3">
-            <span className="text-sm text-gray-500">Saved bill open</span>
+          <div className="px-4 py-2 border-b border-kyn-border bg-kyn-surface flex items-center gap-3">
+            <span className="text-sm text-kyn-text-muted">Saved bill open</span>
 
             <button
               type="button"
@@ -694,7 +752,7 @@ export default function SalesPage() {
                   alert("Print failed: " + String(e?.message || e));
                 }
               }}
-              className="px-3 py-1.5 rounded bg-slate-800 text-white text-sm"
+              className="px-3 py-1.5 rounded bg-kyn-primary/20 text-kyn-text hover:bg-kyn-primary/30 transition"
             >
               Print Bill
             </button>
@@ -702,14 +760,23 @@ export default function SalesPage() {
             <button
               type="button"
               onClick={() => resetAll()}
-              className="px-3 py-1.5 rounded border border-gray-300 bg-white text-sm"
+              className="px-3 py-1.5 rounded border border-kyn-border bg-kyn-surface-2 text-kyn-text-soft hover:bg-kyn-surface-3"
             >
               New Bill
             </button>
           </div>
         )}
         <div
-          className={`grid grid-cols-[300px_1fr] ${editingSaleId ? "h-[calc(100%-41px)]" : "h-full"}`}
+          className={[
+            "grid overflow-hidden transition-all duration-200",
+            editingSaleId ? "h-[calc(100%-41px)]" : "h-full",
+            "grid-cols-1",
+            billDetailsOpen
+              ? "md:grid-cols-[240px_1fr] lg:grid-cols-[300px_1fr]"
+              : "md:grid-cols-[40px_1fr]  lg:grid-cols-[40px_1fr]",
+          ]
+            .join(" ")
+            .trim()}
         >
           <BillDetailsSection
             header={header}
@@ -727,8 +794,9 @@ export default function SalesPage() {
             }
             requireCustomer={header.saleType === "CREDIT"}
             isEditing={Boolean(editingSaleId)}
+            isOpen={billDetailsOpen}
+            onToggle={() => setBillDetailsOpen((v) => !v)}
           />
-
           <ItemsTableSection
             rows={rows}
             products={products}

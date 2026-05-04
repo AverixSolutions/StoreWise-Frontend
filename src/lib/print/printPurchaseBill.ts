@@ -1,6 +1,7 @@
 // src/lib/print/printPurchaseBill.ts
 import { getShopProfile } from "./getShopProfile";
 import { buildInvoiceHtml } from "./buildInvoiceHtml";
+import { platform } from "@/platform";
 
 export async function printPurchaseBill(
   purchaseId: string,
@@ -9,13 +10,21 @@ export async function printPurchaseBill(
     silent?: boolean;
   },
 ) {
-  const api = (window as any).electronAPI;
+  const isDesktop = !!(window as any).electronAPI;
 
-  if (!api?.getPurchaseFull || !api?.printHtml) {
-    throw new Error("Purchase print API not available");
+  // ── Fetch purchase data ───────────────────────────────────────────────────
+  let res: any;
+
+  if (isDesktop) {
+    const api = (window as any).electronAPI;
+    if (!api?.getPurchaseFull)
+      throw new Error("Purchase print API not available");
+    res = await api.getPurchaseFull(purchaseId);
+  } else {
+    // Use your existing platform abstraction
+    res = await platform.getPurchaseFull?.(purchaseId);
   }
 
-  const res = await api.getPurchaseFull(purchaseId);
   if (!res?.success) {
     throw new Error(res?.error || "Failed to load purchase");
   }
@@ -66,9 +75,58 @@ export async function printPurchaseBill(
     grandTotal,
   });
 
-  return api.printHtml(html, {
-    preview: options?.preview ?? true,
-    silent: options?.silent ?? false,
-    pageSize: "A4",
-  });
+  // ── Render / print ────────────────────────────────────────────────────────
+  if (isDesktop) {
+    return (window as any).electronAPI.printHtml(html, {
+      preview: options?.preview ?? true,
+      silent: options?.silent ?? false,
+      pageSize: "A4",
+    });
+  }
+
+  // Web: open a print-preview popup
+  return webPrint(html, options?.preview ?? true);
+}
+
+function webPrint(html: string, preview: boolean) {
+  const win = window.open("", "_blank", "width=900,height=700");
+  if (!win) {
+    // Popup blocked — fallback: inject into hidden iframe
+    return iframePrint(html);
+  }
+
+  win.document.write(html);
+  win.document.close();
+
+  if (!preview) {
+    // Small delay so styles/images load before print dialog fires
+    win.onload = () => {
+      win.focus();
+      win.print();
+      win.close();
+    };
+  }
+
+  return { success: true };
+}
+
+function iframePrint(html: string) {
+  const iframe = document.createElement("iframe");
+  iframe.style.cssText =
+    "position:fixed;width:0;height:0;border:none;left:-9999px";
+  document.body.appendChild(iframe);
+
+  const doc = iframe.contentDocument || iframe.contentWindow?.document;
+  if (!doc) return { success: false, error: "Cannot create print frame" };
+
+  doc.write(html);
+  doc.close();
+
+  iframe.onload = () => {
+    iframe.contentWindow?.focus();
+    iframe.contentWindow?.print();
+    setTimeout(() => document.body.removeChild(iframe), 1000);
+  };
+
+  return { success: true };
 }

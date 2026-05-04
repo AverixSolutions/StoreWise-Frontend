@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import SearchableDropdown from "@/components/ui/SearchableDropdown";
 import { platform } from "@/platform";
+import { getActiveLicenseId } from "@/lib/session/runtimeSession";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -670,10 +671,7 @@ function TaxEditorModal({
 
 export default function TaxSettings({ onBack }: { onBack?: () => void }) {
   const router = useRouter();
-  const licenseId =
-    typeof window !== "undefined"
-      ? localStorage.getItem("licenseId") || "demo-license"
-      : "demo-license";
+  const licenseId = getActiveLicenseId() ?? "demo-license";
 
   const [rows, setRows] = useState<TaxCategory[]>([]);
   const [editing, setEditing] = useState<TaxCategory | null>(null);

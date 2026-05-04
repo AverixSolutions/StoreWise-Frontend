@@ -103,8 +103,9 @@ function registerUnitHandlers() {
             error: `Code "${trimCode}" is already in use`,
           };
 
+        // FIX: mark dirty on update so the sync engine picks up the change
         db.prepare(
-          `UPDATE units SET code=?, label=?, updatedAt=? WHERE id=? AND licenseId=?`,
+          `UPDATE units SET code=?, label=?, updatedAt=?, isSynced=0, syncedAt=NULL WHERE id=? AND licenseId=?`,
         ).run(trimCode, trimLabel, now, id, licenseId);
 
         return { success: true, id };
@@ -120,10 +121,11 @@ function registerUnitHandlers() {
         return { success: false, error: `Code "${trimCode}" already exists` };
 
       const newId = uuidv4();
+      // FIX: mark dirty on insert so the sync engine picks up the new row
       db.prepare(
         `
-        INSERT INTO units (id, licenseId, code, label, isDefault, sortOrder, createdAt, updatedAt)
-        VALUES (?, ?, ?, ?, 0, 999, ?, ?)
+        INSERT INTO units (id, licenseId, code, label, isDefault, sortOrder, createdAt, updatedAt, isSynced, syncedAt)
+        VALUES (?, ?, ?, ?, 0, 999, ?, ?, 0, NULL)
       `,
       ).run(newId, licenseId, trimCode, trimLabel, now, now);
 
@@ -160,13 +162,108 @@ function registerUnitHandlers() {
       }
 
       const now = new Date().toISOString();
-      db.prepare(`UPDATE units SET deletedAt=?, updatedAt=? WHERE id=?`).run(
-        now,
-        now,
-        id,
-      );
+      // FIX: mark dirty on delete so the sync engine propagates the soft-delete
+      db.prepare(
+        `UPDATE units SET deletedAt=?, updatedAt=?, isSynced=0, syncedAt=NULL WHERE id=?`,
+      ).run(now, now, id);
       return { success: true };
     } catch (e) {
+      return { success: false, error: String(e?.message || e) };
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Sync IPC handlers
+  // ---------------------------------------------------------------------------
+
+  ipcMain.handle("unit:getDirty", (event, licenseId, limit = 200) => {
+    try {
+      return db
+        .prepare(
+          `SELECT * FROM units
+         WHERE licenseId = ?
+           AND (syncedAt IS NULL OR updatedAt > syncedAt
+                OR (deletedAt IS NOT NULL AND (syncedAt IS NULL OR deletedAt > syncedAt)))
+         ORDER BY updatedAt ASC LIMIT ?`,
+        )
+        .all(licenseId, limit);
+    } catch (e) {
+      return [];
+    }
+  });
+
+  ipcMain.handle("unit:markSynced", (event, ids, serverSyncedAt) => {
+    try {
+      const ts = serverSyncedAt || new Date().toISOString();
+      const stmt = db.prepare(
+        `UPDATE units SET isSynced = 1, syncedAt = ? WHERE id = ?`,
+      );
+      db.transaction((list) => list.forEach((id) => stmt.run(ts, id)))(ids);
+      return { success: true };
+    } catch (e) {
+      return { success: false, error: String(e?.message || e) };
+    }
+  });
+
+  ipcMain.handle("unit:bulkUpsert", (event, items = []) => {
+    console.log(
+      "[unit:bulkUpsert] received",
+      items.length,
+      "items",
+      JSON.stringify(items.map((i) => i.code)),
+    );
+    try {
+      db.transaction((rows) => {
+        for (const r of rows) {
+          console.log("[unit:bulkUpsert] processing", r.code, r.id);
+          const existingByCode = db
+            .prepare(
+              `SELECT id FROM units WHERE licenseId=? AND code=? AND id<>? LIMIT 1`,
+            )
+            .get(r.licenseId, r.code, r.id);
+
+          if (existingByCode) {
+            console.log(
+              "[unit:bulkUpsert] deleting conflicting id",
+              existingByCode.id,
+              "for code",
+              r.code,
+            );
+            db.prepare(`DELETE FROM units WHERE id=?`).run(existingByCode.id);
+          }
+
+          db.prepare(
+            `INSERT INTO units (id, licenseId, code, label, isDefault, sortOrder, createdAt, updatedAt, deletedAt, isSynced, syncedAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+           ON CONFLICT(id) DO UPDATE SET
+             code=excluded.code, label=excluded.label,
+             isDefault=excluded.isDefault, sortOrder=excluded.sortOrder,
+             updatedAt=excluded.updatedAt, deletedAt=excluded.deletedAt,
+             isSynced=1, syncedAt=excluded.syncedAt`,
+          ).run(
+            r.id,
+            r.licenseId,
+            r.code,
+            r.label,
+            r.isDefault ? 1 : 0, // ← convert boolean to integer
+            r.sortOrder ?? 999,
+            r.createdAt,
+            r.updatedAt,
+            r.deletedAt ?? null,
+            r.syncedAt ?? null,
+          );
+
+          console.log("[unit:bulkUpsert] upserted", r.code, r.id);
+        }
+      })(items);
+
+      console.log(
+        "[unit:bulkUpsert] transaction complete, count:",
+        items.length,
+      );
+      return { success: true, count: items.length };
+    } catch (e) {
+      console.error("[unit:bulkUpsert] error:", e?.message || e);
       return { success: false, error: String(e?.message || e) };
     }
   });

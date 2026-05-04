@@ -24,9 +24,9 @@ export default function SalesNavigation({
     return "Sales";
   }, [pathname, title]);
 
-  // Online/offline indicator (works offline in Electron as well)
+  // Online/offline indicator
   const [online, setOnline] = useState(
-    typeof navigator !== "undefined" ? navigator.onLine : true
+    typeof navigator !== "undefined" ? navigator.onLine : true,
   );
   useEffect(() => {
     const on = () => setOnline(true);
@@ -39,7 +39,7 @@ export default function SalesNavigation({
     };
   }, []);
 
-  // Keyboard: Ctrl/Cmd + B to go back to dashboard quickly
+  // Keyboard: Ctrl/Cmd + B to go back to dashboard
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
@@ -52,12 +52,12 @@ export default function SalesNavigation({
   }, [onNavigate]);
 
   return (
-    <div className="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-gray-200">
+    <div className="sticky top-0 z-40 bg-[#1e3a5f] border-b border-[#1e3a5f]">
       <div className="px-3 sm:px-4 py-2.5 flex items-center justify-between">
         {/* Back to Dashboard */}
         <button
           onClick={() => onNavigate("/dashboard")}
-          className="flex items-center gap-2 text-gray-700 hover:text-gray-900 transition-colors cursor-pointer"
+          className="flex items-center gap-2 text-white/70 hover:text-white transition-colors cursor-pointer"
           title="Back to Dashboard (Ctrl/Cmd+B)"
         >
           <ArrowLeft className="w-4 h-4" />
@@ -65,7 +65,7 @@ export default function SalesNavigation({
         </button>
 
         {/* Page Title */}
-        <h1 className="text-base sm:text-lg font-semibold text-gray-900">
+        <h1 className="text-sm sm:text-base lg:text-lg font-semibold text-white truncate max-w-[120px] sm:max-w-none">
           {inferredTitle}
         </h1>
 
@@ -74,8 +74,8 @@ export default function SalesNavigation({
           className={
             "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium " +
             (online
-              ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-              : "bg-amber-50 text-amber-700 border border-amber-200")
+              ? "bg-emerald-500/20 text-emerald-300 border border-emerald-400/30"
+              : "bg-amber-500/20 text-amber-300 border border-amber-400/30")
           }
           title={online ? "Online" : "Offline"}
         >
@@ -87,8 +87,8 @@ export default function SalesNavigation({
           <span>{online ? "Online" : "Offline"}</span>
         </div>
       </div>
-      {/* subtle gradient separator */}
-      <div className="h-[1px] bg-gradient-to-r from-transparent via-gray-200 to-transparent" />
+      {/* Brand gradient separator */}
+      <div className="h-[2px] bg-gradient-to-r from-[#20b7ff] via-[#b026ff] to-[#20b7ff]" />
     </div>
   );
 }

@@ -150,6 +150,26 @@ db.prepare(
    WHERE deletedAt IS NULL OR deletedAt = ''`,
 ).run();
 
+// ── Add sync columns to categories + brands ──────────────────────────────────
+addColumnIfMissing("categories", "isSynced", "INTEGER DEFAULT 0");
+addColumnIfMissing("categories", "syncedAt", "TEXT");
+addColumnIfMissing("brands", "isSynced", "INTEGER DEFAULT 0");
+addColumnIfMissing("brands", "syncedAt", "TEXT");
+
+db.prepare(
+  `
+  CREATE INDEX IF NOT EXISTS idx_categories_dirty
+  ON categories(licenseId, updatedAt, syncedAt, deletedAt)
+`,
+).run();
+
+db.prepare(
+  `
+  CREATE INDEX IF NOT EXISTS idx_brands_dirty
+  ON brands(licenseId, updatedAt, syncedAt, deletedAt)
+`,
+).run();
+
 // --- Batches (lots) ---------------------------------------------------------
 db.prepare(
   `
@@ -1218,6 +1238,18 @@ db.prepare(
 `,
 ).run();
 
+// ── Tax category sync columns ─────────────────────────────────────────────────
+addColumnIfMissing("tax_categories", "isSynced", "INTEGER DEFAULT 0");
+addColumnIfMissing("tax_categories", "syncedAt", "TEXT");
+addColumnIfMissing("tax_categories", "deletedAt", "TEXT");
+
+db.prepare(
+  `
+  CREATE INDEX IF NOT EXISTS idx_tax_categories_dirty
+  ON tax_categories(licenseId, updatedAt, syncedAt, deletedAt)
+`,
+).run();
+
 db.prepare(
   `
   CREATE TABLE IF NOT EXISTS tax_category_components (
@@ -1577,6 +1609,11 @@ db.prepare(
 `,
 ).run();
 
+// ── Shop settings sync columns ────────────────────────────────────────────────
+addColumnIfMissing("shop_settings", "isSynced", "INTEGER DEFAULT 0");
+addColumnIfMissing("shop_settings", "syncedAt", "TEXT");
+addColumnIfMissing("shop_settings", "logoUrl", "TEXT");
+
 db.prepare(
   `
   CREATE TABLE IF NOT EXISTS label_printers (
@@ -1668,6 +1705,16 @@ db.prepare(
   `
   CREATE INDEX IF NOT EXISTS idx_units_license
   ON units(licenseId, deletedAt)
+`,
+).run();
+
+addColumnIfMissing("units", "isSynced", "INTEGER DEFAULT 0");
+addColumnIfMissing("units", "syncedAt", "TEXT");
+
+db.prepare(
+  `
+  CREATE INDEX IF NOT EXISTS idx_units_dirty
+  ON units(licenseId, updatedAt, syncedAt, deletedAt)
 `,
 ).run();
 

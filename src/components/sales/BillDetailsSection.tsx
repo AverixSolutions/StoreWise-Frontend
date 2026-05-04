@@ -3,13 +3,10 @@ import {
   Plus,
   Receipt,
   UserRound,
-  Building2,
-  Landmark,
-  FileText,
-  Percent,
   CalendarClock,
   Wallet,
-  IndianRupee,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { HeaderForm } from "./types";
 import SearchableDropdown from "@/components/ui/SearchableDropdown";
@@ -27,16 +24,16 @@ interface Props {
   entryNo?: number;
   requireCustomer?: boolean;
   isEditing?: boolean;
+  isOpen: boolean;
+  onToggle: () => void;
 }
 
 const labelCls =
-  "text-xs text-gray-600 font-medium mb-1 flex items-center gap-1";
+  "text-xs text-slate-600 font-medium mb-1 flex items-center gap-1";
 const inputBase =
-  "w-full h-9 px-3 text-sm border border-gray-300 rounded-md bg-white outline-none transition-colors focus:border-averix-red-dark focus:ring-2 focus:ring-averix-red-light/50";
-const fieldWrap = "relative";
-const leftIcon =
-  "absolute inset-y-0 left-2 flex items-center text-gray-500 pointer-events-none";
-const inputWithIcon = inputBase + " pl-9";
+  "w-full h-9 px-3 text-sm border border-slate-300 rounded-md " +
+  "bg-white text-slate-800 outline-none transition-colors " +
+  "focus:border-[#20b7ff] focus:ring-2 focus:ring-[#20b7ff]/20";
 
 export default function BillDetailsSection({
   header,
@@ -50,15 +47,65 @@ export default function BillDetailsSection({
   entryNo,
   requireCustomer,
   isEditing,
+  isOpen,
+  onToggle,
 }: Props) {
+  // ── COLLAPSED STRIP ──────────────────────────────────────────
+  if (!isOpen) {
+    return (
+      <aside
+        className="w-10 bg-[#1e3a5f] flex flex-col items-center py-3 gap-4
+                   border-r border-slate-300 cursor-pointer select-none
+                   transition-all duration-200"
+        onClick={onToggle}
+        title="Show Bill Details"
+      >
+        <ChevronRight className="w-4 h-4 text-white/70 flex-shrink-0" />
+        <span
+          className="text-white/60 text-[10px] font-semibold uppercase tracking-widest"
+          style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}
+        >
+          Bill Details
+        </span>
+        {(!header.billNo || (requireCustomer && !header.customer)) && (
+          <span
+            className="w-2 h-2 rounded-full bg-rose-400 flex-shrink-0"
+            title="Required fields incomplete"
+          />
+        )}
+      </aside>
+    );
+  }
+
+  // ── EXPANDED PANEL ───────────────────────────────────────────
   return (
-    <section className="col-span-1 bg-white max-w-[300px] border border-gray-200 -mt-px p-4 space-y-4 overflow-y-auto no-scrollbar">
-      <div className="flex items-center gap-2">
-        <Receipt className="w-5 h-5 text-averix-red-dark" />
-        <h2 className="text-base font-semibold text-gray-900">Bill Details</h2>
+    <section
+      className="col-span-1 bg-white w-full md:max-w-[240px] lg:max-w-[300px]
+                 border-r border-slate-300 shadow-lg -mt-px p-4 space-y-4
+                 overflow-y-auto no-scrollbar h-full flex flex-col
+                 transition-all duration-200"
+    >
+      {/* Title bar */}
+      <div
+        className="flex items-center justify-between -mx-4 -mt-4 px-4 py-2.5
+                   bg-[#1e3a5f] rounded-t-none mb-4"
+      >
+        <div className="flex items-center gap-2">
+          <Receipt className="w-4 h-4 text-white/70" />
+          <h2 className="text-sm font-semibold text-white">Bill Details</h2>
+        </div>
+        <button
+          type="button"
+          onClick={onToggle}
+          title="Hide Bill Details"
+          className="text-white/60 hover:text-white transition-colors cursor-pointer"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
       </div>
 
       <div className="space-y-3">
+        {/* Entry No + Sale Type */}
         <div className="flex items-center gap-3 justify-center">
           <div>
             <label className={labelCls}>
@@ -66,26 +113,29 @@ export default function BillDetailsSection({
               Entry No
             </label>
             <input
-              className={inputBase + " bg-gray-50 text-gray-700"}
+              className={
+                inputBase + " bg-slate-100 text-slate-500 cursor-not-allowed"
+              }
               value={entryNo ?? "—"}
               readOnly
               disabled
             />
           </div>
+
           <div>
             <label className={labelCls}>
               <Wallet className="w-3.5 h-3.5" />
               Sale Type
             </label>
-            <div className="inline-flex rounded-md overflow-hidden border border-gray-300">
+            <div className="inline-flex rounded-md overflow-hidden border border-slate-200">
               <button
                 type="button"
                 onClick={() => setHeader((s) => ({ ...s, saleType: "CASH" }))}
                 className={
-                  "px-3 h-9 text-sm " +
+                  "px-3 h-9 text-sm transition-colors cursor-pointer " +
                   (header.saleType === "CASH"
-                    ? "bg-averix-red-dark text-white"
-                    : "bg-white text-gray-700 hover:bg-gray-50")
+                    ? "bg-[#1e3a5f] text-white"
+                    : "bg-white text-slate-600 hover:bg-slate-50")
                 }
               >
                 Cash
@@ -98,10 +148,10 @@ export default function BillDetailsSection({
                 }
                 onClick={() => setHeader((s) => ({ ...s, saleType: "CREDIT" }))}
                 className={
-                  "px-3 h-9 text-sm border-l border-gray-300 " +
+                  "px-3 h-9 text-sm border-l border-slate-200 transition-colors " +
                   (header.saleType === "CREDIT"
-                    ? "bg-averix-red-dark text-white"
-                    : "bg-white text-gray-700 hover:bg-gray-50")
+                    ? "bg-[#1e3a5f] text-white cursor-pointer"
+                    : "bg-white text-slate-600 hover:bg-slate-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed")
                 }
               >
                 Credit
@@ -110,34 +160,31 @@ export default function BillDetailsSection({
           </div>
         </div>
 
+        {/* Bill No */}
         <div>
           <label className={labelCls}>
             <Receipt className="w-3.5 h-3.5" />
             Bill No
           </label>
-          <div className={fieldWrap}>
-            <div className={leftIcon}>
-              <Receipt className="w-4 h-4" />
-            </div>
-            <input
-              className={inputWithIcon}
-              value={header.billNo}
-              onChange={(e) =>
-                setHeader((s) => ({ ...s, billNo: e.target.value }))
-              }
-              placeholder="Enter bill number"
-            />
-          </div>
+          <input
+            className={inputBase}
+            value={header.billNo}
+            onChange={(e) =>
+              setHeader((s) => ({ ...s, billNo: e.target.value }))
+            }
+            placeholder="Enter bill number"
+            id="bill-details-billno"
+          />
         </div>
 
-        {/* FIXED: Both Sale Date and Entry Date now expose date + time */}
+        {/* Sale Date + Entry Date */}
         <div className="grid grid-cols-2 gap-3 min-w-0">
           <div className="min-w-0">
             <label className={labelCls}>
               <CalendarClock className="w-3.5 h-3.5" />
               Sale Date
             </label>
-            <div className="grid grid-cols-[1fr_auto] gap-2">
+            <div className="grid grid-cols-[1fr_auto] gap-1.5">
               <input
                 className={inputBase + " text-xs px-2"}
                 type="date"
@@ -149,7 +196,7 @@ export default function BillDetailsSection({
                 }}
               />
               <input
-                className={inputBase + " text-xs px-2 w-[90px]"}
+                className={inputBase + " text-xs px-2 w-[80px]"}
                 type="time"
                 value={toLocalTime(header.saleDate)}
                 onChange={(e) => {
@@ -165,36 +212,25 @@ export default function BillDetailsSection({
               <CalendarClock className="w-3.5 h-3.5" />
               Entry Date
             </label>
-            <div className="grid grid-cols-[1fr_auto] gap-2">
-              <input
-                className={inputBase + " text-xs px-2"}
-                type="date"
-                value={toLocalDate(header.entryTime)}
-                onChange={(e) => {
-                  const d = e.target.value;
-                  const t = toLocalTime(header.entryTime);
-                  setHeader((s) => ({ ...s, entryTime: fromDateTime(d, t) }));
-                }}
-              />
-              <input
-                className={inputBase + " text-xs px-2 w-[90px]"}
-                type="time"
-                value={toLocalTime(header.entryTime)}
-                onChange={(e) => {
-                  const t = e.target.value;
-                  const d = toLocalDate(header.entryTime);
-                  setHeader((s) => ({ ...s, entryTime: fromDateTime(d, t) }));
-                }}
-              />
-            </div>
+            <input
+              className={inputBase + " text-xs px-2"}
+              type="date"
+              value={toLocalDate(header.entryTime)}
+              onChange={(e) => {
+                const d = e.target.value;
+                const t = toLocalTime(header.entryTime);
+                setHeader((s) => ({ ...s, entryTime: fromDateTime(d, t) }));
+              }}
+            />
           </div>
         </div>
 
+        {/* Customer */}
         <div>
           <label className={labelCls}>
             <UserRound className="w-3.5 h-3.5" />
             Customer{" "}
-            {requireCustomer ? <span className="text-red-500">*</span> : null}
+            {requireCustomer ? <span className="text-rose-500">*</span> : null}
           </label>
           <div className="flex gap-2">
             <div className="flex-1">
@@ -204,54 +240,81 @@ export default function BillDetailsSection({
                   const cust = customers.find((c) => c.id === val);
                   setHeader((s) => ({ ...s, customer: cust || null }));
                 }}
-                options={customers.map((c) => ({ value: c.id, label: c.name }))}
-                placeholder="Select customer"
+                options={customers.map((c) => ({
+                  value: c.id,
+                  label: c.name,
+                }))}
+                placeholder="Select customer..."
+                controlClassName="h-9 text-sm px-2"
+                inputClassName="h-9 text-sm"
+                optionClassName="text-sm"
+                menuClassName="text-sm"
               />
             </div>
             <button
               type="button"
               onClick={() => setShowCustomerModal(true)}
-              className="h-9 px-3 bg-averix-red-dark text-white rounded-md hover:bg-averix-red-darker transition-colors"
+              className="px-3 h-9 rounded-md bg-[#1e3a5f] text-white
+                         hover:bg-[#16304f] transition-colors
+                         inline-flex items-center justify-center cursor-pointer"
               title="Add new customer"
             >
               <Plus className="w-4 h-4" />
             </button>
           </div>
         </div>
+      </div>
 
-        {/* Summary Section */}
-        <div className="pt-3 border-t border-gray-200 space-y-2">
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-600">Subtotal:</span>
-            <span className="font-medium text-gray-900">
-              ₹{subTotal.toFixed(2)}
+      {/* Summary card — matches purchase style */}
+      <div
+        className="mt-2 rounded-xl border border-slate-300 bg-white
+                   shadow-[0_4px_20px_rgba(3,10,24,0.06)] overflow-hidden"
+      >
+        <div className="h-1 bg-gradient-to-r from-[#20b7ff] to-[#b026ff]" />
+        <div className="p-3 space-y-1.5">
+          <div className="flex justify-between text-xs text-slate-500">
+            <span>Sub Total</span>
+            <span className="font-medium text-slate-700">
+              ₹ {Number(subTotal).toFixed(2)}
             </span>
           </div>
-          <div className="flex justify-between text-base font-semibold">
-            <span className="text-gray-900">Grand Total:</span>
-            <span className="text-averix-red-dark">
-              ₹{grandTotal.toFixed(2)}
+          <div className="border-t border-slate-100 pt-2 flex justify-between items-center">
+            <span className="text-sm font-semibold text-slate-700">
+              Grand Total
+            </span>
+            <span className="text-lg font-bold text-[#1e3a5f]">
+              ₹ {Number(grandTotal).toFixed(2)}
             </span>
           </div>
         </div>
+      </div>
 
-        {/* Action Buttons */}
-        <div className="flex gap-2 pt-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="flex-1 h-9 px-4 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={onSave}
-            className="flex-1 h-9 px-4 text-sm font-medium text-white bg-averix-red-dark rounded-md hover:bg-averix-red-darker transition-colors"
-          >
-            {isEditing ? "Update" : "Save"}
-          </button>
-        </div>
+      {/* Actions */}
+      <div className="flex gap-2 pt-1">
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={header.saleType === "CREDIT" && !header.customer}
+          className={
+            "flex-1 h-9 px-3 rounded-md transition-colors font-medium " +
+            "inline-flex items-center justify-center gap-2 text-sm " +
+            (header.saleType === "CREDIT" && !header.customer
+              ? "bg-slate-200 text-slate-400 cursor-not-allowed"
+              : "bg-[#1e3a5f] text-white hover:bg-[#16304f] cursor-pointer")
+          }
+        >
+          <Receipt className="w-4 h-4" />
+          {isEditing ? "Update" : "Save"}
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="flex-1 h-9 bg-white border border-slate-200 px-3 rounded-md
+                     hover:bg-slate-50 transition-colors font-medium
+                     text-slate-600 text-sm cursor-pointer"
+        >
+          Cancel
+        </button>
       </div>
     </section>
   );

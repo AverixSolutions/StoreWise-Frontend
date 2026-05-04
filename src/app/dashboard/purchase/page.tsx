@@ -30,6 +30,10 @@ import {
 import BarcodePrintCenterButton from "@/components/barcodes/BarcodePrintCenterButton";
 import type { PrintCenterItemRow } from "@/lib/barcode/printCenterTypes";
 import { printPurchaseBill } from "@/lib/print/printPurchaseBill";
+import { platform } from "@/platform";
+import { isSyncEnabled } from "@/platform/mode";
+import { SyncManager } from "@/sync/SyncManager";
+import { useSyncStatus } from "@/sync/SyncProvider";
 
 type BatchDecision = "OVERRIDE" | "NEW";
 
@@ -136,6 +140,7 @@ function getNextPreviewBarcode(
 
 export default function PurchasePage() {
   const router = useRouter();
+  const { pullNow } = useSyncStatus();
 
   const initialSnapshot = useRef<string | null>(null);
 
@@ -257,22 +262,50 @@ export default function PurchasePage() {
 
   useEffect(() => {
     if (!isClient) return;
-
-    (async () => {
-      const res = await (window as any).electronAPI.getProducts(licenseId, {
-        page: 1,
-        pageSize: 200,
-      });
-      setProducts(res.products);
-    })();
-
-    (async () => {
-      const res = await (window as any).electronAPI.getNextPurchaseSlNo(
-        licenseId,
-      );
+    pullNow("purchase");
+    pullNow("purchaseItem");
+    pullNow("supplier");
+    platform.getProducts(licenseId, { page: 1, pageSize: 200 }).then((res) => {
+      setProducts(res.products as Product[]);
+    });
+    platform.peekNextPurchaseSlNo?.(licenseId).then((res) => {
       setNextEntryNo(res?.nextSlNo ?? 1);
-    })();
+    });
   }, [licenseId, isClient]);
+
+  useEffect(() => {
+    if (!isClient) return;
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const handler = (e: Event) => {
+      const { entity } = (e as CustomEvent<{ entity: string; count: number }>)
+        .detail;
+      if (debounceTimer) clearTimeout(debounceTimer);
+      if (entity === "product") {
+        debounceTimer = setTimeout(() => {
+          platform
+            .getProducts(licenseId, { page: 1, pageSize: 200 })
+            .then((res) => {
+              setProducts(res.products as Product[]);
+            });
+        }, 150);
+      }
+      if (entity === "supplier") {
+        debounceTimer = setTimeout(() => loadSuppliers(), 150);
+      }
+      if (entity === "purchase" && !editingPurchaseId) {
+        debounceTimer = setTimeout(() => {
+          platform.peekNextPurchaseSlNo?.(licenseId).then((res) => {
+            setNextEntryNo(res?.nextSlNo ?? null);
+          });
+        }, 150);
+      }
+    };
+    window.addEventListener("kynflow:sync:updated", handler);
+    return () => {
+      window.removeEventListener("kynflow:sync:updated", handler);
+      if (debounceTimer) clearTimeout(debounceTimer);
+    };
+  }, [isClient, licenseId, editingPurchaseId]);
 
   useEffect(() => {
     loadSuppliers();
@@ -285,22 +318,22 @@ export default function PurchasePage() {
   }, [header.supplier]);
 
   const loadSuppliers = async () => {
-    const { suppliers: sups } = await (window as any).electronAPI.listSuppliers(
-      licenseId,
-      { q: "", page: 1, pageSize: 100 },
+    const res = await platform.listSuppliers?.(licenseId, {
+      q: "",
+      page: 1,
+      pageSize: 100,
+    });
+    setSuppliers(
+      (res?.suppliers ?? []).map((s) => ({ id: s.id, name: s.name })),
     );
-    setSuppliers(sups.map((s: any) => ({ id: s.id, name: s.name })));
   };
 
   const handleSelectProduct = async (rowIndex: number, productId: string) => {
     try {
       const [product, peekRes, batchesRes] = await Promise.all([
-        (window as any).electronAPI.getProduct(productId),
-        (window as any).electronAPI.peekNextBarcode(licenseId),
-        (window as any).electronAPI.listBarcodesForProduct(
-          licenseId,
-          productId,
-        ),
+        platform.getProduct(productId),
+        platform.peekNextBarcode?.(licenseId),
+        platform.listBarcodesForProduct?.(licenseId, productId),
       ]);
 
       if (!product) return;
@@ -341,8 +374,9 @@ export default function PurchasePage() {
                 expiryDate: null,
                 forceNewBatch: false,
                 mrp:
-                  product.mrp != null && !Number.isNaN(Number(product.mrp))
-                    ? Number(product.mrp)
+                  (product as any).mrp != null &&
+                  !Number.isNaN(Number((product as any).mrp))
+                    ? Number((product as any).mrp)
                     : null,
                 salePrice:
                   product.salePrice != null &&
@@ -453,11 +487,8 @@ export default function PurchasePage() {
 
     try {
       const [batchesRes, peekRes] = await Promise.all([
-        (window as any).electronAPI.listBarcodesForProduct(
-          licenseId,
-          productId,
-        ),
-        (window as any).electronAPI.peekNextBarcode(licenseId),
+        platform.listBarcodesForProduct?.(licenseId, productId),
+        platform.peekNextBarcode?.(licenseId),
       ]);
 
       const batches: BatchInfo[] = (batchesRes?.rows || []).map((b: any) => ({
@@ -500,9 +531,10 @@ export default function PurchasePage() {
     if (!typedBarcode) return;
 
     try {
-      const existingProduct = await (
-        window as any
-      ).electronAPI.getProductByBarcode(licenseId, typedBarcode);
+      const existingProduct = await platform.getProductByBarcode(
+        licenseId,
+        typedBarcode,
+      );
 
       if (
         existingProduct &&
@@ -528,7 +560,7 @@ export default function PurchasePage() {
         return;
       }
 
-      const res = await (window as any).electronAPI.listBarcodesForProduct(
+      const res = await platform.listBarcodesForProduct?.(
         licenseId,
         row.productId,
       );
@@ -600,9 +632,7 @@ export default function PurchasePage() {
         const productName =
           products.find((p) => p.id === row.productId)?.name || row.name;
 
-        const peekRes = await (window as any).electronAPI.peekNextBarcode(
-          licenseId,
-        );
+        const peekRes = await platform.peekNextBarcode?.(licenseId);
 
         setBatchPicker({
           rowIndex,
@@ -683,7 +713,7 @@ export default function PurchasePage() {
       rows,
     };
 
-    const res = await (window as any).electronAPI.savePurchaseHold(payload);
+    const res = await platform.savePurchaseHold?.(payload);
     if (res?.success) {
       alert(`✅ Held as #${res.holdNo}${title ? ` • ${title}` : ""}`);
       resetAll();
@@ -748,7 +778,7 @@ export default function PurchasePage() {
       await loadSuppliers();
     }
 
-    const res = await (window as any).electronAPI.getPurchaseHold(holdId);
+    const res = await platform.getPurchaseHold?.(holdId);
     if (res?.success && res.hold) {
       const normalized = normalizeHeaderFromHold(res.hold.header, suppliers);
       const nextRows = res.hold.rows;
@@ -765,10 +795,11 @@ export default function PurchasePage() {
   async function handleOpenPurchaseFromReport(purchaseId: string) {
     if (suppliers.length === 0) await loadSuppliers();
 
-    const res = await (window as any).electronAPI.getPurchaseFull(purchaseId);
+    const res = await platform.getPurchaseFull?.(purchaseId);
     if (!res?.success) return alert("Failed to load purchase");
 
     const { purchase, items } = res;
+    if (!purchase || !items) return alert("Failed to load purchase data");
 
     const hdr = headerFromPurchaseDb(purchase, suppliers);
     const mappedRows = rowsFromDbItems(items);
@@ -906,9 +937,13 @@ export default function PurchasePage() {
       };
 
       try {
-        const res = await (window as any).electronAPI.updatePurchase(payload);
+        const res = await platform.updatePurchase?.(payload);
 
         if (res?.success) {
+          if (isSyncEnabled()) {
+            SyncManager.pushEntity("purchase").catch(() => {});
+            SyncManager.pushEntity("purchaseItem").catch(() => {});
+          }
           alert("✅ Updated!");
           setEditingPurchaseId(null);
           resetAll();
@@ -945,10 +980,7 @@ export default function PurchasePage() {
     };
 
     try {
-      const res = await (window as any).electronAPI.createPurchase(
-        purchase,
-        items,
-      );
+      const res = await platform.createPurchase?.(purchase, items);
 
       if (!res?.success) {
         const msg = res?.error || "Unknown error";
@@ -958,10 +990,13 @@ export default function PurchasePage() {
         return false;
       }
 
+      if (isSyncEnabled()) {
+        SyncManager.pushEntity("purchase").catch(() => {});
+        SyncManager.pushEntity("purchaseItem").catch(() => {});
+      }
+
       try {
-        const peek = await (window as any).electronAPI.getNextPurchaseSlNo(
-          licenseId,
-        );
+        const peek = await platform.peekNextPurchaseSlNo?.(licenseId);
         setNextEntryNo(peek?.nextSlNo ?? null);
       } catch {}
 
@@ -1023,9 +1058,7 @@ export default function PurchasePage() {
 
         if (priceUpdates.length > 0) {
           try {
-            await (window as any).electronAPI.bulkUpdateProductPrices(
-              priceUpdates,
-            );
+            await platform.bulkUpdateProductPrices?.(priceUpdates);
           } catch (e) {
             console.error("Failed to update product fields:", e);
           }

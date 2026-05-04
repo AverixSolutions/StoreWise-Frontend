@@ -29,9 +29,12 @@ async function seedDefaults(licenseId: string) {
         createdAt: now,
         updatedAt: now,
         deletedAt: null,
-      });
+        isSynced: 0,
+        syncedAt: null,
+      } as any);
     }
   }
+  _triggerSync();
 }
 
 export async function webListUnits(
@@ -103,7 +106,10 @@ export async function webSaveUnit(
         code: trimCode,
         label: trimLabel,
         updatedAt: now,
+        isSynced: 0,
+        syncedAt: (existing as any).syncedAt ?? null,
       });
+      _triggerSync();
       return { success: true, id };
     }
 
@@ -122,7 +128,10 @@ export async function webSaveUnit(
       createdAt: now,
       updatedAt: now,
       deletedAt: null,
-    });
+      isSynced: 0,
+      syncedAt: null,
+    } as any);
+    _triggerSync();
     return { success: true, id };
   } catch (e: any) {
     return { success: false, error: String(e?.message || e) };
@@ -139,9 +148,25 @@ export async function webDeleteUnit(
     if (unit.isDefault)
       return { success: false, error: "Built-in units cannot be deleted" };
     const now = new Date().toISOString();
-    await idbPut(STORES.UNITS, { ...unit, deletedAt: now, updatedAt: now });
+    await idbPut(STORES.UNITS, {
+      ...unit,
+      deletedAt: now,
+      updatedAt: now,
+      isSynced: 0,
+      syncedAt: (unit as any).syncedAt ?? null,
+    });
+    _triggerSync();
     return { success: true };
   } catch (e: any) {
     return { success: false, error: String(e?.message || e) };
   }
+}
+
+function _triggerSync() {
+  if (typeof window === "undefined") return;
+  import("@/sync/SyncManager")
+    .then(({ SyncManager }) => {
+      SyncManager.pushEntity("unit").catch(() => {});
+    })
+    .catch(() => {});
 }

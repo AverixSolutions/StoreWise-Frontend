@@ -163,6 +163,7 @@ const webSafeSections: MasterSection[] = [
   "brandCategory",
   "units",
   "tax",
+  "suppliers",
 ];
 
 const sectionTitles: Record<MasterSection, string> = {

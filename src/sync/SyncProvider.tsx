@@ -15,6 +15,8 @@ import { isSyncEnabled } from "@/platform/mode";
 type SyncContextValue = {
   status: SyncStatus;
   syncNow: () => void;
+  pushEntity: (entity: string) => void;
+  pullNow: (entityName?: string) => void;
 };
 
 const SyncContext = createContext<SyncContextValue>({
@@ -26,6 +28,8 @@ const SyncContext = createContext<SyncContextValue>({
     stats: {},
   },
   syncNow: () => {},
+  pushEntity: () => {},
+  pullNow: () => {},
 });
 
 export function SyncProvider({ children }: { children: ReactNode }) {
@@ -43,8 +47,11 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     const isDesktop =
       typeof window !== "undefined" && !!(window as any).electronAPI;
 
-    // init() is idempotent — safe even if login already called initAndSync()
-    SyncManager.init(isDesktop);
+    // initAndSync is safe to call here — init() inside it is guarded by
+    // `if (this.initialized) return`, and syncNow() is guarded by
+    // `if (this.status.running) return`. No double-sync risk.
+    SyncManager.initAndSync(isDesktop).catch(console.error);
+
     const unsub = SyncManager.subscribe(setStatus);
 
     return () => {
@@ -56,8 +63,16 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     SyncManager.syncNow();
   }, []);
 
+  const pushEntity = useCallback((entity: string) => {
+    SyncManager.pushEntity(entity).catch(() => {});
+  }, []);
+
+  const pullNow = useCallback((entityName?: string) => {
+    SyncManager.pullNow(entityName).catch(() => {});
+  }, []);
+
   return (
-    <SyncContext.Provider value={{ status, syncNow }}>
+    <SyncContext.Provider value={{ status, syncNow, pushEntity, pullNow }}>
       {children}
     </SyncContext.Provider>
   );

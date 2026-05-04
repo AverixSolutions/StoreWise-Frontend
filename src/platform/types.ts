@@ -192,6 +192,7 @@ export type ShopSettingsPayload = {
   licenseId: string;
   shopName: string;
   logoDataUrl?: string | null;
+  logoUrl?: string | null;
   addressLine1?: string | null;
   addressLine2?: string | null;
   city?: string | null;
@@ -406,6 +407,9 @@ export type TaxCategoryRecord = {
   defaults?: TaxDefaultsRecord | null;
   createdAt?: string;
   updatedAt?: string;
+  deletedAt?: string | null;
+  isSynced?: number;
+  syncedAt?: string | null;
 };
 
 export type TaxCategoryListResult = {
@@ -441,6 +445,476 @@ export type AccountListResult = {
   success: boolean;
   rows: AccountOption[];
   error?: string;
+};
+
+// ── Purchase types ────────────────────────────────────────────────────────────
+
+export type PurchaseItemInput = {
+  productId: string;
+  barcode?: string | null;
+  quantity: number;
+  unit: string;
+  rate: number;
+  mrp?: number | null;
+  taxPercent: string;
+  taxAmount?: number;
+  discount?: number;
+  discountType?: "ABS" | "PCT";
+  salePrice?: number | null;
+  profit?: number | null;
+  totalCost?: number;
+  billedValue?: number;
+  effectiveUnitValue?: number;
+  batchNo?: string | null;
+  purchaseBatchNo?: string | null;
+  mfgDate?: string | null;
+  expiryDate?: string | null;
+  lineNo?: number;
+  isFree?: boolean;
+  batchId?: string | null;
+  profitPercent?: number;
+};
+
+export type PurchaseCreatePayload = {
+  billNo?: string | null;
+  supplierId?: string | null;
+  supplierName?: string | null;
+  department?: string | null;
+  debitAccount?: string | null;
+  natureOfEntry?: string | null;
+  purchaseDate: string;
+  entryTime?: string;
+  discount?: number;
+  licenseId: string;
+  userId?: string;
+  purchaseType: "CASH" | "CREDIT";
+};
+
+export type PurchaseUpdatePayload = {
+  id: string;
+  header: {
+    billNo?: string | null;
+    supplierId?: string | null;
+    supplierName?: string | null;
+    department?: string | null;
+    debitAccount?: string | null;
+    natureOfEntry?: string | null;
+    purchaseDate: string;
+    entryTime?: string;
+    discount?: number;
+    licenseId: string;
+    purchaseType: "CASH" | "CREDIT";
+    supplier?: { id: string; name: string } | null;
+  };
+  items: PurchaseItemInput[];
+};
+
+export type CreatePurchaseResult = {
+  success: boolean;
+  purchaseId?: string;
+  slNo?: number;
+  totalAmount?: number;
+  error?: string;
+};
+
+export type PurchaseListFilters = {
+  q?: string;
+  supplierId?: string | null;
+  dateFrom?: string | null;
+  dateTo?: string | null;
+  page?: number;
+  pageSize?: number;
+  includeDeleted?: boolean;
+};
+
+export type PurchaseRow = {
+  id: string;
+  slNo?: number;
+  billNo?: string | null;
+  supplierId?: string | null;
+  supplierName?: string | null;
+  purchaseDate: string;
+  entryTime?: string;
+  totalAmount: number;
+  discount?: number;
+  purchaseType?: string;
+  isSynced?: number;
+  deletedAt?: string | null;
+  syncedAt?: string | null;
+};
+
+export type PurchaseListResult = {
+  success: boolean;
+  total: number;
+  page: number;
+  pageSize: number;
+  rows: PurchaseRow[];
+  error?: string;
+};
+
+export type PurchaseItemRow = {
+  id: string;
+  purchaseId: string;
+  productId: string;
+  productName?: string | null;
+  productCode?: string | null;
+  barcode?: string | null;
+  quantity: number;
+  unit: string;
+  rate: number;
+  mrp?: number | null;
+  taxPercent: string;
+  taxAmount: number;
+  discount?: number;
+  discountType?: string;
+  salePrice?: number | null;
+  profit?: number | null;
+  totalCost: number;
+  billedValue?: number;
+  effectiveUnitValue?: number;
+  batchNo?: string | null;
+  purchaseBatchNo?: string | null;
+  mfgDate?: string | null;
+  expiryDate?: string | null;
+  lineNo?: number;
+  isFree?: number;
+  batchId?: string | null;
+};
+
+export type PurchaseFullResult = {
+  success: boolean;
+  purchase?: PurchaseRow & {
+    purchaseBatchNo?: string | null;
+    licenseId?: string;
+    userId?: string;
+    createdAt?: string;
+    updatedAt?: string;
+  };
+  items?: PurchaseItemRow[];
+  error?: string;
+};
+
+// ── Purchase Hold types ───────────────────────────────────────────────────────
+
+export type PurchaseHoldSavePayload = {
+  id?: string;
+  licenseId: string;
+  userId?: string;
+  title?: string | null;
+  header: Record<string, any>;
+  rows: any[];
+};
+
+export type PurchaseHoldSaveResult = {
+  success: boolean;
+  id?: string;
+  holdNo?: number | null;
+  updated?: boolean;
+  error?: string;
+};
+
+export type PurchaseHoldListRow = {
+  id: string;
+  holdNo: number;
+  title?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type PurchaseHoldsListResult = {
+  holds: PurchaseHoldListRow[];
+  total: number;
+};
+
+export type PurchaseHoldGetResult = {
+  success: boolean;
+  hold?: {
+    id: string;
+    holdNo: number;
+    title?: string | null;
+    header: Record<string, any>;
+    rows: any[];
+    createdAt?: string;
+    updatedAt?: string;
+  };
+  error?: string;
+};
+
+// ── Supplier types ────────────────────────────────────────────────────────────
+
+export type SupplierRecord = {
+  id: string;
+  licenseId: string;
+  name: string;
+  phone?: string | null;
+  email?: string | null;
+  gstin?: string | null;
+  code?: string | null;
+  codeNumber?: number;
+  category?: string | null;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  pincode?: string | null;
+  openingBalance?: number;
+  notes?: string | null;
+  settlementDays?: number | null;
+  creditLimit?: number | null;
+  createdAt?: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
+};
+
+export type SupplierListFilters = {
+  q?: string;
+  page?: number;
+  pageSize?: number;
+};
+
+export type SupplierListResult = {
+  suppliers: SupplierRecord[];
+  total: number;
+};
+
+// ── Misc purchase helpers ─────────────────────────────────────────────────────
+
+export type BulkPriceUpdate = {
+  productId: string;
+  salePrice?: number;
+  costPrice?: number;
+  unit?: string;
+};
+
+export type SlNoResult = {
+  nextSlNo: number;
+};
+
+export type HoldNoResult = {
+  nextHoldNo: number;
+};
+
+// ── Sale types ────────────────────────────────────────────────────────────────
+
+export type SaleItemInput = {
+  productId: string;
+  barcode?: string | null;
+  quantity: number;
+  unit: string;
+  rate: number;
+  mrp?: number | null;
+  taxPercent: string;
+  taxAmount?: number;
+  discount?: number;
+  discountType?: "ABS" | "PCT";
+  salePrice?: number | null;
+  profit?: number | null;
+  totalCost?: number;
+  billedValue?: number;
+  batchNo?: string | null;
+  purchaseBatchNo?: string | null;
+  mfgDate?: string | null;
+  expiryDate?: string | null;
+  lineNo?: number;
+  isFree?: boolean;
+  batchId?: string | null;
+  profitPercent?: number;
+};
+
+export type SaleCreatePayload = {
+  billNo?: string | null;
+  customerId?: string | null;
+  customerName?: string | null;
+  department?: string | null;
+  debitAccount?: string | null;
+  natureOfEntry?: string | null;
+  saleDate: string;
+  entryTime?: string;
+  discount?: number;
+  licenseId: string;
+  userId?: string;
+  saleType: "CASH" | "CREDIT";
+};
+
+export type SaleUpdatePayload = {
+  id: string;
+  header: {
+    billNo?: string | null;
+    customerId?: string | null;
+    customerName?: string | null;
+    department?: string | null;
+    debitAccount?: string | null;
+    natureOfEntry?: string | null;
+    saleDate: string;
+    entryTime?: string;
+    discount?: number;
+    licenseId: string;
+    saleType: "CASH" | "CREDIT";
+  };
+  items: SaleItemInput[];
+};
+
+export type CreateSaleResult = {
+  success: boolean;
+  saleId?: string;
+  slNo?: number;
+  totalAmount?: number;
+  error?: string;
+};
+
+export type SaleListFilters = {
+  q?: string;
+  customerId?: string | null;
+  dateFrom?: string | null;
+  dateTo?: string | null;
+  page?: number;
+  pageSize?: number;
+  includeDeleted?: boolean;
+};
+
+export type SaleRow = {
+  id: string;
+  slNo?: number;
+  billNo?: string | null;
+  customerId?: string | null;
+  customerName?: string | null;
+  saleDate: string;
+  entryTime?: string;
+  totalAmount: number;
+  discount?: number;
+  saleType?: string;
+  isSynced?: number;
+  deletedAt?: string | null;
+  syncedAt?: string | null;
+};
+
+export type SaleListResult = {
+  success: boolean;
+  total: number;
+  page: number;
+  pageSize: number;
+  rows: SaleRow[];
+  error?: string;
+};
+
+export type SaleItemRow = {
+  id: string;
+  saleId: string;
+  productId: string;
+  productName?: string | null;
+  productCode?: string | null;
+  barcode?: string | null;
+  quantity: number;
+  unit: string;
+  rate: number;
+  mrp?: number | null;
+  taxPercent: string;
+  taxAmount: number;
+  discount?: number;
+  discountType?: string;
+  salePrice?: number | null;
+  profit?: number | null;
+  totalCost: number;
+  billedValue?: number;
+  batchNo?: string | null;
+  purchaseBatchNo?: string | null;
+  mfgDate?: string | null;
+  expiryDate?: string | null;
+  lineNo?: number;
+  isFree?: number;
+  batchId?: string | null;
+};
+
+export type SaleFullResult = {
+  success: boolean;
+  sale?: SaleRow & {
+    licenseId?: string;
+    userId?: string;
+    createdAt?: string;
+    updatedAt?: string;
+  };
+  items?: SaleItemRow[];
+  error?: string;
+};
+
+// ── Sale Hold types ───────────────────────────────────────────────────────────
+
+export type SaleHoldSavePayload = {
+  id?: string;
+  licenseId: string;
+  userId?: string;
+  title?: string | null;
+  header: Record<string, any>;
+  rows: any[];
+};
+
+export type SaleHoldSaveResult = {
+  success: boolean;
+  id?: string;
+  holdNo?: number | null;
+  updated?: boolean;
+  error?: string;
+};
+
+export type SaleHoldListRow = {
+  id: string;
+  holdNo: number;
+  title?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type SaleHoldsListResult = {
+  holds: SaleHoldListRow[];
+  total: number;
+};
+
+export type SaleHoldGetResult = {
+  success: boolean;
+  hold?: {
+    id: string;
+    holdNo: number;
+    title?: string | null;
+    header: Record<string, any>;
+    rows: any[];
+    createdAt?: string;
+    updatedAt?: string;
+  };
+  error?: string;
+};
+
+// ── Customer types ────────────────────────────────────────────────────────────
+
+export type CustomerRecord = {
+  id: string;
+  licenseId: string;
+  name: string;
+  phone?: string | null;
+  email?: string | null;
+  gstin?: string | null;
+  code?: string | null;
+  codeNumber?: number;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  pincode?: string | null;
+  openingBalance?: number;
+  notes?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
+};
+
+export type CustomerListFilters = {
+  q?: string;
+  page?: number;
+  pageSize?: number;
+};
+
+export type CustomerListResult = {
+  customers: CustomerRecord[];
+  total: number;
 };
 
 export type PlatformAPI = {
@@ -563,4 +1037,86 @@ export type PlatformAPI = {
   deleteTaxCategory: (id: string) => Promise<MutationResult>;
   seedIndiaGST: (licenseId: string) => Promise<MutationResult>;
   listDefaultableAccounts: (licenseId: string) => Promise<AccountListResult>;
+
+  // ── Purchases ───────────────────────────────────────────────────────────────
+  createPurchase?: (
+    purchase: PurchaseCreatePayload,
+    items: PurchaseItemInput[],
+  ) => Promise<CreatePurchaseResult>;
+
+  updatePurchase?: (payload: PurchaseUpdatePayload) => Promise<MutationResult>;
+
+  deletePurchase?: (
+    id: string,
+  ) => Promise<MutationResult & { deletedAt?: string }>;
+
+  listPurchases?: (
+    licenseId: string,
+    filters?: PurchaseListFilters,
+  ) => Promise<PurchaseListResult>;
+
+  getPurchaseFull?: (id: string) => Promise<PurchaseFullResult>;
+
+  peekNextPurchaseSlNo?: (licenseId: string) => Promise<SlNoResult>;
+
+  savePurchaseHold?: (
+    payload: PurchaseHoldSavePayload,
+  ) => Promise<PurchaseHoldSaveResult>;
+
+  listPurchaseHolds?: (
+    licenseId: string,
+    pagination?: Pagination,
+  ) => Promise<PurchaseHoldsListResult>;
+
+  getPurchaseHold?: (id: string) => Promise<PurchaseHoldGetResult>;
+
+  deletePurchaseHold?: (id: string) => Promise<MutationResult>;
+
+  peekNextHoldNo?: (licenseId: string) => Promise<HoldNoResult>;
+
+  listSuppliers?: (
+    licenseId: string,
+    filters?: SupplierListFilters,
+  ) => Promise<SupplierListResult>;
+
+  getSupplier?: (id: string) => Promise<SupplierRecord | null>;
+
+  bulkUpdateProductPrices?: (
+    updates: BulkPriceUpdate[],
+  ) => Promise<MutationResult>;
+
+  // ── Sales ────────────────────────────────────────────────────────────────
+  createSale?: (
+    sale: SaleCreatePayload,
+    items: SaleItemInput[],
+  ) => Promise<CreateSaleResult>;
+
+  updateSale?: (payload: SaleUpdatePayload) => Promise<MutationResult>;
+
+  deleteSale?: (id: string) => Promise<MutationResult & { deletedAt?: string }>;
+
+  listSales?: (
+    licenseId: string,
+    filters?: SaleListFilters,
+  ) => Promise<SaleListResult>;
+
+  getSaleFull?: (id: string) => Promise<SaleFullResult>;
+
+  peekNextSaleSlNo?: (licenseId: string) => Promise<SlNoResult>;
+
+  saveSaleHold?: (payload: SaleHoldSavePayload) => Promise<SaleHoldSaveResult>;
+
+  listSaleHolds?: (
+    licenseId: string,
+    pagination?: Pagination,
+  ) => Promise<SaleHoldsListResult>;
+
+  getSaleHold?: (id: string) => Promise<SaleHoldGetResult>;
+
+  deleteSaleHold?: (id: string) => Promise<MutationResult>;
+
+  listCustomers?: (
+    licenseId: string,
+    filters?: CustomerListFilters,
+  ) => Promise<CustomerListResult>;
 };

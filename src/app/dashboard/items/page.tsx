@@ -4,6 +4,7 @@
 import { useState, useEffect, useRef } from "react";
 import ProductsTable from "@/components/products/ProductsTable";
 import ProductFormModal from "@/components/products/ProductFormModal";
+import { useSyncStatus } from "@/sync/SyncProvider";
 import ProductBatchesDrawer from "@/components/products/ProductBatchesDrawer";
 import BarcodePrintCenterButton from "@/components/barcodes/BarcodePrintCenterButton";
 import { platform } from "@/platform";
@@ -28,6 +29,7 @@ const TAX_OPTIONS = [
 ];
 
 export default function ItemsPage() {
+  const { pullNow } = useSyncStatus();
   const [isClient, setIsClient] = useState(false);
   const [licenseId, setLicenseId] = useState("");
   const [shopName, setShopName] = useState("My Shop");
@@ -57,6 +59,7 @@ export default function ItemsPage() {
 
   const [viewProduct, setViewProduct] = useState<Product | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
+  const [barcodePrintOpen, setBarcodePrintOpen] = useState(false);
 
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -64,7 +67,16 @@ export default function ItemsPage() {
     setIsClient(true);
     setLicenseId(getActiveLicenseId());
     setShopName(localStorage.getItem("shopName") || "My Shop");
-  }, []);
+    // Bump refresh once on mount so we pick up anything already in IDB
+    // from a bootstrap pull that completed before our sync listener registered
+    setRefreshTrigger((t) => t + 1);
+
+    // Pull products/categories/brands immediately on page open
+    // so we don't wait up to 15s for the interval timer
+    pullNow("product");
+    pullNow("category");
+    pullNow("brand");
+  }, []); // pullNow is stable (useCallback with no deps) — safe to omit from array
 
   useEffect(() => {
     if (!isClient || !licenseId) return;
@@ -179,6 +191,30 @@ export default function ItemsPage() {
     return () => window.removeEventListener("keydown", handleShortcut);
   }, [isClient, isModalOpen, batchOpen, isViewOpen]);
 
+  // ── Listen for background sync pulls and refresh automatically ────────────
+  useEffect(() => {
+    if (!isClient) return;
+
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const handler = (e: Event) => {
+      const { entity } = (e as CustomEvent<{ entity: string; count: number }>)
+        .detail;
+      if (entity === "product" || entity === "category" || entity === "brand") {
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+          setRefreshTrigger((t) => t + 1);
+        }, 100); // 100ms window collapses all three into one re-render
+      }
+    };
+
+    window.addEventListener("kynflow:sync:updated", handler);
+    return () => {
+      window.removeEventListener("kynflow:sync:updated", handler);
+      if (debounceTimer) clearTimeout(debounceTimer);
+    };
+  }, [isClient]);
+
   if (!isClient) return null;
 
   const hasFilters =
@@ -223,6 +259,9 @@ export default function ItemsPage() {
               defaultShopName={shopName}
               buttonText="Print Barcodes"
               className="inline-flex items-center gap-2 rounded-2xl border border-white/15 bg-white/[0.07] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(0,0,0,0.16)] transition hover:bg-white/[0.12] cursor-pointer"
+              open={barcodePrintOpen}
+              onOpen={() => setBarcodePrintOpen(true)}
+              onClose={() => setBarcodePrintOpen(false)}
             />
             <button
               onClick={handleAddProduct}

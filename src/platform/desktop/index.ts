@@ -26,6 +26,36 @@ import type {
   UnitMutationResult,
 } from "../types";
 
+import {
+  desktopCreatePurchase,
+  desktopUpdatePurchase,
+  desktopDeletePurchase,
+  desktopListPurchases,
+  desktopGetPurchaseFull,
+  desktopPeekNextPurchaseSlNo,
+  desktopSavePurchaseHold,
+  desktopListPurchaseHolds,
+  desktopGetPurchaseHold,
+  desktopDeletePurchaseHold,
+  desktopPeekNextHoldNo,
+  desktopListSuppliers,
+  desktopBulkUpdateProductPrices,
+} from "./purchases";
+
+import {
+  desktopCreateSale,
+  desktopUpdateSale,
+  desktopDeleteSale,
+  desktopListSales,
+  desktopGetSaleFull,
+  desktopPeekNextSaleSlNo,
+  desktopSaveSaleHold,
+  desktopListSaleHolds,
+  desktopGetSaleHold,
+  desktopDeleteSaleHold,
+  desktopListCustomers,
+} from "./sales";
+
 function requireElectronAPI() {
   if (typeof window === "undefined" || !window.electronAPI) {
     throw new Error("Electron API is not available in this runtime");
@@ -107,6 +137,15 @@ function mapBatchRow(row: any) {
     updatedAt: row.updatedAt,
     deletedAt: row.deletedAt ?? null,
   };
+}
+
+function triggerDesktopSync(entity: string) {
+  if (typeof window === "undefined") return;
+  import("@/sync/SyncManager")
+    .then(({ SyncManager }) => {
+      SyncManager.pushEntity(entity).catch(() => {});
+    })
+    .catch(() => {});
 }
 
 export const desktopPlatform: PlatformAPI = {
@@ -230,16 +269,22 @@ export const desktopPlatform: PlatformAPI = {
     return row ? mapProductSummary(row) : null;
   },
 
-  createProduct: (product: ProductInput) => {
-    return requireElectronAPI().createProduct(product);
+  createProduct: async (product: ProductInput) => {
+    const result = await requireElectronAPI().createProduct(product);
+    if (result?.success) triggerDesktopSync("product");
+    return result;
   },
 
-  updateProduct: (productId: string, product: ProductInput) => {
-    return requireElectronAPI().updateProduct(productId, product);
+  updateProduct: async (productId: string, product: ProductInput) => {
+    const result = await requireElectronAPI().updateProduct(productId, product);
+    if (result?.success) triggerDesktopSync("product");
+    return result;
   },
 
-  deleteProduct: (productId: string) => {
-    return requireElectronAPI().deleteProduct(productId);
+  deleteProduct: async (productId: string) => {
+    const result = await requireElectronAPI().deleteProduct(productId);
+    if (result?.success) triggerDesktopSync("product");
+    return result;
   },
 
   listBatchesForProduct: async (
@@ -311,11 +356,15 @@ export const desktopPlatform: PlatformAPI = {
   saveCategory: async (
     payload: CategorySavePayload,
   ): Promise<CategoryMutationResult> => {
-    return requireElectronAPI().saveCategory(payload);
+    const result = await requireElectronAPI().saveCategory(payload);
+    if (result?.success) triggerDesktopSync("category");
+    return result;
   },
 
   deleteCategory: async (id: string) => {
-    return requireElectronAPI().deleteCategory(id);
+    const result = await requireElectronAPI().deleteCategory(id);
+    if (result?.success) triggerDesktopSync("category");
+    return result;
   },
 
   listBrands: async (licenseId: string): Promise<BrandListResult> => {
@@ -325,11 +374,15 @@ export const desktopPlatform: PlatformAPI = {
   saveBrand: async (
     payload: BrandSavePayload,
   ): Promise<BrandMutationResult> => {
-    return requireElectronAPI().saveBrand(payload);
+    const result = await requireElectronAPI().saveBrand(payload);
+    if (result?.success) triggerDesktopSync("brand");
+    return result;
   },
 
   deleteBrand: async (id: string) => {
-    return requireElectronAPI().deleteBrand(id);
+    const result = await requireElectronAPI().deleteBrand(id);
+    if (result?.success) triggerDesktopSync("brand");
+    return result;
   },
 
   listUnits: async (licenseId: string): Promise<UnitListResult> => {
@@ -337,11 +390,15 @@ export const desktopPlatform: PlatformAPI = {
   },
 
   saveUnit: async (payload: UnitSavePayload): Promise<UnitMutationResult> => {
-    return requireElectronAPI().saveUnit(payload);
+    const result = await requireElectronAPI().saveUnit(payload);
+    if (result?.success) triggerDesktopSync("unit");
+    return result;
   },
 
   deleteUnit: async (id: string): Promise<UnitMutationResult> => {
-    return requireElectronAPI().deleteUnit(id);
+    const result = await requireElectronAPI().deleteUnit(id);
+    if (result?.success) triggerDesktopSync("unit");
+    return result;
   },
 
   // ── Tax ───────────────────────────────────────────────────────────────────
@@ -371,7 +428,54 @@ export const desktopPlatform: PlatformAPI = {
     return requireElectronAPI().getShopSettings(licenseId);
   },
 
-  saveShopSettings: (payload: ShopSettingsPayload) => {
-    return requireElectronAPI().saveShopSettings(payload);
+  saveShopSettings: async (payload: ShopSettingsPayload) => {
+    const result = await requireElectronAPI().saveShopSettings(payload);
+    if (result?.success) triggerDesktopSync("shopSettings");
+    return result;
   },
+
+  // ── Purchases ─────────────────────────────────────────────────────────────
+  createPurchase: (purchase, items) => desktopCreatePurchase(purchase, items),
+
+  updatePurchase: (payload) => desktopUpdatePurchase(payload),
+
+  deletePurchase: (id) => desktopDeletePurchase(id),
+
+  listPurchases: (licenseId, filters) =>
+    desktopListPurchases(licenseId, filters),
+
+  getPurchaseFull: (id) => desktopGetPurchaseFull(id),
+
+  peekNextPurchaseSlNo: (licenseId) => desktopPeekNextPurchaseSlNo(licenseId),
+
+  savePurchaseHold: (payload) => desktopSavePurchaseHold(payload),
+
+  listPurchaseHolds: (licenseId, pagination) =>
+    desktopListPurchaseHolds(licenseId, pagination),
+
+  getPurchaseHold: (id) => desktopGetPurchaseHold(id),
+
+  deletePurchaseHold: (id) => desktopDeletePurchaseHold(id),
+
+  peekNextHoldNo: (licenseId) => desktopPeekNextHoldNo(licenseId),
+
+  listSuppliers: (licenseId, filters) =>
+    desktopListSuppliers(licenseId, filters),
+
+  bulkUpdateProductPrices: (updates) => desktopBulkUpdateProductPrices(updates),
+
+  // ── Sales ─────────────────────────────────────────────────────────────────
+  createSale: (sale, items) => desktopCreateSale(sale, items),
+  updateSale: (payload) => desktopUpdateSale(payload),
+  deleteSale: (id) => desktopDeleteSale(id),
+  listSales: (licenseId, filters) => desktopListSales(licenseId, filters),
+  getSaleFull: (id) => desktopGetSaleFull(id),
+  peekNextSaleSlNo: (licenseId) => desktopPeekNextSaleSlNo(licenseId),
+  saveSaleHold: (payload) => desktopSaveSaleHold(payload),
+  listSaleHolds: (licenseId, pagination) =>
+    desktopListSaleHolds(licenseId, pagination),
+  getSaleHold: (id) => desktopGetSaleHold(id),
+  deleteSaleHold: (id) => desktopDeleteSaleHold(id),
+  listCustomers: (licenseId, filters) =>
+    desktopListCustomers(licenseId, filters),
 };

@@ -96,7 +96,7 @@ export function mapItems(rows: ItemRow[]) {
       purchaseBatchNo: r.purchaseBatchNo || null,
       mfgDate: r.mfgDate || null,
       expiryDate: r.expiryDate || null,
-      isFree: r.lineType === "FREE" ? 1 : 0,
+      isFree: r.lineType === "FREE" || undefined,
       lineNo: r.lineNo ?? i + 1,
     }));
 }

@@ -1,7 +1,7 @@
 // src/components/master/UnitsManager.tsx
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Plus, Trash2, Edit2, Check, X, Ruler, Lock } from "lucide-react";
 import { platform } from "@/platform";
 import { getActiveLicenseId } from "@/lib/session/runtimeSession";
@@ -22,19 +22,35 @@ export default function UnitsManager() {
   const [editLabel, setEditLabel] = useState("");
   const codeRef = useRef<HTMLInputElement>(null);
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
       const res = await platform.listUnits(licenseId);
+      console.log(
+        "[UnitsManager] load result",
+        res.success,
+        res.rows?.length,
+        res.rows?.map((r: any) => r.code),
+      );
       if (res.success) setUnits(res.rows);
     } finally {
       setLoading(false);
     }
-  }
+  }, [licenseId]);
 
   useEffect(() => {
     load();
-  }, [licenseId]);
+  }, [load]);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      console.log("[UnitsManager] sync event received", detail);
+      if (detail?.entity === "unit") load();
+    };
+    window.addEventListener("kynflow:sync:updated", handler);
+    return () => window.removeEventListener("kynflow:sync:updated", handler);
+  }, [load]);
 
   async function handleAdd() {
     const code = codeInput.trim().toUpperCase();

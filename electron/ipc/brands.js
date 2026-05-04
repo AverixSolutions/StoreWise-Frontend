@@ -1,4 +1,4 @@
-// electron/ipc/brands.j
+// electron/ipc/brands.js
 const { ipcMain } = require("electron");
 const { v4: uuidv4 } = require("uuid");
 const db = require("../db");
@@ -60,11 +60,12 @@ function registerBrandHandlers() {
       const now = new Date().toISOString();
 
       if (id) {
+        // ── mark dirty on update ──────────────────────────────────────────
         const result = db
           .prepare(
             `
             UPDATE brands
-            SET name = ?, updatedAt = ?, deletedAt = NULL
+            SET name = ?, updatedAt = ?, deletedAt = NULL, isSynced = 0, syncedAt = NULL
             WHERE id = ? AND licenseId = ?
           `,
           )
@@ -79,10 +80,11 @@ function registerBrandHandlers() {
 
       const newId = uuidv4();
 
+      // ── mark dirty on insert ──────────────────────────────────────────────
       db.prepare(
         `
-        INSERT INTO brands (id, licenseId, name, createdAt, updatedAt, deletedAt)
-        VALUES (?, ?, ?, ?, ?, NULL)
+        INSERT INTO brands (id, licenseId, name, createdAt, updatedAt, deletedAt, isSynced, syncedAt)
+        VALUES (?, ?, ?, ?, ?, NULL, 0, NULL)
       `,
       ).run(newId, licenseId, trimmedName, now, now);
 
@@ -137,15 +139,83 @@ function registerBrandHandlers() {
 
       const now = new Date().toISOString();
 
+      // ── mark dirty on delete ──────────────────────────────────────────────
       db.prepare(
         `
         UPDATE brands
-        SET deletedAt = ?, updatedAt = ?
+        SET deletedAt = ?, updatedAt = ?, isSynced = 0, syncedAt = NULL
         WHERE id = ?
       `,
       ).run(now, now, id);
 
       return { success: true };
+    } catch (e) {
+      return { success: false, error: String(e?.message || e) };
+    }
+  });
+
+  // ── Sync handlers ───────────────────────────────────────────────────────────
+
+  ipcMain.handle("brand:getDirty", (event, licenseId, limit = 200) => {
+    try {
+      return db
+        .prepare(
+          `SELECT *
+           FROM brands
+           WHERE licenseId = ?
+             AND (
+               syncedAt IS NULL
+               OR updatedAt > syncedAt
+               OR (deletedAt IS NOT NULL AND (syncedAt IS NULL OR deletedAt > syncedAt))
+             )
+           ORDER BY updatedAt ASC
+           LIMIT ?`,
+        )
+        .all(licenseId, limit);
+    } catch (e) {
+      return [];
+    }
+  });
+
+  ipcMain.handle("brand:markSynced", (event, ids, serverSyncedAt) => {
+    try {
+      const ts = serverSyncedAt || new Date().toISOString();
+      const stmt = db.prepare(
+        `UPDATE brands SET isSynced = 1, syncedAt = ? WHERE id = ?`,
+      );
+      db.transaction((list) => list.forEach((id) => stmt.run(ts, id)))(ids);
+      return { success: true };
+    } catch (e) {
+      return { success: false, error: String(e?.message || e) };
+    }
+  });
+
+  ipcMain.handle("brand:bulkUpsert", (event, items = []) => {
+    try {
+      const stmt = db.prepare(
+        `INSERT INTO brands (id, licenseId, name, createdAt, updatedAt, deletedAt, isSynced, syncedAt)
+         VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           name      = excluded.name,
+           updatedAt = excluded.updatedAt,
+           deletedAt = excluded.deletedAt,
+           isSynced  = 1,
+           syncedAt  = excluded.syncedAt`,
+      );
+      db.transaction((rows) => {
+        for (const r of rows) {
+          stmt.run(
+            r.id,
+            r.licenseId,
+            r.name,
+            r.createdAt,
+            r.updatedAt,
+            r.deletedAt ?? null,
+            r.syncedAt ?? null,
+          );
+        }
+      })(items);
+      return { success: true, count: items.length };
     } catch (e) {
       return { success: false, error: String(e?.message || e) };
     }

@@ -1,4 +1,4 @@
-// frontend/src/sync/adapters/suppliers.ts
+// src/sync/adapters/taxCategories.ts
 import type { SyncAdapter, DirtyRecord, SyncStateRecord } from "../SyncEngine";
 import {
   STORES,
@@ -7,7 +7,7 @@ import {
   idbPut,
 } from "@/platform/web/idb";
 
-// ── Desktop (Electron) helpers ────────────────────────────────────────────
+// ── Desktop helpers ───────────────────────────────────────────────────────────
 
 function api() {
   const w = window as any;
@@ -16,53 +16,57 @@ function api() {
 }
 
 async function desktopGetDirty(licenseId: string): Promise<DirtyRecord[]> {
-  return api().getDirtySuppliers(licenseId, 200) as Promise<DirtyRecord[]>;
+  // Returns records with nested components + defaults already attached
+  return api().getDirtyTaxCategories(licenseId, 200);
 }
-
 async function desktopMarkSynced(ids: string[], serverUpdatedAt: string) {
-  await api().markSuppliersSynced(ids, serverUpdatedAt);
+  await api().markTaxCategoriesSynced(ids, serverUpdatedAt);
 }
-
 async function desktopUpsertFromServer(records: DirtyRecord[]) {
-  await api().bulkUpsertSuppliers(records);
+  await api().bulkUpsertTaxCategories(records);
 }
-
 async function desktopGetSyncState(): Promise<SyncStateRecord> {
-  const state = await api().getSyncState("suppliers");
+  const state = await api().getSyncState("taxCategories");
   return {
     lastPulledAt: state?.lastPulledAt ?? null,
     lastPushedAt: state?.lastPushedAt ?? null,
   };
 }
-
 async function desktopSetSyncState(state: Partial<SyncStateRecord>) {
-  await api().setSyncState("suppliers", state);
+  await api().setSyncState("taxCategories", state);
 }
 
-// ── Web (IndexedDB) implementation ────────────────────────────────────────
+// ── Web (IndexedDB) helpers ───────────────────────────────────────────────────
+// Tax categories on web are stored in IDB (STORES.TAX_CATEGORIES)
 
-type IDBSupplier = DirtyRecord & {
+type IDBTaxCategory = DirtyRecord & {
   licenseId: string;
-  name: string;
-  isSynced?: number | boolean;
+  isSynced?: number;
   syncedAt?: string | null;
+  deletedAt?: string | null;
+  components?: any[];
+  defaults?: any;
 };
 
 async function webGetDirty(licenseId: string): Promise<DirtyRecord[]> {
-  const all = await idbGetAllByIndex<IDBSupplier>(
-    STORES.SUPPLIERS,
-    "licenseId",
-    licenseId,
-  );
-  return all.filter((s) => Number(s.isSynced ?? 0) === 0);
+  try {
+    const all = await idbGetAllByIndex<IDBTaxCategory>(
+      STORES.TAX_CATEGORIES,
+      "licenseId",
+      licenseId,
+    );
+    return all.filter((t) => Number(t.isSynced ?? 0) === 0);
+  } catch {
+    return [];
+  }
 }
 
 async function webMarkSynced(ids: string[], serverUpdatedAt: string) {
   for (const id of ids) {
-    const supplier = await idbGetByKey<IDBSupplier>(STORES.SUPPLIERS, id);
-    if (supplier) {
-      await idbPut(STORES.SUPPLIERS, {
-        ...supplier,
+    const cat = await idbGetByKey<IDBTaxCategory>(STORES.TAX_CATEGORIES, id);
+    if (cat) {
+      await idbPut(STORES.TAX_CATEGORIES, {
+        ...cat,
         isSynced: 1,
         syncedAt: serverUpdatedAt,
       });
@@ -72,8 +76,8 @@ async function webMarkSynced(ids: string[], serverUpdatedAt: string) {
 
 async function webUpsertFromServer(records: DirtyRecord[]) {
   for (const record of records) {
-    const existing = await idbGetByKey<IDBSupplier>(
-      STORES.SUPPLIERS,
+    const existing = await idbGetByKey<IDBTaxCategory>(
+      STORES.TAX_CATEGORIES,
       record.id,
     );
     const incomingTs = record.updatedAt
@@ -84,24 +88,24 @@ async function webUpsertFromServer(records: DirtyRecord[]) {
       : 0;
 
     if (!existing) {
-      await idbPut(STORES.SUPPLIERS, {
+      await idbPut(STORES.TAX_CATEGORIES, {
         ...record,
         isSynced: 1,
         syncedAt: new Date().toISOString(),
       });
-    } else if (incomingTs > localTs) {
-      await idbPut(STORES.SUPPLIERS, {
+    } else if (Number(existing.isSynced ?? 0) === 1 && incomingTs > localTs) {
+      await idbPut(STORES.TAX_CATEGORIES, {
         ...existing,
         ...record,
         isSynced: 1,
         syncedAt: new Date().toISOString(),
       });
     }
+    // If local is dirty (isSynced=0), skip — push cycle will handle it
   }
 }
 
-const WEB_SYNC_KEY = "kynflow_sync_suppliers";
-
+const WEB_SYNC_KEY = "kynflow_sync_taxCategories";
 async function webGetSyncState(): Promise<SyncStateRecord> {
   try {
     const raw = localStorage.getItem(WEB_SYNC_KEY);
@@ -110,17 +114,16 @@ async function webGetSyncState(): Promise<SyncStateRecord> {
     return { lastPulledAt: null, lastPushedAt: null };
   }
 }
-
 async function webSetSyncState(state: Partial<SyncStateRecord>) {
   const current = await webGetSyncState();
   localStorage.setItem(WEB_SYNC_KEY, JSON.stringify({ ...current, ...state }));
 }
 
-// ── Factory ───────────────────────────────────────────────────────────────
+// ── Factory ───────────────────────────────────────────────────────────────────
 
-export function createSuppliersAdapter(isDesktop: boolean): SyncAdapter {
+export function createTaxCategoriesAdapter(isDesktop: boolean): SyncAdapter {
   return {
-    entity: "supplier",
+    entity: "taxCategory",
     getDirtyRecords: isDesktop ? desktopGetDirty : webGetDirty,
     markSynced: isDesktop ? desktopMarkSynced : webMarkSynced,
     upsertFromServer: isDesktop ? desktopUpsertFromServer : webUpsertFromServer,

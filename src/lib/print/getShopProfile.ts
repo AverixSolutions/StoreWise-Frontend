@@ -1,4 +1,6 @@
 // src/lib/print/getShopProfile.ts
+import { platform } from "@/platform";
+
 export type ShopProfile = {
   name: string;
   logoUrl?: string | null;
@@ -20,18 +22,21 @@ export async function getShopProfile(): Promise<ShopProfile> {
   }
 
   const licenseId = localStorage.getItem("licenseId") || "demo-license";
-  const api = (window as any).electronAPI;
+  const isDesktop = !!(window as any).electronAPI;
 
-  if (!api?.getShopSettings) {
-    return { name: "My Shop" };
+  let s: Record<string, any> = {};
+
+  if (isDesktop) {
+    const res = await (window as any).electronAPI.getShopSettings(licenseId);
+    s = res?.settings || {};
+  } else {
+    const res = await platform.getShopSettings(licenseId);
+    s = res?.settings || {};
   }
-
-  const res = await api.getShopSettings(licenseId);
-  const s = res?.settings || {};
 
   return {
     name: s.shopName || "My Shop",
-    logoUrl: s.logoDataUrl || null,
+    logoUrl: isDesktop ? s.logoDataUrl || null : s.logoUrl || null,
     addressLine1: s.addressLine1 || null,
     addressLine2: s.addressLine2 || null,
     city: s.city || null,

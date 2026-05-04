@@ -18,6 +18,10 @@ type WebShopSettingsRecord = ShopSettingsPayload & {
   updatedAt: string;
   syncStatus: "LOCAL_ONLY" | "PENDING" | "SYNCED" | "SYNC_FAILED";
   lastSyncedAt: string | null;
+  isSynced?: number;
+  syncedAt?: string | null;
+  // logoDataUrl is intentionally NEVER stored on web — logo lives in R2 (logoUrl)
+  logoDataUrl?: null;
 };
 
 const API_BASE = (process.env.NEXT_PUBLIC_KYNFLOW_API_BASE || "").replace(
@@ -30,7 +34,8 @@ function defaultSettings(licenseId: string): WebShopSettingsRecord {
   return {
     licenseId,
     shopName: "My Shop",
-    logoDataUrl: null,
+    logoDataUrl: null, // always null on web
+    logoUrl: null, // set after R2 upload
     addressLine1: "",
     addressLine2: "",
     city: "",
@@ -65,10 +70,13 @@ async function pushShopSettingsToRemote(record: WebShopSettingsRecord) {
     return { skipped: true, reason: "Browser offline" as const };
   }
 
+  // Never send base64 to the server — logo is already in R2
+  const { logoDataUrl: _dropped, ...safeRecord } = record;
+
   const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(record),
+    body: JSON.stringify(safeRecord),
   });
 
   if (!response.ok) {
@@ -118,9 +126,18 @@ export async function saveWebShopSettings(
     ...(existing || defaultSettings(payload.licenseId)),
     ...payload,
     shopName: payload.shopName?.trim() || "My Shop",
+    // Web NEVER stores base64 in IDB — strip it defensively even if caller passed it
+    logoDataUrl: null,
+    // Preserve existing logoUrl unless payload explicitly provides a new one
+    logoUrl:
+      payload.logoUrl !== undefined
+        ? payload.logoUrl
+        : (existing?.logoUrl ?? null),
     updatedAt: now,
     syncStatus: API_BASE ? "PENDING" : "LOCAL_ONLY",
     lastSyncedAt: existing?.lastSyncedAt || null,
+    isSynced: 0,
+    syncedAt: existing?.syncedAt ?? null,
   };
 
   await idbPut(STORES.SHOP_SETTINGS, record);
@@ -184,6 +201,8 @@ export async function syncShopSettingsForLicense(licenseId: string) {
       ...record,
       syncStatus: "SYNCED",
       lastSyncedAt: syncedAt,
+      isSynced: 1,
+      syncedAt,
     };
     await idbPut(STORES.SHOP_SETTINGS, syncedRecord);
     await idbDelete(STORES.SYNC_QUEUE, getShopSettingsJobId(licenseId));

@@ -286,8 +286,49 @@ declare global {
         serverSyncedAt?: string,
       ) => Promise<{ success: boolean; syncedAt: string }>;
 
-      getShopSettings: (licenseId: string) => Promise<any>;
-      saveShopSettings: (payload: any) => Promise<any>;
+      getShopSettings: (licenseId: string) => Promise<{
+        success: boolean;
+        settings?: {
+          licenseId: string;
+          shopName: string;
+          logoDataUrl?: string | null; // desktop only — base64 in SQLite
+          logoUrl?: string | null; // web only — R2 public URL
+          addressLine1?: string | null;
+          addressLine2?: string | null;
+          city?: string | null;
+          state?: string | null;
+          pincode?: string | null;
+          mobile?: string | null;
+          email?: string | null;
+          gstin?: string | null;
+          footerNote?: string | null;
+          authorizedSignatory?: string | null;
+          createdAt?: string;
+          updatedAt?: string;
+          syncStatus?: "LOCAL_ONLY" | "PENDING" | "SYNCED" | "SYNC_FAILED";
+          lastSyncedAt?: string | null;
+          isSynced?: number;
+          syncedAt?: string | null;
+        };
+        source?: "desktop" | "web-local";
+        error?: string;
+      }>;
+      saveShopSettings: (payload: {
+        licenseId: string;
+        shopName: string;
+        logoDataUrl?: string | null; // desktop only
+        logoUrl?: string | null; // web only
+        addressLine1?: string | null;
+        addressLine2?: string | null;
+        city?: string | null;
+        state?: string | null;
+        pincode?: string | null;
+        mobile?: string | null;
+        email?: string | null;
+        gstin?: string | null;
+        footerNote?: string | null;
+        authorizedSignatory?: string | null;
+      }) => Promise<{ success: boolean; error?: string }>;
 
       getSupplierCount: (
         licenseId: string,

@@ -35,7 +35,7 @@ export default function CompactDropdown({
 
   const selectedIdx = Math.max(
     0,
-    options.findIndex((o) => o.value === value)
+    options.findIndex((o) => o.value === value),
   );
 
   useEffect(() => {
@@ -113,21 +113,41 @@ export default function CompactDropdown({
           if (autoOpenOnFocus && !wasPointerDown.current) setIsOpen(true);
         }}
         {...buttonProps}
-        className={
-          "w-full flex items-center justify-between border border-gray-300 rounded-md px-2 py-1.5 text-sm bg-white hover:border-averix-red-dark focus:border-averix-red-dark focus:ring-1 focus:ring-averix-red-dark/20 outline-none transition-colors " +
-          (buttonProps?.className || "")
-        }
+        className={[
+          // Base layout
+          "w-full flex items-center justify-between",
+          "px-3 py-1.5 text-sm rounded-md",
+          // KYN surface + border
+          "bg-[var(--kyn-surface-2)] border border-[var(--kyn-border)]",
+          // KYN text
+          "text-[var(--kyn-text-soft)]",
+          // Transitions
+          "transition-all duration-150 outline-none",
+          // Focus / open state: primary glow ring
+          isOpen
+            ? "border-[var(--kyn-primary)] shadow-[0_0_0_2px_var(--kyn-glow-primary)]"
+            : "hover:border-[rgba(93,135,201,0.35)] hover:shadow-[0_0_0_1px_var(--kyn-glow-primary)]",
+          buttonProps?.className || "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
         onKeyDown={(e) => {
           const handled = handleButtonKeyDown(e);
           if (!handled) buttonProps?.onKeyDown?.(e);
         }}
       >
-        <span className={selectedOption ? "text-gray-900" : "text-gray-500"}>
+        <span
+          className={
+            selectedOption
+              ? "text-[var(--kyn-text)]"
+              : "text-[var(--kyn-text-muted)]"
+          }
+        >
           {selectedOption?.label || placeholder}
         </span>
         <ChevronDown
-          className={`w-3 h-3 text-gray-400 transition-transform ${
-            isOpen ? "rotate-180" : ""
+          className={`w-3.5 h-3.5 text-[var(--kyn-text-muted)] transition-transform duration-200 ${
+            isOpen ? "rotate-180 text-[var(--kyn-primary)]" : ""
           }`}
         />
       </button>
@@ -135,7 +155,13 @@ export default function CompactDropdown({
       {isOpen && (
         <div
           ref={menuRef}
-          className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-xl overflow-hidden z-[9999] max-h-48 overflow-y-auto"
+          className={[
+            "absolute top-full left-0 right-0 mt-1 z-[9999]",
+            "rounded-md overflow-hidden overflow-y-auto max-h-48",
+            // KYN surface with border + glow shadow
+            "bg-[var(--kyn-surface-2)] border border-[var(--kyn-border)]",
+            "shadow-[0_8px_32px_rgba(0,0,0,0.5),0_0_0_1px_var(--kyn-glow-primary)]",
+          ].join(" ")}
           onKeyDown={(e) => {
             if (e.key === "ArrowDown") {
               e.preventDefault();
@@ -158,10 +184,8 @@ export default function CompactDropdown({
             } else if (e.key === "Enter") {
               e.preventDefault();
               const opt = options[active] ?? options[selectedIdx] ?? options[0];
-
               onChange(opt.value);
               setIsOpen(false);
-
               onEnter?.(e.shiftKey ? -1 : 1);
             } else if (e.key === "Escape") {
               e.preventDefault();
@@ -184,13 +208,17 @@ export default function CompactDropdown({
                 onChange(option.value);
                 setIsOpen(false);
               }}
-              className={`w-full text-left px-2 py-1.5 text-sm transition-colors ${
+              className={[
+                "w-full text-left px-3 py-1.5 text-sm transition-all duration-100 outline-none",
                 i === active
-                  ? "bg-averix-red-dark text-white"
+                  ? // Active (keyboard): brand gradient highlight
+                    "bg-gradient-to-r from-[rgba(32,183,255,0.18)] to-[rgba(176,38,255,0.14)] text-[var(--kyn-text)] border-l-2 border-[var(--kyn-primary)]"
                   : value === option.value
-                  ? "bg-averix-red-50 text-gray-900"
-                  : "text-gray-700 hover:bg-averix-red-50"
-              }`}
+                    ? // Selected (current value): subtle primary tint
+                      "bg-[rgba(32,183,255,0.08)] text-[var(--kyn-primary)] border-l-2 border-[var(--kyn-primary)]"
+                    : // Default
+                      "text-[var(--kyn-text-soft)] hover:bg-[var(--kyn-surface-3)] hover:text-[var(--kyn-text)] border-l-2 border-transparent",
+              ].join(" ")}
             >
               {option.label}
             </button>

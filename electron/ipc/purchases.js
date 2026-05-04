@@ -1567,6 +1567,296 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
       return { success: true, total, page, pageSize, rows: mapped };
     },
   );
+
+  // ========= SYNC: get dirty purchases =========
+  ipcMain.handle("get-dirty-purchases", (event, licenseId, limit = 200) => {
+    const rows = db
+      .prepare(
+        `
+        SELECT id, slNo, billNo, userId, licenseId,
+               supplierId, supplierName, department,
+               debitAccount, natureOfEntry, purchaseType,
+               purchaseBatchNo, purchaseDate, entryTime,
+               totalAmount, discount,
+               createdAt, updatedAt, deletedAt,
+               isSynced, syncedAt
+        FROM purchases
+        WHERE licenseId = ?
+          AND (isSynced = 0 OR isSynced IS NULL)
+        ORDER BY updatedAt ASC
+        LIMIT ?
+      `,
+      )
+      .all(licenseId, limit);
+
+    return { success: true, records: rows };
+  });
+
+  // ========= SYNC: get dirty purchase items =========
+  ipcMain.handle(
+    "get-dirty-purchase-items",
+    (event, licenseId, limit = 500) => {
+      const rows = db
+        .prepare(
+          `
+          SELECT pi.id, pi.purchaseId, pi.productId, pi.barcode,
+                 pi.quantity, pi.unit, pi.rate, pi.mrp,
+                 pi.taxPercent, pi.taxAmount,
+                 pi.discount, pi.discountType,
+                 pi.salePrice, pi.profit, pi.totalCost, pi.billedValue,
+                 pi.batchNo, pi.batchId, pi.purchaseBatchNo,
+                 pi.mfgDate, pi.expiryDate,
+                 pi.lineNo, pi.isFree, pi.effectiveUnitValue,
+                 pi.createdAt, pi.updatedAt, pi.deletedAt,
+                 pi.isSynced, pi.syncedAt
+          FROM purchase_items pi
+          JOIN purchases p ON p.id = pi.purchaseId
+          WHERE p.licenseId = ?
+            AND (pi.isSynced = 0 OR pi.isSynced IS NULL)
+          ORDER BY pi.updatedAt ASC
+          LIMIT ?
+        `,
+        )
+        .all(licenseId, limit);
+
+      return { success: true, records: rows };
+    },
+  );
+
+  // ========= SYNC: mark purchase items synced =========
+  ipcMain.handle("mark-purchase-items-synced", (event, ids, serverSyncedAt) => {
+    if (!Array.isArray(ids) || ids.length === 0)
+      return { success: true, synced: 0 };
+
+    const ts = serverSyncedAt || new Date().toISOString();
+    const trx = db.transaction((ids) => {
+      const stmt = db.prepare(`
+          UPDATE purchase_items
+          SET isSynced = 1, syncedAt = ?
+          WHERE id = ?
+        `);
+      ids.forEach((id) => stmt.run(ts, id));
+    });
+    trx(ids);
+    return { success: true, synced: ids.length, syncedAt: ts };
+  });
+
+  // ========= SYNC: bulk upsert purchases from server (pull) =========
+  ipcMain.handle("bulk-upsert-purchases", (event, records) => {
+    if (!Array.isArray(records) || records.length === 0)
+      return { success: true, upserted: 0 };
+
+    const now = new Date().toISOString();
+
+    const upsert = db.prepare(`
+      INSERT INTO purchases (
+        id, slNo, billNo, userId, licenseId,
+        supplierId, supplierName, department,
+        debitAccount, natureOfEntry, purchaseType,
+        purchaseBatchNo, purchaseDate, entryTime,
+        totalAmount, discount,
+        createdAt, updatedAt, deletedAt,
+        isSynced, syncedAt
+      ) VALUES (
+        @id, @slNo, @billNo, @userId, @licenseId,
+        @supplierId, @supplierName, @department,
+        @debitAccount, @natureOfEntry, @purchaseType,
+        @purchaseBatchNo, @purchaseDate, @entryTime,
+        @totalAmount, @discount,
+        @createdAt, @updatedAt, @deletedAt,
+        1, @syncedAt
+      )
+      ON CONFLICT(id) DO UPDATE SET
+        slNo            = excluded.slNo,
+        billNo          = excluded.billNo,
+        supplierId      = excluded.supplierId,
+        supplierName    = excluded.supplierName,
+        department      = excluded.department,
+        debitAccount    = excluded.debitAccount,
+        natureOfEntry   = excluded.natureOfEntry,
+        purchaseType    = excluded.purchaseType,
+        purchaseBatchNo = excluded.purchaseBatchNo,
+        purchaseDate    = excluded.purchaseDate,
+        entryTime       = excluded.entryTime,
+        totalAmount     = excluded.totalAmount,
+        discount        = excluded.discount,
+        updatedAt       = excluded.updatedAt,
+        deletedAt       = excluded.deletedAt,
+        isSynced        = 1,
+        syncedAt        = excluded.syncedAt
+      WHERE excluded.updatedAt > purchases.updatedAt
+        OR purchases.updatedAt IS NULL
+    `);
+
+    const trx = db.transaction((records) => {
+      for (const r of records) {
+        upsert.run({
+          id: r.id,
+          slNo: r.slNo ?? null,
+          billNo: r.billNo ?? null,
+          userId: r.userId ?? null,
+          licenseId: r.licenseId,
+          supplierId: r.supplierId ?? null,
+          supplierName: r.supplierName ?? null,
+          department: r.department ?? null,
+          debitAccount: r.debitAccount ?? null,
+          natureOfEntry: r.natureOfEntry ?? null,
+          purchaseType: r.purchaseType ?? null,
+          purchaseBatchNo: r.purchaseBatchNo ?? null,
+          purchaseDate:
+            r.purchaseDate instanceof Date
+              ? r.purchaseDate.toISOString()
+              : r.purchaseDate,
+          entryTime:
+            r.entryTime instanceof Date
+              ? r.entryTime.toISOString()
+              : (r.entryTime ?? null),
+          totalAmount: Number(r.totalAmount || 0),
+          discount: Number(r.discount || 0),
+          createdAt:
+            r.createdAt instanceof Date
+              ? r.createdAt.toISOString()
+              : (r.createdAt ?? now),
+          updatedAt:
+            r.updatedAt instanceof Date
+              ? r.updatedAt.toISOString()
+              : (r.updatedAt ?? now),
+          deletedAt:
+            r.deletedAt instanceof Date
+              ? r.deletedAt.toISOString()
+              : (r.deletedAt ?? null),
+          syncedAt:
+            r.syncedAt instanceof Date
+              ? r.syncedAt.toISOString()
+              : (r.syncedAt ?? now),
+        });
+      }
+    });
+
+    trx(records);
+    const maxRow = db
+      .prepare(
+        `SELECT MAX(slNo) AS maxSlNo FROM purchases WHERE licenseId = ? AND deletedAt IS NULL`,
+      )
+      .get(records[0]?.licenseId);
+
+    if (maxRow?.maxSlNo) {
+      db.prepare(
+        `INSERT INTO purchase_sequence (licenseId, lastSlNo)
+         VALUES (?, ?)
+         ON CONFLICT(licenseId) DO UPDATE SET
+           lastSlNo = MAX(excluded.lastSlNo, purchase_sequence.lastSlNo)`,
+      ).run(records[0].licenseId, maxRow.maxSlNo);
+    }
+
+    return { success: true, upserted: records.length };
+  });
+
+  // ========= SYNC: bulk upsert purchase items from server (pull) =========
+  ipcMain.handle("bulk-upsert-purchase-items", (event, records) => {
+    if (!Array.isArray(records) || records.length === 0)
+      return { success: true, upserted: 0 };
+
+    const now = new Date().toISOString();
+
+    const upsert = db.prepare(`
+      INSERT INTO purchase_items (
+        id, purchaseId, productId, barcode,
+        quantity, unit, rate, mrp,
+        taxPercent, taxAmount, discount, discountType,
+        salePrice, profit, totalCost, billedValue,
+        batchNo, batchId, purchaseBatchNo,
+        mfgDate, expiryDate, lineNo, isFree, effectiveUnitValue,
+        createdAt, updatedAt, deletedAt, isSynced, syncedAt
+      ) VALUES (
+        @id, @purchaseId, @productId, @barcode,
+        @quantity, @unit, @rate, @mrp,
+        @taxPercent, @taxAmount, @discount, @discountType,
+        @salePrice, @profit, @totalCost, @billedValue,
+        @batchNo, @batchId, @purchaseBatchNo,
+        @mfgDate, @expiryDate, @lineNo, @isFree, @effectiveUnitValue,
+        @createdAt, @updatedAt, @deletedAt, 1, @syncedAt
+      )
+      ON CONFLICT(id) DO UPDATE SET
+        quantity           = excluded.quantity,
+        unit               = excluded.unit,
+        rate               = excluded.rate,
+        mrp                = excluded.mrp,
+        taxPercent         = excluded.taxPercent,
+        taxAmount          = excluded.taxAmount,
+        discount           = excluded.discount,
+        discountType       = excluded.discountType,
+        salePrice          = excluded.salePrice,
+        profit             = excluded.profit,
+        totalCost          = excluded.totalCost,
+        billedValue        = excluded.billedValue,
+        batchNo            = excluded.batchNo,
+        batchId            = excluded.batchId,
+        purchaseBatchNo    = excluded.purchaseBatchNo,
+        mfgDate            = excluded.mfgDate,
+        expiryDate         = excluded.expiryDate,
+        lineNo             = excluded.lineNo,
+        isFree             = excluded.isFree,
+        effectiveUnitValue = excluded.effectiveUnitValue,
+        updatedAt          = excluded.updatedAt,
+        deletedAt          = excluded.deletedAt,
+        isSynced           = 1,
+        syncedAt           = excluded.syncedAt
+      WHERE excluded.updatedAt > purchase_items.updatedAt
+        OR purchase_items.updatedAt IS NULL
+    `);
+
+    const trx = db.transaction((records) => {
+      for (const r of records) {
+        upsert.run({
+          id: r.id,
+          purchaseId: r.purchaseId,
+          productId: r.productId,
+          barcode: r.barcode ?? null,
+          quantity: Number(r.quantity || 0),
+          unit: r.unit,
+          rate: Number(r.rate || 0),
+          mrp: r.mrp != null ? Number(r.mrp) : null,
+          taxPercent: r.taxPercent,
+          taxAmount: Number(r.taxAmount || 0),
+          discount: Number(r.discount || 0),
+          discountType: r.discountType ?? null,
+          salePrice: r.salePrice != null ? Number(r.salePrice) : null,
+          profit: r.profit != null ? Number(r.profit) : null,
+          totalCost: Number(r.totalCost || 0),
+          billedValue: r.billedValue != null ? Number(r.billedValue) : null,
+          batchNo: r.batchNo ?? null,
+          batchId: r.batchId ?? null,
+          purchaseBatchNo: r.purchaseBatchNo ?? null,
+          mfgDate: r.mfgDate ?? null,
+          expiryDate: r.expiryDate ?? null,
+          lineNo: r.lineNo ?? null,
+          isFree: r.isFree ? 1 : 0,
+          effectiveUnitValue:
+            r.effectiveUnitValue != null ? Number(r.effectiveUnitValue) : null,
+          createdAt:
+            r.createdAt instanceof Date
+              ? r.createdAt.toISOString()
+              : (r.createdAt ?? now),
+          updatedAt:
+            r.updatedAt instanceof Date
+              ? r.updatedAt.toISOString()
+              : (r.updatedAt ?? now),
+          deletedAt:
+            r.deletedAt instanceof Date
+              ? r.deletedAt.toISOString()
+              : (r.deletedAt ?? null),
+          syncedAt:
+            r.syncedAt instanceof Date
+              ? r.syncedAt.toISOString()
+              : (r.syncedAt ?? now),
+        });
+      }
+    });
+
+    trx(records);
+    return { success: true, upserted: records.length };
+  });
 }
 
 module.exports = { registerPurchaseHandlers };

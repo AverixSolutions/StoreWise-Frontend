@@ -95,10 +95,11 @@ function registerCategoryHandlers() {
           };
         }
 
+        // ── mark dirty on update ──────────────────────────────────────────
         const result = db
           .prepare(
             `UPDATE categories
-             SET name = ?, parentId = ?, updatedAt = ?
+             SET name = ?, parentId = ?, updatedAt = ?, isSynced = 0, syncedAt = NULL
              WHERE id = ? AND licenseId = ?`,
           )
           .run(name, parentId, now, id, licenseId);
@@ -130,6 +131,7 @@ function registerCategoryHandlers() {
 
       const newId = uuidv4();
 
+      // ── mark dirty on insert ──────────────────────────────────────────────
       db.prepare(
         `INSERT INTO categories (
           id,
@@ -137,8 +139,10 @@ function registerCategoryHandlers() {
           name,
           parentId,
           createdAt,
-          updatedAt
-        ) VALUES (?, ?, ?, ?, ?, ?)`,
+          updatedAt,
+          isSynced,
+          syncedAt
+        ) VALUES (?, ?, ?, ?, ?, ?, 0, NULL)`,
       ).run(newId, licenseId, name, parentId, now, now);
 
       return { success: true, id: newId };
@@ -189,32 +193,36 @@ function registerCategoryHandlers() {
 
       const tx = db.transaction(() => {
         if (licenseId) {
+          // ── mark dirty on delete (children) ────────────────────────────
           db.prepare(
             `UPDATE categories
-             SET deletedAt = ?, updatedAt = ?
+             SET deletedAt = ?, updatedAt = ?, isSynced = 0, syncedAt = NULL
              WHERE parentId = ?
                AND licenseId = ?
                AND COALESCE(deletedAt, '') = ''`,
           ).run(now, now, categoryId, licenseId);
 
+          // ── mark dirty on delete (self) ─────────────────────────────────
           db.prepare(
             `UPDATE categories
-             SET deletedAt = ?, updatedAt = ?
+             SET deletedAt = ?, updatedAt = ?, isSynced = 0, syncedAt = NULL
              WHERE id = ?
                AND licenseId = ?
                AND COALESCE(deletedAt, '') = ''`,
           ).run(now, now, categoryId, licenseId);
         } else {
+          // ── mark dirty on delete (children, no licenseId) ───────────────
           db.prepare(
             `UPDATE categories
-             SET deletedAt = ?, updatedAt = ?
+             SET deletedAt = ?, updatedAt = ?, isSynced = 0, syncedAt = NULL
              WHERE parentId = ?
                AND COALESCE(deletedAt, '') = ''`,
           ).run(now, now, categoryId);
 
+          // ── mark dirty on delete (self, no licenseId) ───────────────────
           db.prepare(
             `UPDATE categories
-             SET deletedAt = ?, updatedAt = ?
+             SET deletedAt = ?, updatedAt = ?, isSynced = 0, syncedAt = NULL
              WHERE id = ?
                AND COALESCE(deletedAt, '') = ''`,
           ).run(now, now, categoryId);
@@ -224,6 +232,82 @@ function registerCategoryHandlers() {
       tx();
 
       return { success: true };
+    } catch (e) {
+      return { success: false, error: String(e?.message || e) };
+    }
+  });
+
+  // ── Sync handlers ───────────────────────────────────────────────────────────
+
+  ipcMain.handle("category:getDirty", (event, licenseId, limit = 200) => {
+    try {
+      return db
+        .prepare(
+          `SELECT *
+           FROM categories
+           WHERE licenseId = ?
+             AND (
+               syncedAt IS NULL
+               OR updatedAt > syncedAt
+               OR (deletedAt IS NOT NULL AND (syncedAt IS NULL OR deletedAt > syncedAt))
+             )
+           ORDER BY updatedAt ASC
+           LIMIT ?`,
+        )
+        .all(licenseId, limit);
+    } catch (e) {
+      return [];
+    }
+  });
+
+  ipcMain.handle("category:markSynced", (event, ids, serverSyncedAt) => {
+    try {
+      const ts = serverSyncedAt || new Date().toISOString();
+      const stmt = db.prepare(
+        `UPDATE categories SET isSynced = 1, syncedAt = ? WHERE id = ?`,
+      );
+      db.transaction((list) => list.forEach((id) => stmt.run(ts, id)))(ids);
+      return { success: true };
+    } catch (e) {
+      return { success: false, error: String(e?.message || e) };
+    }
+  });
+
+  ipcMain.handle("category:bulkUpsert", (event, items = []) => {
+    try {
+      // Parents must be inserted before children — sort nulls/empty parentId first
+      const sorted = [...items].sort((a, b) => {
+        const aIsChild = a.parentId ? 1 : 0;
+        const bIsChild = b.parentId ? 1 : 0;
+        return aIsChild - bIsChild;
+      });
+
+      const stmt = db.prepare(
+        `INSERT INTO categories (id, licenseId, name, parentId, createdAt, updatedAt, deletedAt, isSynced, syncedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           name      = excluded.name,
+           parentId  = excluded.parentId,
+           updatedAt = excluded.updatedAt,
+           deletedAt = excluded.deletedAt,
+           isSynced  = 1,
+           syncedAt  = excluded.syncedAt`,
+      );
+      db.transaction((rows) => {
+        for (const r of rows) {
+          stmt.run(
+            r.id,
+            r.licenseId,
+            r.name,
+            r.parentId ?? null,
+            r.createdAt,
+            r.updatedAt,
+            r.deletedAt ?? null,
+            r.syncedAt ?? null,
+          );
+        }
+      })(sorted);
+      return { success: true, count: items.length };
     } catch (e) {
       return { success: false, error: String(e?.message || e) };
     }

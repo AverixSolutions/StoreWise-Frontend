@@ -1,4 +1,4 @@
-// frontend/src/sync/adapters/suppliers.ts
+// src/sync/adapters/brands.ts
 import type { SyncAdapter, DirtyRecord, SyncStateRecord } from "../SyncEngine";
 import {
   STORES,
@@ -7,7 +7,7 @@ import {
   idbPut,
 } from "@/platform/web/idb";
 
-// ── Desktop (Electron) helpers ────────────────────────────────────────────
+// ── Desktop helpers ───────────────────────────────────────────────────────────
 
 function api() {
   const w = window as any;
@@ -16,66 +16,57 @@ function api() {
 }
 
 async function desktopGetDirty(licenseId: string): Promise<DirtyRecord[]> {
-  return api().getDirtySuppliers(licenseId, 200) as Promise<DirtyRecord[]>;
+  return api().getDirtyBrands(licenseId, 200);
 }
-
 async function desktopMarkSynced(ids: string[], serverUpdatedAt: string) {
-  await api().markSuppliersSynced(ids, serverUpdatedAt);
+  await api().markBrandsSynced(ids, serverUpdatedAt);
 }
-
 async function desktopUpsertFromServer(records: DirtyRecord[]) {
-  await api().bulkUpsertSuppliers(records);
+  await api().bulkUpsertBrands(records);
 }
-
 async function desktopGetSyncState(): Promise<SyncStateRecord> {
-  const state = await api().getSyncState("suppliers");
+  const state = await api().getSyncState("brands");
   return {
     lastPulledAt: state?.lastPulledAt ?? null,
     lastPushedAt: state?.lastPushedAt ?? null,
   };
 }
-
 async function desktopSetSyncState(state: Partial<SyncStateRecord>) {
-  await api().setSyncState("suppliers", state);
+  await api().setSyncState("brands", state);
 }
 
-// ── Web (IndexedDB) implementation ────────────────────────────────────────
+// ── Web (IndexedDB) helpers ───────────────────────────────────────────────────
 
-type IDBSupplier = DirtyRecord & {
+type IDBBrand = DirtyRecord & {
   licenseId: string;
-  name: string;
-  isSynced?: number | boolean;
+  isSynced?: number;
   syncedAt?: string | null;
 };
 
 async function webGetDirty(licenseId: string): Promise<DirtyRecord[]> {
-  const all = await idbGetAllByIndex<IDBSupplier>(
-    STORES.SUPPLIERS,
+  const all = await idbGetAllByIndex<IDBBrand>(
+    STORES.BRANDS,
     "licenseId",
     licenseId,
   );
-  return all.filter((s) => Number(s.isSynced ?? 0) === 0);
+  return all.filter((b) => Number(b.isSynced ?? 0) === 0);
 }
 
 async function webMarkSynced(ids: string[], serverUpdatedAt: string) {
   for (const id of ids) {
-    const supplier = await idbGetByKey<IDBSupplier>(STORES.SUPPLIERS, id);
-    if (supplier) {
-      await idbPut(STORES.SUPPLIERS, {
-        ...supplier,
+    const brand = await idbGetByKey<IDBBrand>(STORES.BRANDS, id);
+    if (brand)
+      await idbPut(STORES.BRANDS, {
+        ...brand,
         isSynced: 1,
         syncedAt: serverUpdatedAt,
       });
-    }
   }
 }
 
 async function webUpsertFromServer(records: DirtyRecord[]) {
   for (const record of records) {
-    const existing = await idbGetByKey<IDBSupplier>(
-      STORES.SUPPLIERS,
-      record.id,
-    );
+    const existing = await idbGetByKey<IDBBrand>(STORES.BRANDS, record.id);
     const incomingTs = record.updatedAt
       ? new Date(record.updatedAt).getTime()
       : 0;
@@ -84,24 +75,24 @@ async function webUpsertFromServer(records: DirtyRecord[]) {
       : 0;
 
     if (!existing) {
-      await idbPut(STORES.SUPPLIERS, {
+      await idbPut(STORES.BRANDS, {
         ...record,
         isSynced: 1,
         syncedAt: new Date().toISOString(),
       });
-    } else if (incomingTs > localTs) {
-      await idbPut(STORES.SUPPLIERS, {
+    } else if (Number(existing.isSynced ?? 0) === 1 && incomingTs > localTs) {
+      await idbPut(STORES.BRANDS, {
         ...existing,
         ...record,
         isSynced: 1,
         syncedAt: new Date().toISOString(),
       });
     }
+    // If local is dirty (isSynced=0), skip — push cycle will handle it
   }
 }
 
-const WEB_SYNC_KEY = "kynflow_sync_suppliers";
-
+const WEB_SYNC_KEY = "kynflow_sync_brands";
 async function webGetSyncState(): Promise<SyncStateRecord> {
   try {
     const raw = localStorage.getItem(WEB_SYNC_KEY);
@@ -110,17 +101,16 @@ async function webGetSyncState(): Promise<SyncStateRecord> {
     return { lastPulledAt: null, lastPushedAt: null };
   }
 }
-
 async function webSetSyncState(state: Partial<SyncStateRecord>) {
   const current = await webGetSyncState();
   localStorage.setItem(WEB_SYNC_KEY, JSON.stringify({ ...current, ...state }));
 }
 
-// ── Factory ───────────────────────────────────────────────────────────────
+// ── Factory ───────────────────────────────────────────────────────────────────
 
-export function createSuppliersAdapter(isDesktop: boolean): SyncAdapter {
+export function createBrandsAdapter(isDesktop: boolean): SyncAdapter {
   return {
-    entity: "supplier",
+    entity: "brand",
     getDirtyRecords: isDesktop ? desktopGetDirty : webGetDirty,
     markSynced: isDesktop ? desktopMarkSynced : webMarkSynced,
     upsertFromServer: isDesktop ? desktopUpsertFromServer : webUpsertFromServer,

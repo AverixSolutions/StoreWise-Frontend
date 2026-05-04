@@ -1,6 +1,6 @@
 // src/platform/web/idb.ts
 const DB_NAME = "kynflow-web";
-const DB_VERSION = 8; // bumped from 7
+const DB_VERSION = 10; // bumped from 9
 
 export const STORES = {
   SHOP_SETTINGS: "shop_settings",
@@ -14,6 +14,13 @@ export const STORES = {
   UNITS: "units",
   TAX_CATEGORIES: "tax_categories",
   SUPPLIERS: "suppliers",
+  // ── v9: purchase stores ──────────────────────────────────────────────────
+  PURCHASES: "purchases",
+  PURCHASE_ITEMS: "purchase_items",
+  PURCHASE_HOLDS: "purchase_holds",
+  SALES: "sales",
+  SALE_ITEMS: "sale_items",
+  SALE_HOLDS: "sale_holds",
 } as const;
 
 export type SyncJob = {
@@ -70,7 +77,6 @@ function openDb(): Promise<IDBDatabase> {
             { unique: false },
           );
         }
-
         if (!db.objectStoreNames.contains(STORES.PRODUCT_BATCHES)) {
           const batchStore = db.createObjectStore(STORES.PRODUCT_BATCHES, {
             keyPath: "id",
@@ -83,11 +89,9 @@ function openDb(): Promise<IDBDatabase> {
             { unique: false },
           );
         }
-
         if (!db.objectStoreNames.contains(STORES.CODE_SEQUENCE)) {
           db.createObjectStore(STORES.CODE_SEQUENCE, { keyPath: "licenseId" });
         }
-
         if (!db.objectStoreNames.contains(STORES.BARCODE_SEQUENCE)) {
           db.createObjectStore(STORES.BARCODE_SEQUENCE, {
             keyPath: "licenseId",
@@ -126,7 +130,6 @@ function openDb(): Promise<IDBDatabase> {
           const productStore = request.transaction!.objectStore(
             STORES.PRODUCTS,
           );
-
           if (!productStore.indexNames.contains("licenseId_shortCode")) {
             productStore.createIndex(
               "licenseId_shortCode",
@@ -160,13 +163,84 @@ function openDb(): Promise<IDBDatabase> {
         }
       }
 
-      // v8 stores — suppliers cache for web sync
+      // v8 stores — suppliers cache
       if (oldVersion < 8) {
         if (!db.objectStoreNames.contains(STORES.SUPPLIERS)) {
           const suppStore = db.createObjectStore(STORES.SUPPLIERS, {
             keyPath: "id",
           });
           suppStore.createIndex("licenseId", "licenseId", { unique: false });
+        }
+      }
+
+      // v9 stores — purchases, purchase_items, purchase_holds
+      if (oldVersion < 9) {
+        // Purchases (headers)
+        if (!db.objectStoreNames.contains(STORES.PURCHASES)) {
+          const purchaseStore = db.createObjectStore(STORES.PURCHASES, {
+            keyPath: "id",
+          });
+          purchaseStore.createIndex("licenseId", "licenseId", {
+            unique: false,
+          });
+          purchaseStore.createIndex(
+            "licenseId_purchaseDate",
+            ["licenseId", "purchaseDate"],
+            { unique: false },
+          );
+          purchaseStore.createIndex(
+            "licenseId_supplierId",
+            ["licenseId", "supplierId"],
+            { unique: false },
+          );
+        }
+
+        // Purchase items
+        if (!db.objectStoreNames.contains(STORES.PURCHASE_ITEMS)) {
+          const itemStore = db.createObjectStore(STORES.PURCHASE_ITEMS, {
+            keyPath: "id",
+          });
+          itemStore.createIndex("purchaseId", "purchaseId", { unique: false });
+        }
+
+        // Purchase holds
+        if (!db.objectStoreNames.contains(STORES.PURCHASE_HOLDS)) {
+          const holdStore = db.createObjectStore(STORES.PURCHASE_HOLDS, {
+            keyPath: "id",
+          });
+          holdStore.createIndex("licenseId", "licenseId", { unique: false });
+        }
+      }
+
+      // v10 stores — sales, sale_items, sale_holds
+      if (oldVersion < 10) {
+        if (!db.objectStoreNames.contains(STORES.SALES)) {
+          const saleStore = db.createObjectStore(STORES.SALES, {
+            keyPath: "id",
+          });
+          saleStore.createIndex("licenseId", "licenseId", { unique: false });
+          saleStore.createIndex(
+            "licenseId_saleDate",
+            ["licenseId", "saleDate"],
+            { unique: false },
+          );
+          saleStore.createIndex(
+            "licenseId_customerId",
+            ["licenseId", "customerId"],
+            { unique: false },
+          );
+        }
+        if (!db.objectStoreNames.contains(STORES.SALE_ITEMS)) {
+          const itemStore = db.createObjectStore(STORES.SALE_ITEMS, {
+            keyPath: "id",
+          });
+          itemStore.createIndex("saleId", "saleId", { unique: false });
+        }
+        if (!db.objectStoreNames.contains(STORES.SALE_HOLDS)) {
+          const holdStore = db.createObjectStore(STORES.SALE_HOLDS, {
+            keyPath: "id",
+          });
+          holdStore.createIndex("licenseId", "licenseId", { unique: false });
         }
       }
     };

@@ -657,6 +657,69 @@ function registerSaleHandlers() {
     return { success: true, syncedAt: ts };
   });
 
+  ipcMain.handle("sale:mark-items-synced", (evt, ids, serverSyncedAt) => {
+    if (!Array.isArray(ids) || ids.length === 0)
+      return { success: true, synced: 0 };
+
+    const ts = serverSyncedAt || new Date().toISOString();
+    const trx = db.transaction((ids) => {
+      const stmt = db.prepare(
+        `UPDATE sale_items SET isSynced = 1, syncedAt = ? WHERE id = ?`,
+      );
+      ids.forEach((id) => stmt.run(ts, id));
+    });
+    trx(ids);
+    return { success: true, synced: ids.length, syncedAt: ts };
+  });
+
+  ipcMain.handle("get-dirty-sales", (evt, licenseId, limit = 200) => {
+    const rows = db
+      .prepare(
+        `
+    SELECT id, slNo, billNo, userId, licenseId,
+           customerId, customerName, department,
+           debitAccount, natureOfEntry, saleType,
+           saleDate, entryTime,
+           totalAmount, discount,
+           createdAt, updatedAt, deletedAt,
+           isSynced, syncedAt
+    FROM sales
+    WHERE licenseId = ?
+      AND (isSynced = 0 OR isSynced IS NULL)
+    ORDER BY updatedAt ASC
+    LIMIT ?
+  `,
+      )
+      .all(licenseId, limit);
+    return { success: true, records: rows };
+  });
+
+  ipcMain.handle("get-dirty-sale-items", (evt, licenseId, limit = 500) => {
+    const rows = db
+      .prepare(
+        `
+    SELECT si.id, si.saleId, si.productId, si.barcode,
+           si.quantity, si.unit, si.rate, si.mrp,
+           si.taxPercent, si.taxAmount,
+           si.discount, si.discountType,
+           si.salePrice, si.profit, si.totalCost, si.billedValue,
+           si.batchNo, si.batchId,
+           si.mfgDate, si.expiryDate,
+           si.lineNo, si.isFree, si.effectiveUnitValue,
+           si.createdAt, si.updatedAt, si.deletedAt,
+           si.isSynced, si.syncedAt
+    FROM sale_items si
+    JOIN sales s ON s.id = si.saleId
+    WHERE s.licenseId = ?
+      AND (si.isSynced = 0 OR si.isSynced IS NULL)
+    ORDER BY si.updatedAt ASC
+    LIMIT ?
+  `,
+      )
+      .all(licenseId, limit);
+    return { success: true, records: rows };
+  });
+
   // ---- holds ----
   ipcMain.handle("sale-hold:save", (evt, payload) => {
     const now = new Date().toISOString();
@@ -752,6 +815,217 @@ function registerSaleHandlers() {
       .prepare(`SELECT lastHoldNo FROM sale_hold_sequence WHERE licenseId=?`)
       .get(licenseId);
     return { nextHoldNo: seq ? seq.lastHoldNo + 1 : 1 };
+  });
+
+  ipcMain.handle("bulk-upsert-sales", (evt, records) => {
+    if (!Array.isArray(records) || records.length === 0)
+      return { success: true, upserted: 0 };
+
+    const now = new Date().toISOString();
+    const upsert = db.prepare(`
+    INSERT INTO sales (
+      id, slNo, billNo, userId, licenseId,
+      customerId, customerName, department,
+      debitAccount, natureOfEntry, saleType,
+      saleDate, entryTime,
+      totalAmount, discount,
+      createdAt, updatedAt, deletedAt,
+      isSynced, syncedAt
+    ) VALUES (
+      @id, @slNo, @billNo, @userId, @licenseId,
+      @customerId, @customerName, @department,
+      @debitAccount, @natureOfEntry, @saleType,
+      @saleDate, @entryTime,
+      @totalAmount, @discount,
+      @createdAt, @updatedAt, @deletedAt,
+      1, @syncedAt
+    )
+    ON CONFLICT(id) DO UPDATE SET
+      slNo          = excluded.slNo,
+      billNo        = excluded.billNo,
+      customerId    = excluded.customerId,
+      customerName  = excluded.customerName,
+      department    = excluded.department,
+      debitAccount  = excluded.debitAccount,
+      natureOfEntry = excluded.natureOfEntry,
+      saleType      = excluded.saleType,
+      saleDate      = excluded.saleDate,
+      entryTime     = excluded.entryTime,
+      totalAmount   = excluded.totalAmount,
+      discount      = excluded.discount,
+      updatedAt     = excluded.updatedAt,
+      deletedAt     = excluded.deletedAt,
+      isSynced      = 1,
+      syncedAt      = excluded.syncedAt
+    WHERE excluded.updatedAt > sales.updatedAt
+      OR sales.updatedAt IS NULL
+  `);
+
+    const trx = db.transaction((records) => {
+      for (const r of records) {
+        upsert.run({
+          id: r.id,
+          slNo: r.slNo ?? null,
+          billNo: r.billNo ?? null,
+          userId: r.userId ?? null,
+          licenseId: r.licenseId,
+          customerId: r.customerId ?? null,
+          customerName: r.customerName ?? null,
+          department: r.department ?? null,
+          debitAccount: r.debitAccount ?? null,
+          natureOfEntry: r.natureOfEntry ?? null,
+          saleType: r.saleType ?? null,
+          saleDate:
+            r.saleDate instanceof Date ? r.saleDate.toISOString() : r.saleDate,
+          entryTime:
+            r.entryTime instanceof Date
+              ? r.entryTime.toISOString()
+              : (r.entryTime ?? null),
+          totalAmount: Number(r.totalAmount || 0),
+          discount: Number(r.discount || 0),
+          createdAt:
+            r.createdAt instanceof Date
+              ? r.createdAt.toISOString()
+              : (r.createdAt ?? now),
+          updatedAt:
+            r.updatedAt instanceof Date
+              ? r.updatedAt.toISOString()
+              : (r.updatedAt ?? now),
+          deletedAt:
+            r.deletedAt instanceof Date
+              ? r.deletedAt.toISOString()
+              : (r.deletedAt ?? null),
+          syncedAt:
+            r.syncedAt instanceof Date
+              ? r.syncedAt.toISOString()
+              : (r.syncedAt ?? now),
+        });
+      }
+    });
+
+    trx(records);
+
+    // Keep sale_sequence in sync (mirrors purchase bulk-upsert pattern)
+    const maxRow = db
+      .prepare(
+        `SELECT MAX(slNo) AS maxSlNo FROM sales WHERE licenseId = ? AND deletedAt IS NULL`,
+      )
+      .get(records[0]?.licenseId);
+
+    if (maxRow?.maxSlNo) {
+      db.prepare(
+        `
+      INSERT INTO sale_sequence (licenseId, lastSlNo)
+      VALUES (?, ?)
+      ON CONFLICT(licenseId) DO UPDATE SET
+        lastSlNo = MAX(excluded.lastSlNo, sale_sequence.lastSlNo)
+    `,
+      ).run(records[0].licenseId, maxRow.maxSlNo);
+    }
+
+    return { success: true, upserted: records.length };
+  });
+
+  ipcMain.handle("bulk-upsert-sale-items", (evt, records) => {
+    if (!Array.isArray(records) || records.length === 0)
+      return { success: true, upserted: 0 };
+
+    const now = new Date().toISOString();
+    const upsert = db.prepare(`
+    INSERT INTO sale_items (
+      id, saleId, productId, barcode,
+      quantity, unit, rate, mrp,
+      taxPercent, taxAmount, discount, discountType,
+      salePrice, profit, totalCost, billedValue,
+      batchNo, batchId,
+      mfgDate, expiryDate, lineNo, isFree, effectiveUnitValue,
+      createdAt, updatedAt, deletedAt, isSynced, syncedAt
+    ) VALUES (
+      @id, @saleId, @productId, @barcode,
+      @quantity, @unit, @rate, @mrp,
+      @taxPercent, @taxAmount, @discount, @discountType,
+      @salePrice, @profit, @totalCost, @billedValue,
+      @batchNo, @batchId,
+      @mfgDate, @expiryDate, @lineNo, @isFree, @effectiveUnitValue,
+      @createdAt, @updatedAt, @deletedAt, 1, @syncedAt
+    )
+    ON CONFLICT(id) DO UPDATE SET
+      quantity           = excluded.quantity,
+      unit               = excluded.unit,
+      rate               = excluded.rate,
+      mrp                = excluded.mrp,
+      taxPercent         = excluded.taxPercent,
+      taxAmount          = excluded.taxAmount,
+      discount           = excluded.discount,
+      discountType       = excluded.discountType,
+      salePrice          = excluded.salePrice,
+      profit             = excluded.profit,
+      totalCost          = excluded.totalCost,
+      billedValue        = excluded.billedValue,
+      batchNo            = excluded.batchNo,
+      batchId            = excluded.batchId,
+      mfgDate            = excluded.mfgDate,
+      expiryDate         = excluded.expiryDate,
+      lineNo             = excluded.lineNo,
+      isFree             = excluded.isFree,
+      effectiveUnitValue = excluded.effectiveUnitValue,
+      updatedAt          = excluded.updatedAt,
+      deletedAt          = excluded.deletedAt,
+      isSynced           = 1,
+      syncedAt           = excluded.syncedAt
+    WHERE excluded.updatedAt > sale_items.updatedAt
+      OR sale_items.updatedAt IS NULL
+  `);
+
+    const trx = db.transaction((records) => {
+      for (const r of records) {
+        upsert.run({
+          id: r.id,
+          saleId: r.saleId,
+          productId: r.productId,
+          barcode: r.barcode ?? null,
+          quantity: Number(r.quantity || 0),
+          unit: r.unit,
+          rate: Number(r.rate || 0),
+          mrp: r.mrp != null ? Number(r.mrp) : null,
+          taxPercent: r.taxPercent,
+          taxAmount: Number(r.taxAmount || 0),
+          discount: Number(r.discount || 0),
+          discountType: r.discountType ?? null,
+          salePrice: r.salePrice != null ? Number(r.salePrice) : null,
+          profit: r.profit != null ? Number(r.profit) : null,
+          totalCost: Number(r.totalCost || 0),
+          billedValue: r.billedValue != null ? Number(r.billedValue) : null,
+          batchNo: r.batchNo ?? null,
+          batchId: r.batchId ?? null,
+          mfgDate: r.mfgDate ?? null,
+          expiryDate: r.expiryDate ?? null,
+          lineNo: r.lineNo ?? null,
+          isFree: r.isFree ? 1 : 0,
+          effectiveUnitValue:
+            r.effectiveUnitValue != null ? Number(r.effectiveUnitValue) : null,
+          createdAt:
+            r.createdAt instanceof Date
+              ? r.createdAt.toISOString()
+              : (r.createdAt ?? now),
+          updatedAt:
+            r.updatedAt instanceof Date
+              ? r.updatedAt.toISOString()
+              : (r.updatedAt ?? now),
+          deletedAt:
+            r.deletedAt instanceof Date
+              ? r.deletedAt.toISOString()
+              : (r.deletedAt ?? null),
+          syncedAt:
+            r.syncedAt instanceof Date
+              ? r.syncedAt.toISOString()
+              : (r.syncedAt ?? now),
+        });
+      }
+    });
+
+    trx(records);
+    return { success: true, upserted: records.length };
   });
 }
 

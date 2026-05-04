@@ -79,6 +79,7 @@ export default function ProductsTable({
   const { showToast } = useToast();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetching, setFetching] = useState(false); // soft re-fetch indicator
   const [page, setPage] = useState(1);
   const [pageSize] = useState(12);
   const [total, setTotal] = useState(0);
@@ -91,7 +92,13 @@ export default function ProductsTable({
   const [deleting, setDeleting] = useState(false);
 
   const loadProducts = async () => {
-    setLoading(true);
+    // Hard skeleton only when we have nothing to show yet
+    if (products.length === 0) {
+      setLoading(true);
+    } else {
+      setFetching(true);
+    }
+
     try {
       const licenseId = getActiveLicenseId();
       let result: ProductListResult;
@@ -124,6 +131,7 @@ export default function ProductsTable({
       console.error("Error loading products:", error);
     } finally {
       setLoading(false);
+      setFetching(false);
     }
   };
 
@@ -206,7 +214,6 @@ export default function ProductsTable({
     );
   }
 
-  // Change 1: "Batches" → "Subcategory"
   const HEADERS = [
     "Code",
     "Product Name",
@@ -222,7 +229,9 @@ export default function ProductsTable({
   ];
 
   return (
-    <Surface>
+    <Surface
+      className={`transition-opacity duration-150 ${fetching ? "opacity-50 pointer-events-none" : "opacity-100"}`}
+    >
       {/* Desktop table */}
       <div className="hidden md:block overflow-x-auto">
         <table className="w-full min-w-[960px]">
@@ -269,7 +278,6 @@ export default function ProductsTable({
                   )}
                 </td>
 
-                {/* Change 2: Batches cell → Subcategory cell */}
                 <td className="px-3.5 py-2.5">
                   {(product as any).subcategory ? (
                     <span className="rounded-full bg-cyan-50 px-2 py-0.5 text-[11px] font-medium text-cyan-700 ring-1 ring-cyan-200/70">
@@ -309,7 +317,6 @@ export default function ProductsTable({
                       <Eye className="h-3 w-3" />
                     </button>
 
-                    {/* Change 4: Batch button kept — column removed, entry point preserved */}
                     <button
                       onClick={() => onManageBatches(product)}
                       title="Batches"
@@ -358,7 +365,6 @@ export default function ProductsTable({
           >
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0 flex-1">
-                {/* Change 3: Mobile card — code + shortCode badges, then name, then category + subcategory */}
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] text-slate-500">
                     #{product.code}

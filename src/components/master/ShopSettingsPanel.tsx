@@ -1,7 +1,7 @@
 // src/components/master/ShopSettingsPanel.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Building2,
@@ -18,15 +18,25 @@ import {
   User,
   X,
   Receipt,
+  Upload,
+  Loader2,
 } from "lucide-react";
 import { platform } from "@/platform";
-import { getActiveLicenseId } from "@/lib/session/runtimeSession";
+import {
+  getActiveLicenseId,
+  getActiveToken,
+} from "@/lib/session/runtimeSession";
+import { uploadProductImage } from "@/lib/uploadImage";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 type FormState = {
   shopName: string;
-  logoDataUrl: string | null;
+  /** Runtime-only preview URL — either a blob: URL (new file picked) or the
+   *  existing R2 public URL loaded from settings. Never persisted to IDB. */
+  logoPreviewUrl: string | null;
+  /** The committed R2 public URL — what we actually save to IDB / server. */
+  logoUrl: string | null;
   addressLine1: string;
   addressLine2: string;
   city: string;
@@ -50,9 +60,16 @@ type ToastState = {
   message: string;
 } | null;
 
+type LogoUploadState =
+  | { status: "idle" }
+  | { status: "uploading"; progress?: number }
+  | { status: "done"; url: string }
+  | { status: "error"; message: string };
+
 const initialState: FormState = {
   shopName: "",
-  logoDataUrl: null,
+  logoPreviewUrl: null,
+  logoUrl: null,
   addressLine1: "",
   addressLine2: "",
   city: "",
@@ -66,6 +83,10 @@ const initialState: FormState = {
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+function isDesktopRuntime(): boolean {
+  return typeof window !== "undefined" && !!(window as any).electronAPI;
+}
 
 function syncStatusConfig(status?: string) {
   switch (status) {
@@ -101,7 +122,7 @@ function syncStatusConfig(status?: string) {
   }
 }
 
-// ── SectionCard — dark blue header + light body, matches BCM table style ──────
+// ── SectionCard ───────────────────────────────────────────────────────────────
 
 function SectionCard({
   icon: Icon,
@@ -116,14 +137,12 @@ function SectionCard({
 }) {
   return (
     <div className="rounded-xl border border-slate-200/80 bg-white shadow-[0_4px_20px_rgba(3,10,24,0.06)] overflow-hidden">
-      {/* Dark blue header — identical to table <thead> in BrandsCategoriesManager */}
       <div className="flex items-center gap-3 bg-[#1e3a5f] px-5 py-3">
         <Icon className={`h-4 w-4 shrink-0 ${iconColor}`} />
         <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/80">
           {title}
         </span>
       </div>
-      {/* Light body so white inputs stand out */}
       <div className="bg-slate-50/60 p-5">{children}</div>
     </div>
   );
@@ -201,6 +220,129 @@ function Toast({
   );
 }
 
+// ── LogoSection ───────────────────────────────────────────────────────────────
+// Handles both desktop (base64 FileReader) and web (R2 presign + upload).
+// On web: uploads immediately on file pick so the user gets instant feedback
+// and the URL is ready when they hit Save.
+
+function LogoSection({
+  isDesktop,
+  logoPreviewUrl,
+  logoUpload,
+  onDesktopFilePick,
+  onWebFilePick,
+  onRemove,
+}: {
+  isDesktop: boolean;
+  logoPreviewUrl: string | null;
+  logoUpload: LogoUploadState;
+  onDesktopFilePick: (file: File) => void;
+  onWebFilePick: (file: File) => void;
+  onRemove: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    // Reset so the same file can be re-picked if needed
+    e.target.value = "";
+    if (isDesktop) {
+      onDesktopFilePick(file);
+    } else {
+      onWebFilePick(file);
+    }
+  }
+
+  const isUploading = logoUpload.status === "uploading";
+
+  return (
+    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-6">
+      {/* Logo preview */}
+      <div className="relative flex h-24 w-24 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white shadow-[0_1px_6px_rgba(0,0,0,0.08)] overflow-hidden">
+        {isUploading ? (
+          <div className="flex flex-col items-center justify-center gap-1">
+            <Loader2 className="h-6 w-6 animate-spin text-cyan-500" />
+            <span className="text-[9px] text-slate-400">Uploading…</span>
+          </div>
+        ) : logoPreviewUrl ? (
+          <>
+            <img
+              src={logoPreviewUrl}
+              alt="Shop Logo"
+              className="h-full w-full object-contain p-2"
+            />
+            <button
+              type="button"
+              onClick={onRemove}
+              className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-slate-700/80 text-slate-200 hover:bg-rose-500 hover:text-white transition"
+              title="Remove logo"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </>
+        ) : (
+          <ImageIcon className="h-8 w-8 text-slate-300" />
+        )}
+      </div>
+
+      {/* Upload zone */}
+      <div className="flex-1">
+        {logoUpload.status === "error" && (
+          <p className="mb-2 flex items-center gap-1.5 text-xs text-rose-400">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+            {logoUpload.message} — try again.
+          </p>
+        )}
+        <label
+          className={`group relative flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed px-6 py-6 text-center shadow-[0_1px_4px_rgba(0,0,0,0.05)] transition
+            ${
+              isUploading
+                ? "border-cyan-300 bg-cyan-50/40 cursor-not-allowed"
+                : "border-slate-300 bg-white hover:border-cyan-400 hover:bg-cyan-50/60"
+            }`}
+        >
+          <input
+            ref={inputRef}
+            type="file"
+            accept="image/jpeg,image/jpg,image/png,image/webp"
+            className="sr-only"
+            disabled={isUploading}
+            onChange={handleChange}
+          />
+          <div
+            className={`flex h-8 w-8 items-center justify-center rounded-xl border bg-slate-50 transition
+              ${
+                isUploading
+                  ? "border-cyan-300 text-cyan-400"
+                  : "border-slate-200 text-slate-400 group-hover:border-cyan-400/60 group-hover:text-cyan-500"
+              }`}
+          >
+            {isUploading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Upload className="h-4 w-4" />
+            )}
+          </div>
+          <div>
+            <p
+              className={`text-sm font-medium transition
+                ${isUploading ? "text-cyan-600" : "text-slate-600 group-hover:text-cyan-600"}`}
+            >
+              {isUploading ? "Uploading to cloud…" : "Click to upload logo"}
+            </p>
+            <p className="mt-0.5 text-[11px] text-slate-400">
+              {isDesktop
+                ? "PNG, JPG, WEBP — stored locally. Shown on invoice header."
+                : "PNG, JPG, WEBP — uploaded to cloud. Shown on invoice header."}
+            </p>
+          </div>
+        </label>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export default function ShopSettingsPanel({ onBack }: { onBack?: () => void }) {
@@ -209,11 +351,15 @@ export default function ShopSettingsPanel({ onBack }: { onBack?: () => void }) {
   const [saving, setSaving] = useState(false);
   const [syncInfo, setSyncInfo] = useState<SyncInfo>({});
   const [toast, setToast] = useState<ToastState>(null);
+  const [logoUpload, setLogoUpload] = useState<LogoUploadState>({
+    status: "idle",
+  });
 
   const router = useRouter();
-
   const licenseId = useMemo(() => getActiveLicenseId(), []);
+  const isDesktop = useMemo(() => isDesktopRuntime(), []);
 
+  // Load settings on mount
   useEffect(() => {
     let cancelled = false;
     async function loadSettings() {
@@ -221,24 +367,29 @@ export default function ShopSettingsPanel({ onBack }: { onBack?: () => void }) {
       try {
         const res = await platform.getShopSettings(licenseId);
         if (!cancelled && res?.success && res.settings) {
+          const s = res.settings;
           setForm({
-            shopName: res.settings.shopName || "",
-            logoDataUrl: res.settings.logoDataUrl || null,
-            addressLine1: res.settings.addressLine1 || "",
-            addressLine2: res.settings.addressLine2 || "",
-            city: res.settings.city || "",
-            state: res.settings.state || "",
-            pincode: res.settings.pincode || "",
-            mobile: res.settings.mobile || "",
-            email: res.settings.email || "",
-            gstin: res.settings.gstin || "",
-            footerNote: res.settings.footerNote || "",
+            shopName: s.shopName || "",
+            // On desktop logoDataUrl is the base64; on web logoUrl is the R2 URL
+            logoPreviewUrl: isDesktop
+              ? s.logoDataUrl || null
+              : s.logoUrl || null,
+            logoUrl: s.logoUrl || null,
+            addressLine1: s.addressLine1 || "",
+            addressLine2: s.addressLine2 || "",
+            city: s.city || "",
+            state: s.state || "",
+            pincode: s.pincode || "",
+            mobile: s.mobile || "",
+            email: s.email || "",
+            gstin: s.gstin || "",
+            footerNote: s.footerNote || "",
             authorizedSignatory:
-              res.settings.authorizedSignatory || "Authorized Signature",
+              s.authorizedSignatory || "Authorized Signature",
           });
           setSyncInfo({
-            syncStatus: res.settings.syncStatus,
-            lastSyncedAt: res.settings.lastSyncedAt,
+            syncStatus: s.syncStatus,
+            lastSyncedAt: s.lastSyncedAt,
           });
         }
       } catch (err) {
@@ -251,18 +402,67 @@ export default function ShopSettingsPanel({ onBack }: { onBack?: () => void }) {
     return () => {
       cancelled = true;
     };
-  }, [licenseId]);
+  }, [licenseId, isDesktop]);
 
   function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
-  function handleLogoChange(file: File | null) {
-    if (!file) return;
+  // ── Desktop logo: FileReader → base64 preview (no upload) ─────────────────
+
+  function handleDesktopFilePick(file: File) {
     const reader = new FileReader();
-    reader.onload = () => setField("logoDataUrl", String(reader.result || ""));
+    reader.onload = () => {
+      setField("logoPreviewUrl", String(reader.result || ""));
+      // logoUrl stays null on desktop — we use logoDataUrl path
+    };
     reader.readAsDataURL(file);
   }
+
+  // ── Web logo: upload immediately to R2, store the public URL ──────────────
+
+  async function handleWebFilePick(file: File) {
+    const token = getActiveToken();
+    if (!token) {
+      setToast({
+        type: "error",
+        message: "Not authenticated. Please log in again.",
+      });
+      return;
+    }
+
+    // Show a local blob preview instantly while upload is in-flight
+    const blobUrl = URL.createObjectURL(file);
+    setField("logoPreviewUrl", blobUrl);
+    setLogoUpload({ status: "uploading" });
+
+    try {
+      const { publicUrl } = await uploadProductImage(file, licenseId, token);
+
+      // Commit the R2 URL into form state — this is what gets saved
+      setField("logoUrl", publicUrl);
+      setLogoUpload({ status: "done", url: publicUrl });
+
+      // Revoke the temporary blob URL to free memory
+      URL.revokeObjectURL(blobUrl);
+      // Switch preview to the permanent R2 URL
+      setField("logoPreviewUrl", publicUrl);
+    } catch (err: any) {
+      setLogoUpload({
+        status: "error",
+        message: err?.message || "Upload failed",
+      });
+      // Keep showing the local preview so the user can see what they picked
+    }
+  }
+
+  function handleLogoRemove() {
+    setField("logoPreviewUrl", null);
+    setField("logoUrl", null);
+    setLogoUpload({ status: "idle" });
+  }
+
+  // ── Save ──────────────────────────────────────────────────────────────────
 
   async function handleSave() {
     if (!licenseId) {
@@ -276,9 +476,54 @@ export default function ShopSettingsPanel({ onBack }: { onBack?: () => void }) {
       setToast({ type: "error", message: "Shop name is required." });
       return;
     }
+    if (logoUpload.status === "uploading") {
+      setToast({
+        type: "warning",
+        message: "Logo is still uploading. Please wait.",
+      });
+      return;
+    }
+
     setSaving(true);
     try {
-      const res = await platform.saveShopSettings({ licenseId, ...form });
+      const payload = isDesktop
+        ? {
+            licenseId,
+            shopName: form.shopName,
+            // Desktop: pass base64 preview as logoDataUrl; logoUrl unused
+            logoDataUrl: form.logoPreviewUrl,
+            logoUrl: null,
+            addressLine1: form.addressLine1,
+            addressLine2: form.addressLine2,
+            city: form.city,
+            state: form.state,
+            pincode: form.pincode,
+            mobile: form.mobile,
+            email: form.email,
+            gstin: form.gstin,
+            footerNote: form.footerNote,
+            authorizedSignatory: form.authorizedSignatory,
+          }
+        : {
+            licenseId,
+            shopName: form.shopName,
+            // Web: never pass base64; only the committed R2 URL
+            logoDataUrl: null,
+            logoUrl: form.logoUrl,
+            addressLine1: form.addressLine1,
+            addressLine2: form.addressLine2,
+            city: form.city,
+            state: form.state,
+            pincode: form.pincode,
+            mobile: form.mobile,
+            email: form.email,
+            gstin: form.gstin,
+            footerNote: form.footerNote,
+            authorizedSignatory: form.authorizedSignatory,
+          };
+
+      const res = await platform.saveShopSettings(payload);
+
       if (res?.success) {
         setSyncInfo({
           syncStatus: res.settings?.syncStatus,
@@ -289,6 +534,7 @@ export default function ShopSettingsPanel({ onBack }: { onBack?: () => void }) {
           type: res.warning ? "warning" : "success",
           message: res.warning || "Shop settings saved successfully.",
         });
+        setLogoUpload({ status: "idle" });
       } else {
         setToast({
           type: "error",
@@ -322,7 +568,6 @@ export default function ShopSettingsPanel({ onBack }: { onBack?: () => void }) {
   }
 
   const syncCfg = syncStatusConfig(syncInfo.syncStatus);
-  const SyncIcon = syncCfg.icon;
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -331,7 +576,7 @@ export default function ShopSettingsPanel({ onBack }: { onBack?: () => void }) {
       {toast && <Toast toast={toast} onClose={() => setToast(null)} />}
 
       <div className="space-y-4 pb-10 md:pb-4">
-        {/* ── Hero Banner — same gradient/structure as BrandsCategoriesManager ── */}
+        {/* ── Hero Banner ── */}
         <section className="relative overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(135deg,#091120_0%,#0f1a31_58%,#16213d_100%)] px-5 py-5 text-white shadow-[0_22px_50px_rgba(5,10,20,0.18)] md:px-6 md:py-6">
           <div className="pointer-events-none absolute -left-10 top-0 h-32 w-32 rounded-full bg-orange-400/10 blur-3xl" />
           <div className="pointer-events-none absolute right-0 bottom-0 h-36 w-36 rounded-full bg-cyan-500/10 blur-3xl" />
@@ -520,55 +765,14 @@ export default function ShopSettingsPanel({ onBack }: { onBack?: () => void }) {
           title="Shop Logo"
           iconColor="text-fuchsia-300"
         >
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-6">
-            {/* Logo preview */}
-            <div className="relative flex h-24 w-24 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white shadow-[0_1px_6px_rgba(0,0,0,0.08)] overflow-hidden">
-              {form.logoDataUrl ? (
-                <>
-                  <img
-                    src={form.logoDataUrl}
-                    alt="Shop Logo"
-                    className="h-full w-full object-contain p-2"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setField("logoDataUrl", null)}
-                    className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-slate-700/80 text-slate-200 hover:bg-rose-500 hover:text-white transition"
-                    title="Remove logo"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </>
-              ) : (
-                <ImageIcon className="h-8 w-8 text-slate-300" />
-              )}
-            </div>
-
-            {/* Upload zone */}
-            <div className="flex-1">
-              <label className="group relative flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-slate-300 bg-white px-6 py-6 text-center shadow-[0_1px_4px_rgba(0,0,0,0.05)] transition hover:border-cyan-400 hover:bg-cyan-50/60">
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="sr-only"
-                  onChange={(e) =>
-                    handleLogoChange(e.target.files?.[0] || null)
-                  }
-                />
-                <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-400 group-hover:border-cyan-400/60 group-hover:text-cyan-500 transition">
-                  <ImageIcon className="h-4 w-4" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-slate-600 group-hover:text-cyan-600 transition">
-                    Click to upload logo
-                  </p>
-                  <p className="mt-0.5 text-[11px] text-slate-400">
-                    PNG, JPG, SVG — max 2MB. Shown on invoice header.
-                  </p>
-                </div>
-              </label>
-            </div>
-          </div>
+          <LogoSection
+            isDesktop={isDesktop}
+            logoPreviewUrl={form.logoPreviewUrl}
+            logoUpload={logoUpload}
+            onDesktopFilePick={handleDesktopFilePick}
+            onWebFilePick={handleWebFilePick}
+            onRemove={handleLogoRemove}
+          />
         </SectionCard>
 
         {/* ── Save Bar ── */}
@@ -587,13 +791,18 @@ export default function ShopSettingsPanel({ onBack }: { onBack?: () => void }) {
               <button
                 type="button"
                 onClick={handleSave}
-                disabled={saving}
+                disabled={saving || logoUpload.status === "uploading"}
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#20b7ff] to-[#b026ff] px-6 py-2.5 text-sm font-semibold text-white shadow-[0_4px_20px_rgba(32,183,255,0.25)] transition hover:shadow-[0_6px_28px_rgba(32,183,255,0.38)] hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]"
               >
                 {saving ? (
                   <>
                     <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
                     Saving…
+                  </>
+                ) : logoUpload.status === "uploading" ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Uploading logo…
                   </>
                 ) : (
                   <>

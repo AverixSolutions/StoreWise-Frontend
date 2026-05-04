@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import SearchableDropdown from "../ui/SearchableDropdown";
 import SupplierLedgerModal from "../ledger/SupplierLedgerModal";
+import { platform } from "@/platform";
+import { webCreateSupplier, webUpdateSupplier } from "@/platform/web/suppliers";
 
 type Supplier = {
   id?: string;
@@ -31,6 +33,23 @@ type Supplier = {
   notes?: string;
 };
 
+// Shared input className for all text inputs
+const inputCls =
+  "w-full px-3 py-2 rounded-md text-sm " +
+  "bg-[var(--kyn-surface-3)] border border-[var(--kyn-border)] " +
+  "text-[var(--kyn-text)] placeholder:text-[var(--kyn-text-muted)] " +
+  "focus:outline-none focus:border-[var(--kyn-primary)] focus:ring-1 focus:ring-[var(--kyn-glow-primary)] " +
+  "transition-all duration-150";
+
+const inputDisabledCls =
+  "w-full px-3 py-2 rounded-md text-sm " +
+  "bg-[var(--kyn-surface)] border border-[var(--kyn-border)] " +
+  "text-[var(--kyn-text-muted)] " +
+  "cursor-not-allowed";
+
+const labelCls =
+  "block text-xs font-medium text-[var(--kyn-text-muted)] mb-1 uppercase tracking-wide";
+
 export default function SupplierFormModal({
   isOpen,
   onClose,
@@ -45,7 +64,6 @@ export default function SupplierFormModal({
   const [form, setForm] = useState<Supplier>({ name: "" });
   const [ledgerOpen, setLedgerOpen] = useState(false);
 
-  // Derived UI state for opening balance
   const [openingSide, setOpeningSide] = useState<"we_owe" | "they_owe">(
     "we_owe",
   );
@@ -144,6 +162,7 @@ export default function SupplierFormModal({
   const refreshDistincts = async () => {
     const licenseId = localStorage.getItem("licenseId") || "demo-license";
     try {
+      if (!(window as any).electronAPI) return;
       const d = await (window as any).electronAPI.getSupplierDistincts(
         licenseId,
       );
@@ -166,20 +185,15 @@ export default function SupplierFormModal({
 
   useEffect(() => {
     if (!isOpen) return;
-
     setStatus({ type: null });
 
     if (editSupplier) {
       setForm(editSupplier);
       setCode((editSupplier as any).code || "SUP00001");
       setCodeNumber((editSupplier as any).codeNumber || 1);
-
-      // Initialize opening balance UI state
       const ob = Number(editSupplier.openingBalance ?? 0);
       setOpeningSide(ob >= 0 ? "we_owe" : "they_owe");
       setOpeningAmount(Math.abs(ob));
-
-      // Initialize credit limit UI state
       setHasCreditLimit(!!editSupplier.creditLimit);
     } else {
       setForm({
@@ -204,8 +218,6 @@ export default function SupplierFormModal({
         creditLimit: undefined,
         notes: "",
       });
-
-      // Reset UI state for new supplier
       setOpeningSide("we_owe");
       setOpeningAmount(0);
       setHasCreditLimit(false);
@@ -213,11 +225,13 @@ export default function SupplierFormModal({
       const licenseId = localStorage.getItem("licenseId") || "demo-license";
       (async () => {
         try {
-          const { code: c, codeNumber: n } = await (
-            window as any
-          ).electronAPI.getNextSupplierCode(licenseId);
-          setCode(c);
-          setCodeNumber(n);
+          if ((window as any).electronAPI) {
+            const { code: c, codeNumber: n } = await (
+              window as any
+            ).electronAPI.getNextSupplierCode(licenseId);
+            setCode(c);
+            setCodeNumber(n);
+          }
         } catch (error) {
           console.error("Error fetching next supplier code:", error);
         }
@@ -238,8 +252,6 @@ export default function SupplierFormModal({
     setStatus({ type: null });
 
     const licenseId = localStorage.getItem("licenseId") || "demo-license";
-
-    // Calculate signed opening balance from UI state
     const signedOpening =
       openingSide === "we_owe" ? openingAmount : -openingAmount;
 
@@ -272,14 +284,22 @@ export default function SupplierFormModal({
 
     try {
       if (editSupplier?.id) {
-        await (window as any).electronAPI.updateSupplier(
-          editSupplier.id,
-          payload,
-        );
+        if ((window as any).electronAPI) {
+          await (window as any).electronAPI.updateSupplier(
+            editSupplier.id,
+            payload,
+          );
+        } else {
+          await webUpdateSupplier(editSupplier.id, payload);
+        }
         onSuccess();
         onClose();
       } else {
-        await (window as any).electronAPI.createSupplier(payload);
+        if ((window as any).electronAPI) {
+          await (window as any).electronAPI.createSupplier(payload);
+        } else {
+          await webCreateSupplier(payload);
+        }
         onSuccess();
 
         if (saveAndClose) {
@@ -289,13 +309,13 @@ export default function SupplierFormModal({
             type: "success",
             message: "Supplier created successfully.",
           });
-
-          const { code: nextC, codeNumber: nextN } = await (
-            window as any
-          ).electronAPI.getNextSupplierCode(licenseId);
-          setCode(nextC);
-          setCodeNumber(nextN);
-
+          if ((window as any).electronAPI) {
+            const { code: nextC, codeNumber: nextN } = await (
+              window as any
+            ).electronAPI.getNextSupplierCode(licenseId);
+            setCode(nextC);
+            setCodeNumber(nextN);
+          }
           setForm({
             name: "",
             phone: "",
@@ -318,18 +338,12 @@ export default function SupplierFormModal({
             creditLimit: undefined,
             notes: "",
           });
-
-          // Reset UI state
           setOpeningSide("we_owe");
           setOpeningAmount(0);
           setHasCreditLimit(false);
-
           await refreshDistincts();
           requestAnimationFrame(() => nameRef.current?.focus());
-
-          setTimeout(() => {
-            setStatus({ type: null });
-          }, 3000);
+          setTimeout(() => setStatus({ type: null }), 3000);
         }
       }
     } catch (error: any) {
@@ -344,29 +358,64 @@ export default function SupplierFormModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] shadow-xl flex flex-col">
-        <div className="px-6 py-4 border-b border-gray-200 flex-shrink-0 flex items-center justify-between">
-          <h3 className="text-xl font-semibold text-gray-900">
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+      <div
+        className="w-full max-w-4xl max-h-[90vh] flex flex-col rounded-xl overflow-hidden"
+        style={{
+          background: "var(--kyn-surface)",
+          border: "1px solid var(--kyn-border)",
+          boxShadow:
+            "0 0 0 1px rgba(255,255,255,0.04), 0 24px 64px rgba(0,0,0,0.6), 0 0 40px var(--kyn-glow-primary)",
+        }}
+      >
+        {/* Header */}
+        <div
+          className="px-6 py-4 flex-shrink-0 flex items-center justify-between"
+          style={{ borderBottom: "1px solid var(--kyn-border)" }}
+        >
+          <h3 className="text-base font-semibold text-[var(--kyn-text)]">
             {editSupplier ? "Edit Supplier" : "Add Supplier"}
           </h3>
-          {editSupplier?.id && (
+          <div className="flex items-center gap-2">
+            {editSupplier?.id && (
+              <button
+                type="button"
+                onClick={() => setLedgerOpen(true)}
+                className="px-3 py-1.5 text-xs font-medium rounded-md transition-all duration-150"
+                style={{
+                  background:
+                    "linear-gradient(135deg, rgba(32,183,255,0.15), rgba(176,38,255,0.12))",
+                  border: "1px solid var(--kyn-border)",
+                  color: "var(--kyn-primary)",
+                }}
+              >
+                Open Ledger
+              </button>
+            )}
             <button
               type="button"
-              onClick={() => setLedgerOpen(true)}
-              className="px-3 py-1.5 text-sm font-medium rounded-md bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
+              onClick={onClose}
+              className="w-7 h-7 flex items-center justify-center rounded-md text-[var(--kyn-text-muted)] hover:text-[var(--kyn-text)] hover:bg-[var(--kyn-surface-3)] transition-colors"
             >
-              Open Ledger
+              ✕
             </button>
-          )}
+          </div>
         </div>
 
+        {/* Status banners */}
         {status.type && (
-          <div className="px-6 mt-3">
+          <div className="px-6 pt-3">
             {status.type === "success" && (
-              <div className="mb-3 rounded-md bg-green-50 text-green-800 border border-green-200 px-3 py-2 text-sm flex items-center">
+              <div
+                className="rounded-md px-3 py-2 text-sm flex items-center gap-2"
+                style={{
+                  background: "rgba(34,197,94,0.08)",
+                  border: "1px solid rgba(34,197,94,0.25)",
+                  color: "var(--kyn-success)",
+                }}
+              >
                 <svg
-                  className="w-4 h-4 mr-2 flex-shrink-0"
+                  className="w-4 h-4 flex-shrink-0"
                   fill="currentColor"
                   viewBox="0 0 20 20"
                 >
@@ -380,9 +429,16 @@ export default function SupplierFormModal({
               </div>
             )}
             {status.type === "error" && (
-              <div className="mb-3 rounded-md bg-red-50 text-red-800 border border-red-200 px-3 py-2 text-sm flex items-center">
+              <div
+                className="rounded-md px-3 py-2 text-sm flex items-center gap-2"
+                style={{
+                  background: "rgba(239,68,68,0.08)",
+                  border: "1px solid rgba(239,68,68,0.25)",
+                  color: "var(--kyn-danger)",
+                }}
+              >
                 <svg
-                  className="w-4 h-4 mr-2 flex-shrink-0"
+                  className="w-4 h-4 flex-shrink-0"
                   fill="currentColor"
                   viewBox="0 0 20 20"
                 >
@@ -398,24 +454,31 @@ export default function SupplierFormModal({
           </div>
         )}
 
+        {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto no-scrollbar">
-          <form onSubmit={(e) => handleSubmit(e)} className="p-6">
-            <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-              <div className="flex items-center gap-4">
+          <form onSubmit={(e) => handleSubmit(e)} className="p-6 space-y-8">
+            {/* Code + Name hero row */}
+            <div
+              className="p-4 rounded-lg"
+              style={{
+                background: "var(--kyn-surface-2)",
+                border: "1px solid var(--kyn-border)",
+              }}
+            >
+              <div className="flex items-end gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Supplier Code
-                  </label>
+                  <label className={labelCls}>Supplier Code</label>
                   <input
                     type="text"
                     value={code}
                     readOnly
-                    className="w-32 px-3 py-2 bg-gray-100 border border-gray-300 rounded-md text-sm font-mono"
+                    className={inputDisabledCls + " w-32 font-mono"}
                   />
                 </div>
                 <div className="flex-1">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Supplier Name *
+                  <label className={labelCls}>
+                    Supplier Name{" "}
+                    <span className="text-[var(--kyn-primary)]">*</span>
                   </label>
                   <input
                     ref={nameRef}
@@ -423,489 +486,415 @@ export default function SupplierFormModal({
                     value={form.name}
                     onChange={(e) => handleChange("name", e.target.value)}
                     onKeyDown={(e) => handleKeyDown(e, 0)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-averix-red-light focus:border-transparent"
+                    className={inputCls}
                     placeholder="Enter supplier name"
                   />
                 </div>
               </div>
             </div>
 
-            <div className="space-y-8">
-              <div>
-                <h4 className="text-lg font-medium text-gray-900 mb-4 border-b border-gray-200 pb-2">
-                  Basic Information
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Phone
-                    </label>
-                    <input
-                      ref={phoneRef}
-                      value={form.phone || ""}
-                      onChange={(e) => handleChange("phone", e.target.value)}
-                      onKeyDown={(e) => handleKeyDown(e, 1)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-averix-red-light focus:border-transparent"
-                      placeholder="Phone number"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Email
-                    </label>
-                    <input
-                      ref={emailRef}
-                      type="email"
-                      value={form.email || ""}
-                      onChange={(e) => handleChange("email", e.target.value)}
-                      onKeyDown={(e) => handleKeyDown(e, 2)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-averix-red-light focus:border-transparent"
-                      placeholder="Email address"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Department
-                    </label>
+            {/* Section: Basic Information */}
+            <Section title="Basic Information">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <Field label="Phone">
+                  <input
+                    ref={phoneRef}
+                    value={form.phone || ""}
+                    onChange={(e) => handleChange("phone", e.target.value)}
+                    onKeyDown={(e) => handleKeyDown(e, 1)}
+                    className={inputCls}
+                    placeholder="Phone number"
+                  />
+                </Field>
+                <Field label="Email">
+                  <input
+                    ref={emailRef}
+                    type="email"
+                    value={form.email || ""}
+                    onChange={(e) => handleChange("email", e.target.value)}
+                    onKeyDown={(e) => handleKeyDown(e, 2)}
+                    className={inputCls}
+                    placeholder="Email address"
+                  />
+                </Field>
+                <Field label="Department">
+                  <SearchableDropdown
+                    ref={departmentRef}
+                    value={form.department || ""}
+                    onChange={(v) => handleChange("department", v)}
+                    onEnter={() => inputRefs[4].current?.focus()}
+                    options={distincts.departments.map((d) => ({
+                      value: d,
+                      label: d,
+                    }))}
+                    placeholder="Department"
+                    allowCustom
+                    onCreate={(v) =>
+                      setDistincts((d) => ({
+                        ...d,
+                        departments: Array.from(new Set([...d.departments, v])),
+                      }))
+                    }
+                  />
+                </Field>
+                <Field label="Category">
+                  <SearchableDropdown
+                    ref={categoryRef}
+                    value={form.category || ""}
+                    onChange={(v) => handleChange("category", v)}
+                    onEnter={() => inputRefs[5].current?.focus()}
+                    options={distincts.categories.map((c) => ({
+                      value: c,
+                      label: c,
+                    }))}
+                    placeholder="Category"
+                    allowCustom
+                    onCreate={(v) =>
+                      setDistincts((d) => ({
+                        ...d,
+                        categories: Array.from(new Set([...d.categories, v])),
+                      }))
+                    }
+                  />
+                </Field>
+                <Field label="Native">
+                  <input
+                    ref={nativeRef}
+                    value={form.native || ""}
+                    onChange={(e) => handleChange("native", e.target.value)}
+                    onKeyDown={(e) => handleKeyDown(e, 5)}
+                    className={inputCls}
+                    placeholder="Native place"
+                  />
+                </Field>
+                <Field label="Language">
+                  <SearchableDropdown
+                    ref={languageRef}
+                    value={form.language || ""}
+                    onChange={(v) => handleChange("language", v)}
+                    onEnter={() => inputRefs[7].current?.focus()}
+                    options={distincts.languages.map((l) => ({
+                      value: l,
+                      label: l,
+                    }))}
+                    placeholder="Language"
+                    allowCustom
+                    onCreate={(v) =>
+                      setDistincts((d) => ({
+                        ...d,
+                        languages: Array.from(new Set([...d.languages, v])),
+                      }))
+                    }
+                  />
+                </Field>
+              </div>
+            </Section>
+
+            {/* Section: Address */}
+            <Section title="Address Information">
+              <div className="grid grid-cols-1 gap-4">
+                <Field label="Address Line 1">
+                  <input
+                    ref={addressLine1Ref}
+                    value={form.addressLine1 || ""}
+                    onChange={(e) =>
+                      handleChange("addressLine1", e.target.value)
+                    }
+                    onKeyDown={(e) => handleKeyDown(e, 7)}
+                    className={inputCls}
+                    placeholder="Street address, building, etc."
+                  />
+                </Field>
+                <Field label="Address Line 2">
+                  <input
+                    ref={addressLine2Ref}
+                    value={form.addressLine2 || ""}
+                    onChange={(e) =>
+                      handleChange("addressLine2", e.target.value)
+                    }
+                    onKeyDown={(e) => handleKeyDown(e, 8)}
+                    className={inputCls}
+                    placeholder="Apartment, suite, unit, etc."
+                  />
+                </Field>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <Field label="City">
                     <SearchableDropdown
-                      ref={departmentRef}
-                      value={form.department || ""}
-                      onChange={(v) => handleChange("department", v)}
-                      onEnter={() => inputRefs[4].current?.focus()}
-                      options={distincts.departments.map((d) => ({
-                        value: d,
-                        label: d,
-                      }))}
-                      placeholder="Department"
-                      allowCustom
-                      onCreate={(v) =>
-                        setDistincts((d) => ({
-                          ...d,
-                          departments: Array.from(
-                            new Set([...d.departments, v]),
-                          ),
-                        }))
-                      }
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Category
-                    </label>
-                    <SearchableDropdown
-                      ref={categoryRef}
-                      value={form.category || ""}
-                      onChange={(v) => handleChange("category", v)}
-                      onEnter={() => inputRefs[5].current?.focus()}
-                      options={distincts.categories.map((c) => ({
+                      ref={cityRef}
+                      value={form.city || ""}
+                      onChange={(v) => handleChange("city", v)}
+                      onEnter={() => inputRefs[10].current?.focus()}
+                      options={distincts.cities.map((c) => ({
                         value: c,
                         label: c,
                       }))}
-                      placeholder="Category"
+                      placeholder="City"
                       allowCustom
                       onCreate={(v) =>
                         setDistincts((d) => ({
                           ...d,
-                          categories: Array.from(new Set([...d.categories, v])),
+                          cities: Array.from(new Set([...d.cities, v])),
                         }))
                       }
                     />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Native
-                    </label>
-                    <input
-                      ref={nativeRef}
-                      value={form.native || ""}
-                      onChange={(e) => handleChange("native", e.target.value)}
-                      onKeyDown={(e) => handleKeyDown(e, 5)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-averix-red-light focus:border-transparent"
-                      placeholder="Native place"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Language
-                    </label>
+                  </Field>
+                  <Field label="State">
                     <SearchableDropdown
-                      ref={languageRef}
-                      value={form.language || ""}
-                      onChange={(v) => handleChange("language", v)}
-                      onEnter={() => inputRefs[7].current?.focus()}
-                      options={distincts.languages.map((l) => ({
-                        value: l,
-                        label: l,
+                      ref={stateRef}
+                      value={form.state || ""}
+                      onChange={(v) => handleChange("state", v)}
+                      onEnter={() => inputRefs[11].current?.focus()}
+                      options={distincts.states.map((s) => ({
+                        value: s,
+                        label: s,
                       }))}
-                      placeholder="Language"
+                      placeholder="State"
                       allowCustom
                       onCreate={(v) =>
                         setDistincts((d) => ({
                           ...d,
-                          languages: Array.from(new Set([...d.languages, v])),
+                          states: Array.from(new Set([...d.states, v])),
                         }))
                       }
                     />
-                  </div>
+                  </Field>
+                  <Field label="Pincode">
+                    <input
+                      ref={pincodeRef}
+                      value={form.pincode || ""}
+                      onChange={(e) => handleChange("pincode", e.target.value)}
+                      onKeyDown={(e) => handleKeyDown(e, 11)}
+                      className={inputCls}
+                      placeholder="PIN code"
+                    />
+                  </Field>
                 </div>
               </div>
+            </Section>
 
-              <div>
-                <h4 className="text-lg font-medium text-gray-900 mb-4 border-b border-gray-200 pb-2">
-                  Address Information
-                </h4>
-                <div className="grid grid-cols-1 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Address Line 1
-                    </label>
-                    <input
-                      ref={addressLine1Ref}
-                      value={form.addressLine1 || ""}
-                      onChange={(e) =>
-                        handleChange("addressLine1", e.target.value)
-                      }
-                      onKeyDown={(e) => handleKeyDown(e, 7)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-averix-red-light focus:border-transparent"
-                      placeholder="Street address, building, etc."
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Address Line 2
-                    </label>
-                    <input
-                      ref={addressLine2Ref}
-                      value={form.addressLine2 || ""}
-                      onChange={(e) =>
-                        handleChange("addressLine2", e.target.value)
-                      }
-                      onKeyDown={(e) => handleKeyDown(e, 8)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-averix-red-light focus:border-transparent"
-                      placeholder="Apartment, suite, unit, etc."
-                    />
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        City
-                      </label>
-                      <SearchableDropdown
-                        ref={cityRef}
-                        value={form.city || ""}
-                        onChange={(v) => handleChange("city", v)}
-                        onEnter={() => inputRefs[10].current?.focus()}
-                        options={distincts.cities.map((c) => ({
-                          value: c,
-                          label: c,
-                        }))}
-                        placeholder="City"
-                        allowCustom
-                        onCreate={(v) =>
-                          setDistincts((d) => ({
-                            ...d,
-                            cities: Array.from(new Set([...d.cities, v])),
-                          }))
-                        }
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        State
-                      </label>
-                      <SearchableDropdown
-                        ref={stateRef}
-                        value={form.state || ""}
-                        onChange={(v) => handleChange("state", v)}
-                        onEnter={() => inputRefs[11].current?.focus()}
-                        options={distincts.states.map((s) => ({
-                          value: s,
-                          label: s,
-                        }))}
-                        placeholder="State"
-                        allowCustom
-                        onCreate={(v) =>
-                          setDistincts((d) => ({
-                            ...d,
-                            states: Array.from(new Set([...d.states, v])),
-                          }))
-                        }
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Pincode
-                      </label>
-                      <input
-                        ref={pincodeRef}
-                        value={form.pincode || ""}
-                        onChange={(e) =>
-                          handleChange("pincode", e.target.value)
-                        }
-                        onKeyDown={(e) => handleKeyDown(e, 11)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-averix-red-light focus:border-transparent"
-                        placeholder="PIN code"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <h4 className="text-lg font-medium text-gray-900 mb-4 border-b border-gray-200 pb-2">
-                  Legal & Tax Information
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      GSTIN
-                    </label>
-                    <input
-                      ref={gstinRef}
-                      value={form.gstin || ""}
-                      onChange={(e) => handleChange("gstin", e.target.value)}
-                      onKeyDown={(e) => handleKeyDown(e, 12)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-averix-red-light focus:border-transparent"
-                      placeholder="GST number"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Aadhaar
-                    </label>
-                    <input
-                      ref={aadhaarRef}
-                      value={form.aadhaar || ""}
-                      onChange={(e) => handleChange("aadhaar", e.target.value)}
-                      onKeyDown={(e) => handleKeyDown(e, 13)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-averix-red-light focus:border-transparent"
-                      placeholder="Aadhaar number"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      PAN
-                    </label>
-                    <input
-                      ref={panRef}
-                      value={form.pan || ""}
-                      onChange={(e) => handleChange("pan", e.target.value)}
-                      onKeyDown={(e) => handleKeyDown(e, 14)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-averix-red-light focus:border-transparent"
-                      placeholder="PAN number"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      License 1
-                    </label>
-                    <input
-                      ref={license1Ref}
-                      value={form.license1 || ""}
-                      onChange={(e) => handleChange("license1", e.target.value)}
-                      onKeyDown={(e) => handleKeyDown(e, 15)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-averix-red-light focus:border-transparent"
-                      placeholder="License number"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      License 2
-                    </label>
-                    <input
-                      ref={license2Ref}
-                      value={form.license2 || ""}
-                      onChange={(e) => handleChange("license2", e.target.value)}
-                      onKeyDown={(e) => handleKeyDown(e, 16)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-averix-red-light focus:border-transparent"
-                      placeholder="Additional license"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <h4 className="text-lg font-medium text-gray-900 mb-4 border-b border-gray-200 pb-2">
-                  Financial Information
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {/* Opening Balance */}
-                  <div className="space-y-3">
-                    <label className="block text-sm font-medium text-gray-700">
-                      Opening Balance
-                    </label>
-
-                    {/* Side selector buttons */}
-                    <div className="flex flex-col gap-2">
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setOpeningSide("we_owe")}
-                          className={`flex-1 px-3 py-2 rounded-md border text-sm transition-colors ${
-                            openingSide === "we_owe"
-                              ? "bg-averix-red-light text-white border-averix-red-light"
-                              : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
-                          }`}
-                        >
-                          We owe supplier
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setOpeningSide("they_owe")}
-                          className={`flex-1 px-3 py-2 rounded-md border text-sm transition-colors ${
-                            openingSide === "they_owe"
-                              ? "bg-averix-red-light text-white border-averix-red-light"
-                              : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
-                          }`}
-                        >
-                          Supplier owes us
-                        </button>
-                      </div>
-
-                      {/* Amount input */}
-                      <div className="space-y-2">
-                        <input
-                          ref={openingBalanceRef}
-                          type="number"
-                          min={0}
-                          step="0.01"
-                          value={openingAmount}
-                          disabled={!!editSupplier?.id}
-                          onChange={(e) =>
-                            setOpeningAmount(
-                              Math.max(0, Number(e.target.value || 0)),
-                            )
-                          }
-                          onKeyDown={(e) => handleKeyDown(e, 17)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-averix-red-light focus:border-transparent disabled:bg-gray-100 disabled:text-gray-500"
-                          placeholder="0.00"
-                        />
-                        {editSupplier?.id && (
-                          <p className="text-xs text-amber-600">
-                            Opening balance is locked after supplier creation to
-                            keep ledger data consistent.
-                          </p>
-                        )}
-                        <p className="text-xs text-gray-500">
-                          {openingSide === "we_owe"
-                            ? `Will be saved as +₹${(
-                                openingAmount || 0
-                              ).toFixed(2)} (we owe)`
-                            : `Will be saved as -₹${(
-                                openingAmount || 0
-                              ).toFixed(2)} (they owe)`}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Credit Limit */}
-                  <div className="space-y-3">
-                    <label className="block text-sm font-medium text-gray-700">
-                      Credit Limit
-                    </label>
-
-                    <div className="space-y-3">
-                      <label className="inline-flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={hasCreditLimit}
-                          onChange={(e) => {
-                            setHasCreditLimit(e.target.checked);
-                            if (!e.target.checked)
-                              handleChange("creditLimit", null);
-                          }}
-                          className="rounded border-gray-300 text-averix-red-light focus:ring-averix-red-light"
-                        />
-                        <span className="text-sm text-gray-700">
-                          Has credit limit
-                        </span>
-                      </label>
-
-                      {hasCreditLimit && (
-                        <input
-                          ref={creditLimitRef}
-                          type="number"
-                          min={0}
-                          step="0.01"
-                          value={form.creditLimit ?? ""}
-                          onChange={(e) =>
-                            handleChange(
-                              "creditLimit",
-                              e.target.value ? Number(e.target.value) : null,
-                            )
-                          }
-                          onKeyDown={(e) => handleKeyDown(e, 18)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-averix-red-light focus:border-transparent"
-                          placeholder="0.00"
-                        />
-                      )}
-
-                      <p className="text-xs text-gray-500">
-                        Max outstanding you're comfortable with for this
-                        supplier.
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Settlement Days */}
-                  <div className="space-y-3">
-                    <label className="block text-sm font-medium text-gray-700">
-                      Settlement Days
-                    </label>
-
-                    <div className="space-y-2">
-                      <input
-                        ref={settlementDaysRef}
-                        type="number"
-                        min={0}
-                        value={form.settlementDays ?? ""}
-                        onChange={(e) =>
-                          handleChange(
-                            "settlementDays",
-                            e.target.value ? Number(e.target.value) : null,
-                          )
-                        }
-                        onKeyDown={(e) => handleKeyDown(e, 19)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-averix-red-light focus:border-transparent"
-                        placeholder="e.g., 30"
-                      />
-                      <p className="text-xs text-gray-500">
-                        Expected days to pay invoices (used for
-                        reminders/aging).
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div>
-                <h4 className="text-lg font-medium text-gray-900 mb-4 border-b border-gray-200 pb-2">
-                  Additional Information
-                </h4>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Notes
-                  </label>
-                  <textarea
-                    ref={notesRef}
-                    value={form.notes || ""}
-                    onChange={(e) => handleChange("notes", e.target.value)}
-                    onKeyDown={(e) => handleKeyDown(e, 20)}
-                    rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-averix-red-light focus:border-transparent resize-none"
-                    placeholder="Additional notes about the supplier..."
+            {/* Section: Legal & Tax */}
+            <Section title="Legal & Tax Information">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <Field label="GSTIN">
+                  <input
+                    ref={gstinRef}
+                    value={form.gstin || ""}
+                    onChange={(e) => handleChange("gstin", e.target.value)}
+                    onKeyDown={(e) => handleKeyDown(e, 12)}
+                    className={inputCls}
+                    placeholder="GST number"
                   />
+                </Field>
+                <Field label="Aadhaar">
+                  <input
+                    ref={aadhaarRef}
+                    value={form.aadhaar || ""}
+                    onChange={(e) => handleChange("aadhaar", e.target.value)}
+                    onKeyDown={(e) => handleKeyDown(e, 13)}
+                    className={inputCls}
+                    placeholder="Aadhaar number"
+                  />
+                </Field>
+                <Field label="PAN">
+                  <input
+                    ref={panRef}
+                    value={form.pan || ""}
+                    onChange={(e) => handleChange("pan", e.target.value)}
+                    onKeyDown={(e) => handleKeyDown(e, 14)}
+                    className={inputCls}
+                    placeholder="PAN number"
+                  />
+                </Field>
+                <Field label="License 1">
+                  <input
+                    ref={license1Ref}
+                    value={form.license1 || ""}
+                    onChange={(e) => handleChange("license1", e.target.value)}
+                    onKeyDown={(e) => handleKeyDown(e, 15)}
+                    className={inputCls}
+                    placeholder="License number"
+                  />
+                </Field>
+                <Field label="License 2">
+                  <input
+                    ref={license2Ref}
+                    value={form.license2 || ""}
+                    onChange={(e) => handleChange("license2", e.target.value)}
+                    onKeyDown={(e) => handleKeyDown(e, 16)}
+                    className={inputCls}
+                    placeholder="Additional license"
+                  />
+                </Field>
+              </div>
+            </Section>
+
+            {/* Section: Financial */}
+            <Section title="Financial Information">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* Opening Balance */}
+                <div className="space-y-3">
+                  <label className={labelCls}>Opening Balance</label>
+                  <div className="flex gap-2">
+                    {(["we_owe", "they_owe"] as const).map((side) => (
+                      <button
+                        key={side}
+                        type="button"
+                        onClick={() => setOpeningSide(side)}
+                        className="flex-1 px-3 py-2 rounded-md text-xs font-medium transition-all duration-150"
+                        style={
+                          openingSide === side
+                            ? {
+                                background:
+                                  "linear-gradient(135deg, rgba(32,183,255,0.2), rgba(176,38,255,0.15))",
+                                border: "1px solid var(--kyn-primary)",
+                                color: "var(--kyn-primary)",
+                              }
+                            : {
+                                background: "var(--kyn-surface-3)",
+                                border: "1px solid var(--kyn-border)",
+                                color: "var(--kyn-text-muted)",
+                              }
+                        }
+                      >
+                        {side === "we_owe"
+                          ? "We owe supplier"
+                          : "Supplier owes us"}
+                      </button>
+                    ))}
+                  </div>
+                  <input
+                    ref={openingBalanceRef}
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={openingAmount}
+                    disabled={!!editSupplier?.id}
+                    onChange={(e) =>
+                      setOpeningAmount(Math.max(0, Number(e.target.value || 0)))
+                    }
+                    onKeyDown={(e) => handleKeyDown(e, 17)}
+                    className={editSupplier?.id ? inputDisabledCls : inputCls}
+                    placeholder="0.00"
+                  />
+                  {editSupplier?.id && (
+                    <p
+                      className="text-xs"
+                      style={{ color: "var(--kyn-warning)" }}
+                    >
+                      Opening balance is locked after supplier creation.
+                    </p>
+                  )}
+                  <p className="text-xs text-[var(--kyn-text-muted)]">
+                    {openingSide === "we_owe"
+                      ? `Saved as +₹${(openingAmount || 0).toFixed(2)} (we owe)`
+                      : `Saved as -₹${(openingAmount || 0).toFixed(2)} (they owe)`}
+                  </p>
+                </div>
+
+                {/* Credit Limit */}
+                <div className="space-y-3">
+                  <label className={labelCls}>Credit Limit</label>
+                  <label className="inline-flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={hasCreditLimit}
+                      onChange={(e) => {
+                        setHasCreditLimit(e.target.checked);
+                        if (!e.target.checked)
+                          handleChange("creditLimit", null);
+                      }}
+                      className="rounded"
+                      style={{ accentColor: "var(--kyn-primary)" }}
+                    />
+                    <span className="text-sm text-[var(--kyn-text-soft)]">
+                      Has credit limit
+                    </span>
+                  </label>
+                  {hasCreditLimit && (
+                    <input
+                      ref={creditLimitRef}
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      value={form.creditLimit ?? ""}
+                      onChange={(e) =>
+                        handleChange(
+                          "creditLimit",
+                          e.target.value ? Number(e.target.value) : null,
+                        )
+                      }
+                      onKeyDown={(e) => handleKeyDown(e, 18)}
+                      className={inputCls}
+                      placeholder="0.00"
+                    />
+                  )}
+                  <p className="text-xs text-[var(--kyn-text-muted)]">
+                    Max outstanding comfortable with this supplier.
+                  </p>
+                </div>
+
+                {/* Settlement Days */}
+                <div className="space-y-3">
+                  <label className={labelCls}>Settlement Days</label>
+                  <input
+                    ref={settlementDaysRef}
+                    type="number"
+                    min={0}
+                    value={form.settlementDays ?? ""}
+                    onChange={(e) =>
+                      handleChange(
+                        "settlementDays",
+                        e.target.value ? Number(e.target.value) : null,
+                      )
+                    }
+                    onKeyDown={(e) => handleKeyDown(e, 19)}
+                    className={inputCls}
+                    placeholder="e.g., 30"
+                  />
+                  <p className="text-xs text-[var(--kyn-text-muted)]">
+                    Expected days to pay invoices.
+                  </p>
                 </div>
               </div>
-            </div>
+            </Section>
+
+            {/* Section: Notes */}
+            <Section title="Additional Information">
+              <Field label="Notes">
+                <textarea
+                  ref={notesRef}
+                  value={form.notes || ""}
+                  onChange={(e) => handleChange("notes", e.target.value)}
+                  onKeyDown={(e) => handleKeyDown(e, 20)}
+                  rows={3}
+                  className={inputCls + " resize-none"}
+                  placeholder="Additional notes about the supplier..."
+                />
+              </Field>
+            </Section>
           </form>
         </div>
 
-        <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3 flex-shrink-0">
+        {/* Footer */}
+        <div
+          className="px-6 py-4 flex justify-end gap-3 flex-shrink-0"
+          style={{ borderTop: "1px solid var(--kyn-border)" }}
+        >
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+            className="px-4 py-2 text-sm font-medium rounded-md transition-all duration-150"
+            style={{
+              background: "var(--kyn-surface-3)",
+              border: "1px solid var(--kyn-border)",
+              color: "var(--kyn-text-muted)",
+            }}
+            onMouseEnter={(e) =>
+              (e.currentTarget.style.color = "var(--kyn-text)")
+            }
+            onMouseLeave={(e) =>
+              (e.currentTarget.style.color = "var(--kyn-text-muted)")
+            }
           >
             Cancel
           </button>
@@ -914,7 +903,13 @@ export default function SupplierFormModal({
             <button
               type="submit"
               onClick={(e) => handleSubmit(e)}
-              className="px-4 py-2 text-sm font-medium text-white bg-averix-red-dark hover:bg-averix-red-darker rounded-md transition-colors"
+              className="px-4 py-2 text-sm font-medium rounded-md transition-all duration-150"
+              style={{
+                background:
+                  "linear-gradient(135deg, var(--kyn-primary), var(--kyn-secondary))",
+                color: "var(--kyn-white)",
+                boxShadow: "0 0 16px var(--kyn-glow-primary)",
+              }}
             >
               Update Supplier
             </button>
@@ -923,14 +918,25 @@ export default function SupplierFormModal({
               <button
                 type="button"
                 onClick={(e) => handleSubmit(e, true)}
-                className="px-4 py-2 text-sm font-medium text-averix-red-dark bg-white border border-averix-red-dark hover:bg-averix-red-light/10 rounded-md transition-colors"
+                className="px-4 py-2 text-sm font-medium rounded-md transition-all duration-150"
+                style={{
+                  background: "var(--kyn-surface-3)",
+                  border: "1px solid var(--kyn-primary)",
+                  color: "var(--kyn-primary)",
+                }}
               >
                 Save & Close
               </button>
               <button
                 type="submit"
                 onClick={(e) => handleSubmit(e)}
-                className="px-4 py-2 text-sm font-medium text-white bg-averix-red-dark hover:bg-averix-red-darker rounded-md transition-colors"
+                className="px-4 py-2 text-sm font-medium rounded-md transition-all duration-150"
+                style={{
+                  background:
+                    "linear-gradient(135deg, var(--kyn-primary), var(--kyn-secondary))",
+                  color: "var(--kyn-white)",
+                  boxShadow: "0 0 16px var(--kyn-glow-primary)",
+                }}
               >
                 Save & Add Another
               </button>
@@ -948,6 +954,51 @@ export default function SupplierFormModal({
           supplierName={editSupplier.name}
         />
       )}
+    </div>
+  );
+}
+
+// ── Small layout helpers ────────────────────────────────────────────────────
+
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <h4
+        className="text-xs font-semibold uppercase tracking-widest mb-4 pb-2"
+        style={{
+          color: "var(--kyn-text-muted)",
+          borderBottom: "1px solid var(--kyn-border)",
+        }}
+      >
+        {title}
+      </h4>
+      {children}
+    </div>
+  );
+}
+
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <label
+        className="block text-xs font-medium uppercase tracking-wide mb-1"
+        style={{ color: "var(--kyn-text-muted)" }}
+      >
+        {label}
+      </label>
+      {children}
     </div>
   );
 }

@@ -1,5 +1,8 @@
 // frontend/src/lib/uploadImage.ts
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3003";
+const API_BASE =
+  process.env.NEXT_PUBLIC_KYNFLOW_API_BASE ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  "";
 
 export type UploadedImage = {
   publicUrl: string;

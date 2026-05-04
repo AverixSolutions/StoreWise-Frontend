@@ -137,6 +137,22 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getNextPurchaseReturnHoldNo: (licenseId) =>
     ipcRenderer.invoke("purchase-return-hold:peek-next-no", licenseId),
 
+  // Purchase sync
+  getDirtyPurchases: (licenseId, limit) =>
+    ipcRenderer.invoke("get-dirty-purchases", licenseId, limit),
+
+  getDirtyPurchaseItems: (licenseId, limit) =>
+    ipcRenderer.invoke("get-dirty-purchase-items", licenseId, limit),
+
+  markPurchaseItemsSynced: (ids, serverSyncedAt) =>
+    ipcRenderer.invoke("mark-purchase-items-synced", ids, serverSyncedAt),
+
+  bulkUpsertPurchases: (records) =>
+    ipcRenderer.invoke("bulk-upsert-purchases", records),
+
+  bulkUpsertPurchaseItems: (records) =>
+    ipcRenderer.invoke("bulk-upsert-purchase-items", records),
+
   // Suppliers
   createSupplier: (payload) => ipcRenderer.invoke("supplier:create", payload),
   updateSupplier: (id, changes) =>
@@ -183,6 +199,22 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getNextSaleSlNo: (licenseId) =>
     ipcRenderer.invoke("sale:peek-next-slno", licenseId),
   markSalesSynced: (ids, ts) => ipcRenderer.invoke("sale:mark-synced", ids, ts),
+
+  // Sale sync — add these alongside the existing sale entries
+  getDirtySales: (licenseId, limit) =>
+    ipcRenderer.invoke("get-dirty-sales", licenseId, limit),
+
+  getDirtySaleItems: (licenseId, limit) =>
+    ipcRenderer.invoke("get-dirty-sale-items", licenseId, limit),
+
+  markSaleItemsSynced: (ids, ts) =>
+    ipcRenderer.invoke("sale:mark-items-synced", ids, ts),
+
+  bulkUpsertSales: (records) =>
+    ipcRenderer.invoke("bulk-upsert-sales", records),
+
+  bulkUpsertSaleItems: (records) =>
+    ipcRenderer.invoke("bulk-upsert-sale-items", records),
 
   // SALE HOLDS
   saveSaleHold: (payload) => ipcRenderer.invoke("sale-hold:save", payload),
@@ -259,6 +291,43 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("shop-settings:get", licenseId),
   saveShopSettings: (payload) =>
     ipcRenderer.invoke("shop-settings:save", payload),
+
+  // Category sync
+  getDirtyCategories: (licenseId, limit) =>
+    ipcRenderer.invoke("category:getDirty", licenseId, limit),
+  markCategoriesSynced: (ids, ts) =>
+    ipcRenderer.invoke("category:markSynced", ids, ts),
+  bulkUpsertCategories: (items) =>
+    ipcRenderer.invoke("category:bulkUpsert", items),
+
+  // Brand sync
+  getDirtyBrands: (licenseId, limit) =>
+    ipcRenderer.invoke("brand:getDirty", licenseId, limit),
+  markBrandsSynced: (ids, ts) =>
+    ipcRenderer.invoke("brand:markSynced", ids, ts),
+  bulkUpsertBrands: (items) => ipcRenderer.invoke("brand:bulkUpsert", items),
+
+  // Shop settings sync
+  getDirtyShopSettings: (licenseId) =>
+    ipcRenderer.invoke("shop-settings:getDirty", licenseId),
+  markShopSettingsSynced: (licenseId, ts) =>
+    ipcRenderer.invoke("shop-settings:markSynced", licenseId, ts),
+  upsertShopSettingsFromServer: (record) =>
+    ipcRenderer.invoke("shop-settings:upsertFromServer", record),
+
+  // Tax sync
+  getDirtyTaxCategories: (licenseId, limit) =>
+    ipcRenderer.invoke("tax:getDirty", licenseId, limit),
+  markTaxCategoriesSynced: (ids, ts) =>
+    ipcRenderer.invoke("tax:markSynced", ids, ts),
+  bulkUpsertTaxCategories: (items) =>
+    ipcRenderer.invoke("tax:bulkUpsert", items),
+
+  // Unit sync
+  getDirtyUnits: (licenseId, limit) =>
+    ipcRenderer.invoke("unit:getDirty", licenseId, limit),
+  markUnitsSynced: (ids, ts) => ipcRenderer.invoke("unit:markSynced", ids, ts),
+  bulkUpsertUnits: (items) => ipcRenderer.invoke("unit:bulkUpsert", items),
 
   // Label printing
   listLabelPrinters: (licenseId) =>

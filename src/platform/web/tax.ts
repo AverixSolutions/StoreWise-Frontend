@@ -101,10 +101,27 @@ export async function webListTaxCategories(
       "licenseId",
       licenseId,
     );
-    const rows = all.sort(
-      (a, b) => a.rate - b.rate || a.code.localeCompare(b.code),
-    );
-    return { success: true, rows };
+
+    // ── Auto-seed if empty, exactly like the desktop does ─────────────────
+    if (all.length === 0) {
+      await webSeedIndiaGST(licenseId);
+      const seeded = await idbGetAllByIndex<TaxCategoryRecord>(
+        STORES.TAX_CATEGORIES,
+        "licenseId",
+        licenseId,
+      );
+      return {
+        success: true,
+        rows: seeded.sort(
+          (a, b) => a.rate - b.rate || a.code.localeCompare(b.code),
+        ),
+      };
+    }
+
+    return {
+      success: true,
+      rows: all.sort((a, b) => a.rate - b.rate || a.code.localeCompare(b.code)),
+    };
   } catch (e: any) {
     return { success: false, rows: [], error: String(e?.message || e) };
   }
@@ -135,9 +152,14 @@ export async function webSaveTaxCategory(
       defaults: payload.defaults ?? null,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
+      // ── mark dirty on save ──────────────────────────────────────────────
+      isSynced: 0,
+      syncedAt: (existing as any)?.syncedAt ?? null,
     };
 
     await idbPut<TaxCategoryRecord>(STORES.TAX_CATEGORIES, record);
+    _triggerSync("taxCategory");
+
     return { success: true, id };
   } catch (e: any) {
     return { success: false, error: String(e?.message || e) };
@@ -148,7 +170,23 @@ export async function webDeleteTaxCategory(
   id: string,
 ): Promise<MutationResult> {
   try {
-    await idbDelete(STORES.TAX_CATEGORIES, id);
+    // Soft-delete so the sync engine can push the deletion to the server
+    const existing = await idbGetByKey<TaxCategoryRecord>(
+      STORES.TAX_CATEGORIES,
+      id,
+    );
+    if (existing) {
+      await idbPut<TaxCategoryRecord>(STORES.TAX_CATEGORIES, {
+        ...existing,
+        deletedAt: nowISO(),
+        updatedAt: nowISO(),
+        isSynced: 0,
+        syncedAt: (existing as any)?.syncedAt ?? null,
+      } as any);
+      _triggerSync("taxCategory");
+    } else {
+      await idbDelete(STORES.TAX_CATEGORIES, id);
+    }
     return { success: true };
   } catch (e: any) {
     return { success: false, error: String(e?.message || e) };
@@ -165,10 +203,8 @@ export async function webSeedIndiaGST(
       "licenseId",
       licenseId,
     );
-    const existingCodes = new Set(existing.map((r) => r.code));
 
     for (const slab of slabs) {
-      // Upsert: use existing id if there's already a record with this code
       const existingRecord = existing.find((r) => r.code === slab.code);
       await idbPut<TaxCategoryRecord>(STORES.TAX_CATEGORIES, {
         ...slab,
@@ -176,8 +212,14 @@ export async function webSeedIndiaGST(
         licenseId,
         // preserve existing defaults if already configured
         defaults: existingRecord?.defaults ?? slab.defaults,
-      });
+        // ── mark dirty so sync engine picks these up ──────────────────────
+        isSynced: 0,
+        syncedAt: (existingRecord as any)?.syncedAt ?? null,
+      } as any);
     }
+
+    // Push all seeded records to server immediately
+    _triggerSync("taxCategory");
 
     return { success: true };
   } catch (e: any) {
@@ -190,4 +232,15 @@ export async function webListDefaultableAccounts(
   _licenseId: string,
 ): Promise<AccountListResult> {
   return { success: true, rows: [] };
+}
+
+// ── Lazy sync trigger — avoids circular imports ───────────────────────────────
+
+function _triggerSync(entity: string) {
+  if (typeof window === "undefined") return;
+  import("@/sync/SyncManager")
+    .then(({ SyncManager }) => {
+      SyncManager.pushEntity(entity).catch(() => {});
+    })
+    .catch(() => {});
 }
