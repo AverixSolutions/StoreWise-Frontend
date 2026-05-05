@@ -1,4 +1,5 @@
 // src/lib/print/printSaleBill.ts
+import { platform } from "@/platform";
 import { getShopProfile } from "./getShopProfile";
 import { buildThermalReceiptHtml } from "./buildThermalReceiptHtml";
 
@@ -9,28 +10,21 @@ export async function printSaleBill(
     silent?: boolean;
   },
 ) {
-  const api = (window as any).electronAPI;
-
-  if (!api?.getSaleFull || !api?.printHtml) {
-    throw new Error("Sale print API not available");
-  }
-
-  const res = await api.getSaleFull(saleId);
+  // ── 1. Fetch sale data via platform (works on both web & desktop) ──
+  const res = await platform.getSaleFull?.(saleId);
   if (!res?.success) {
     throw new Error(res?.error || "Failed to load sale");
   }
 
-  const { sale, items } = res;
+  const { sale, items } = res as any;
   const shop = await getShopProfile();
 
   const subTotal = items.reduce(
     (sum: number, it: any) => sum + Number(it.billedValue || 0),
     0,
   );
-
   const discount = Number(sale.discount || 0);
   const grandTotal = Math.max(0, subTotal - discount);
-
   const totalQty = items.reduce(
     (sum: number, it: any) => sum + Number(it.quantity || 0),
     0,
@@ -62,12 +56,47 @@ export async function printSaleBill(
     ],
   });
 
-  return api.printHtml(html, {
-    preview: options?.preview ?? true,
-    silent: options?.silent ?? false,
-    pageSize: {
-      width: 80000,
-      height: 200000,
-    },
-  });
+  // ── 2. Desktop: delegate to Electron's native print ──
+  const electronAPI = (window as any).electronAPI;
+  if (electronAPI?.printHtml) {
+    return electronAPI.printHtml(html, {
+      preview: options?.preview ?? true,
+      silent: options?.silent ?? false,
+      pageSize: {
+        width: 80000,
+        height: 200000,
+      },
+    });
+  }
+
+  // ── 3. Web fallback: open receipt in a new tab and trigger browser print ──
+  const win = window.open("", "_blank");
+  if (!win) {
+    throw new Error(
+      "Print blocked: please allow popups for this site and try again.",
+    );
+  }
+
+  win.document.write(html);
+  win.document.close();
+
+  if (options?.preview === false) {
+    // silent/auto-print: trigger print dialog immediately
+    win.addEventListener("load", () => {
+      win.focus();
+      win.print();
+    });
+    // fallback if load already fired before listener attached
+    setTimeout(() => {
+      try {
+        win.focus();
+        win.print();
+      } catch {}
+    }, 600);
+  } else {
+    // preview mode: just show the tab, user prints manually
+    win.focus();
+  }
+
+  return { success: true };
 }

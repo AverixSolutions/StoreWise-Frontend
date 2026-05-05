@@ -153,6 +153,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
   bulkUpsertPurchaseItems: (records) =>
     ipcRenderer.invoke("bulk-upsert-purchase-items", records),
 
+  getDirtyPurchaseHolds: (licenseId, limit) =>
+    ipcRenderer.invoke("get-dirty-purchase-holds", licenseId, limit),
+  markPurchaseHoldsSynced: (ids, ts) =>
+    ipcRenderer.invoke("mark-purchase-holds-synced", ids, ts),
+  bulkUpsertPurchaseHolds: (records) =>
+    ipcRenderer.invoke("bulk-upsert-purchase-holds", records),
+
   // Suppliers
   createSupplier: (payload) => ipcRenderer.invoke("supplier:create", payload),
   updateSupplier: (id, changes) =>
@@ -224,6 +231,14 @@ contextBridge.exposeInMainWorld("electronAPI", {
   deleteSaleHold: (id) => ipcRenderer.invoke("sale-hold:delete", id),
   peekNextSaleHoldNo: (licenseId) =>
     ipcRenderer.invoke("sale-hold:peek-next-no", licenseId),
+
+  // Sale hold sync
+  getDirtySaleHolds: (licenseId, limit) =>
+    ipcRenderer.invoke("sale-hold:get-dirty", licenseId, limit),
+  markSaleHoldsSynced: (ids, ts) =>
+    ipcRenderer.invoke("sale-hold:mark-synced", ids, ts),
+  bulkUpsertSaleHolds: (records) =>
+    ipcRenderer.invoke("sale-hold:bulk-upsert", records),
 
   // SALE RETURNS
   createSaleReturn: (payload) =>

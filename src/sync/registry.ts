@@ -10,8 +10,13 @@ import { createUnitsAdapter } from "./adapters/units";
 import {
   createPurchasesAdapter,
   createPurchaseItemsAdapter,
+  createPurchaseHoldsAdapter,
 } from "./adapters/purchases";
-import { createSalesAdapter, createSaleItemsAdapter } from "./adapters/sales";
+import {
+  createSalesAdapter,
+  createSaleItemsAdapter,
+  createSaleHoldsAdapter,
+} from "./adapters/sales";
 
 export function buildAdapters(isDesktop: boolean): SyncAdapter[] {
   return [
@@ -24,7 +29,9 @@ export function buildAdapters(isDesktop: boolean): SyncAdapter[] {
     createSuppliersAdapter(isDesktop),
     createPurchasesAdapter(isDesktop),
     createPurchaseItemsAdapter(isDesktop),
+    createPurchaseHoldsAdapter(isDesktop),
     createSalesAdapter(isDesktop),
     createSaleItemsAdapter(isDesktop),
+    createSaleHoldsAdapter(isDesktop),
   ];
 }

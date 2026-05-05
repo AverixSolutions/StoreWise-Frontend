@@ -716,6 +716,11 @@ export default function PurchasePage() {
     const res = await platform.savePurchaseHold?.(payload);
     if (res?.success) {
       alert(`✅ Held as #${res.holdNo}${title ? ` • ${title}` : ""}`);
+
+      if (isSyncEnabled()) {
+        SyncManager.pushEntity("purchaseHold").catch(() => {});
+      }
+
       resetAll();
       setShowHolds(true);
     }

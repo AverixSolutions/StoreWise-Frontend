@@ -738,7 +738,7 @@ function registerSaleHandlers() {
       const newRows =
         payload.rows !== undefined ? JSON.stringify(payload.rows) : ex.rowsJson;
       db.prepare(
-        `UPDATE sale_holds SET title=?, headerJson=?, rowsJson=?, updatedAt=? WHERE id=?`,
+        `UPDATE sale_holds SET title=?, headerJson=?, rowsJson=?, updatedAt=?, isSynced=0 WHERE id=?`,
       ).run(newTitle || null, newHdr, newRows, now, payload.id);
       return { success: true, id: payload.id, updated: true };
     }
@@ -807,7 +807,9 @@ function registerSaleHandlers() {
   });
   ipcMain.handle("sale-hold:delete", (evt, id) => {
     const now = new Date().toISOString();
-    db.prepare(`UPDATE sale_holds SET deletedAt=? WHERE id=?`).run(now, id);
+    db.prepare(
+      `UPDATE sale_holds SET deletedAt = ?, updatedAt = ?, isSynced = 0 WHERE id = ?`,
+    ).run(now, now, id);
     return { success: true };
   });
   ipcMain.handle("sale-hold:peek-next-no", (evt, licenseId) => {
@@ -1025,6 +1027,118 @@ function registerSaleHandlers() {
     });
 
     trx(records);
+    return { success: true, upserted: records.length };
+  });
+
+  // Get unsynced holds (for push to server)
+  ipcMain.handle("sale-hold:get-dirty", (evt, licenseId, limit = 200) => {
+    const rows = db
+      .prepare(
+        `
+    SELECT id, licenseId, userId, holdNo, title, headerJson, rowsJson,
+           createdAt, updatedAt, deletedAt, isSynced
+    FROM sale_holds
+    WHERE licenseId = ?
+      AND (isSynced = 0 OR isSynced IS NULL)
+    ORDER BY updatedAt ASC
+    LIMIT ?
+  `,
+      )
+      .all(licenseId, limit);
+    return { success: true, records: rows };
+  });
+
+  // Mark holds as synced after successful push
+  ipcMain.handle("sale-hold:mark-synced", (evt, ids, serverSyncedAt) => {
+    const ts = serverSyncedAt || new Date().toISOString();
+    const trx = db.transaction((ids) => {
+      const stmt = db.prepare(
+        `UPDATE sale_holds SET isSynced = 1, syncedAt = ? WHERE id = ?`,
+      );
+      ids.forEach((id) => stmt.run(ts, id));
+    });
+    trx(ids);
+    return { success: true, syncedAt: ts };
+  });
+
+  // Bulk upsert holds pulled from server
+  ipcMain.handle("sale-hold:bulk-upsert", (evt, records) => {
+    if (!Array.isArray(records) || records.length === 0)
+      return { success: true, upserted: 0 };
+
+    const now = new Date().toISOString();
+
+    const upsert = db.prepare(`
+    INSERT INTO sale_holds (
+      id, licenseId, userId, holdNo, title,
+      headerJson, rowsJson,
+      createdAt, updatedAt, deletedAt,
+      isSynced, syncedAt
+    ) VALUES (
+      @id, @licenseId, @userId, @holdNo, @title,
+      @headerJson, @rowsJson,
+      @createdAt, @updatedAt, @deletedAt,
+      1, @syncedAt
+    )
+    ON CONFLICT(licenseId, holdNo) DO UPDATE SET
+      id         = excluded.id,
+      title      = excluded.title,
+      headerJson = excluded.headerJson,
+      rowsJson   = excluded.rowsJson,
+      updatedAt  = excluded.updatedAt,
+      deletedAt  = excluded.deletedAt,
+      isSynced   = 1,
+      syncedAt   = excluded.syncedAt
+    WHERE excluded.updatedAt > sale_holds.updatedAt
+       OR sale_holds.updatedAt IS NULL
+  `);
+
+    const trx = db.transaction((records) => {
+      for (const r of records) {
+        upsert.run({
+          id: r.id,
+          licenseId: r.licenseId,
+          userId: r.userId ?? null,
+          holdNo: r.holdNo,
+          title: r.title ?? null,
+          headerJson:
+            typeof r.headerJson === "string"
+              ? r.headerJson
+              : JSON.stringify(r.header ?? {}),
+          rowsJson:
+            typeof r.rowsJson === "string"
+              ? r.rowsJson
+              : JSON.stringify(r.rows ?? []),
+          createdAt: r.createdAt ?? now,
+          updatedAt: r.updatedAt ?? now,
+          deletedAt: r.deletedAt ?? null,
+          syncedAt: r.syncedAt ?? now,
+        });
+      }
+    });
+
+    trx(records);
+
+    // Keep hold sequence in sync
+    const maxRow = db
+      .prepare(
+        `
+    SELECT MAX(holdNo) AS maxHoldNo FROM sale_holds WHERE licenseId = ?
+  `,
+      )
+      .get(records[0]?.licenseId);
+
+    if (maxRow?.maxHoldNo) {
+      db.prepare(
+        `
+      INSERT INTO sale_hold_sequence (licenseId, lastHoldNo)
+      VALUES (?, ?)
+      ON CONFLICT(licenseId) DO UPDATE SET
+        lastHoldNo = MAX(excluded.lastHoldNo, sale_hold_sequence.lastHoldNo)
+    `,
+      ).run(records[0].licenseId, maxRow.maxHoldNo);
+    }
+
     return { success: true, upserted: records.length };
   });
 }

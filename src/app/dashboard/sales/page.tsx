@@ -386,6 +386,12 @@ export default function SalesPage() {
     });
     if (res?.success) {
       alert(`✅ Held as #${res.holdNo}${title ? ` • ${title}` : ""}`);
+
+      // Push to server so web can see it immediately
+      if (isSyncEnabled()) {
+        SyncManager.pushEntity("saleHold").catch(() => {});
+      }
+
       resetAll();
       setShowHolds(true);
     }

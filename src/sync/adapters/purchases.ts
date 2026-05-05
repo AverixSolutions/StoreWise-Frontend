@@ -271,3 +271,97 @@ export function createPurchaseItemsAdapter(isDesktop: boolean): SyncAdapter {
       : setPurchaseItemSyncState,
   };
 }
+
+// ── Purchase hold adapter ─────────────────────────────────────────────────────
+
+async function desktopGetDirtyPurchaseHolds(
+  licenseId: string,
+): Promise<DirtyRecord[]> {
+  try {
+    const res = await api().getDirtyPurchaseHolds(licenseId, 200);
+    return res?.records ?? [];
+  } catch {
+    return [];
+  }
+}
+
+async function desktopMarkPurchaseHoldsSynced(ids: string[], ts: string) {
+  await api().markPurchaseHoldsSynced(ids, ts);
+}
+
+async function desktopUpsertPurchaseHoldsFromServer(records: DirtyRecord[]) {
+  if (!records.length) return;
+  await api().bulkUpsertPurchaseHolds(records);
+}
+
+async function webGetDirtyPurchaseHolds(
+  _licenseId: string,
+): Promise<DirtyRecord[]> {
+  return [];
+}
+
+async function webMarkPurchaseHoldsSynced(_ids: string[], _ts: string) {}
+
+async function webUpsertPurchaseHoldsFromServer(_records: DirtyRecord[]) {}
+
+function purchaseHoldSyncKey() {
+  return `kynflow_sync_purchaseHold`;
+}
+
+async function getPurchaseHoldSyncState(): Promise<SyncStateRecord> {
+  try {
+    const raw = localStorage.getItem(purchaseHoldSyncKey());
+    return raw ? JSON.parse(raw) : { lastPulledAt: null, lastPushedAt: null };
+  } catch {
+    return { lastPulledAt: null, lastPushedAt: null };
+  }
+}
+
+async function setPurchaseHoldSyncState(state: Partial<SyncStateRecord>) {
+  const current = await getPurchaseHoldSyncState();
+  localStorage.setItem(
+    purchaseHoldSyncKey(),
+    JSON.stringify({ ...current, ...state }),
+  );
+}
+
+async function desktopGetPurchaseHoldSyncState(): Promise<SyncStateRecord> {
+  try {
+    const state = await api().getSyncState("purchaseHold");
+    return {
+      lastPulledAt: state?.lastPulledAt ?? null,
+      lastPushedAt: state?.lastPushedAt ?? null,
+    };
+  } catch {
+    return { lastPulledAt: null, lastPushedAt: null };
+  }
+}
+
+async function desktopSetPurchaseHoldSyncState(
+  state: Partial<SyncStateRecord>,
+) {
+  try {
+    await api().setSyncState("purchaseHold", state);
+  } catch {}
+}
+
+export function createPurchaseHoldsAdapter(isDesktop: boolean): SyncAdapter {
+  return {
+    entity: "purchaseHold",
+    getDirtyRecords: isDesktop
+      ? desktopGetDirtyPurchaseHolds
+      : webGetDirtyPurchaseHolds,
+    markSynced: isDesktop
+      ? desktopMarkPurchaseHoldsSynced
+      : webMarkPurchaseHoldsSynced,
+    upsertFromServer: isDesktop
+      ? desktopUpsertPurchaseHoldsFromServer
+      : webUpsertPurchaseHoldsFromServer,
+    getSyncState: isDesktop
+      ? desktopGetPurchaseHoldSyncState
+      : getPurchaseHoldSyncState,
+    setSyncState: isDesktop
+      ? desktopSetPurchaseHoldSyncState
+      : setPurchaseHoldSyncState,
+  };
+}

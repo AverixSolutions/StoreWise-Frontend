@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { X, Play, Trash2, Edit3, Clock } from "lucide-react";
 import PromptModal from "@/components/ui/PromptModal";
 import { platform } from "@/platform";
+import { SyncManager } from "@/sync/SyncManager";
 
 interface HoldSummary {
   id: string;
@@ -34,6 +35,9 @@ export default function HoldsModal({
   async function refresh() {
     setLoading(true);
     try {
+      if ((window as any).electronAPI) {
+        await SyncManager.pullNow("saleHold");
+      }
       const res = await platform.listSaleHolds?.(licenseId, {
         page: 1,
         pageSize: 200,
@@ -52,6 +56,7 @@ export default function HoldsModal({
     const ok = confirm("Delete this hold?");
     if (!ok) return;
     await platform.deleteSaleHold?.(id);
+    SyncManager.pushEntity("saleHold").catch(() => {});
     refresh();
   }
 
@@ -73,10 +78,11 @@ export default function HoldsModal({
       header: result.hold.header,
       rows: result.hold.rows,
     });
-
+    SyncManager.pushEntity("saleHold").catch(() => {});
     setRenameId(null);
     refresh();
   }
+
   if (!isOpen) return null;
 
   return (

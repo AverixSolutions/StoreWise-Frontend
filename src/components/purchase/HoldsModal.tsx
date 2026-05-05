@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { X, Play, Trash2, Edit3, Clock } from "lucide-react";
 import PromptModal from "@/components/ui/PromptModal";
+import { platform } from "@/platform";
+import { SyncManager } from "@/sync/SyncManager";
 
 interface HoldSummary {
   id: string;
@@ -27,18 +29,20 @@ export default function HoldsModal({
 }: HoldsModalProps) {
   const [holds, setHolds] = useState<HoldSummary[]>([]);
   const [loading, setLoading] = useState(false);
-
   const [renameId, setRenameId] = useState<string | null>(null);
   const [renameDefault, setRenameDefault] = useState<string>("");
 
   async function refresh() {
     setLoading(true);
     try {
-      const res = await (window as any).electronAPI.listPurchaseHolds(
-        licenseId,
-        { page: 1, pageSize: 200 },
-      );
-      setHolds(res.holds || []);
+      if ((window as any).electronAPI) {
+        await SyncManager.pullNow("purchaseHold");
+      }
+      const res = await platform.listPurchaseHolds?.(licenseId, {
+        page: 1,
+        pageSize: 200,
+      });
+      setHolds(res?.holds || []);
     } finally {
       setLoading(false);
     }
@@ -51,7 +55,8 @@ export default function HoldsModal({
   async function handleDelete(id: string) {
     const ok = confirm("Delete this hold?");
     if (!ok) return;
-    await (window as any).electronAPI.deletePurchaseHold(id);
+    await platform.deletePurchaseHold?.(id);
+    SyncManager.pushEntity("purchaseHold").catch(() => {});
     refresh();
   }
 
@@ -62,10 +67,18 @@ export default function HoldsModal({
 
   async function confirmRename(newTitle: string) {
     if (!renameId) return;
-    await (window as any).electronAPI.savePurchaseHold({
+
+    const result = await platform.getPurchaseHold?.(renameId);
+    if (!result?.hold) return;
+
+    await platform.savePurchaseHold?.({
       id: renameId,
+      licenseId,
       title: newTitle || null,
+      header: result.hold.header,
+      rows: result.hold.rows,
     });
+    SyncManager.pushEntity("purchaseHold").catch(() => {});
     setRenameId(null);
     refresh();
   }
@@ -259,7 +272,7 @@ export default function HoldsModal({
                     </div>
                   </div>
 
-                  {/* Right — action buttons (always visible) */}
+                  {/* Right — action buttons */}
                   <div className="flex items-center gap-1.5 shrink-0 ml-3">
                     {/* Resume */}
                     <button

@@ -225,3 +225,99 @@ export function createSaleItemsAdapter(isDesktop: boolean): SyncAdapter {
       : setSaleItemSyncState,
   };
 }
+
+// ── Sale hold adapter ─────────────────────────────────────────────────────────
+// Holds are not stored in IDB on web (web reads directly from the API).
+// On desktop, holds live in SQLite and sync via push/pull like sales.
+// Web side: getDirtyRecords returns [] (nothing to push), upsertFromServer
+// is a no-op (web always reads live from API, not from IDB).
+
+async function desktopGetDirtySaleHolds(
+  licenseId: string,
+): Promise<DirtyRecord[]> {
+  try {
+    const res = await api().getDirtySaleHolds(licenseId, 200);
+    return res?.records ?? [];
+  } catch {
+    return [];
+  }
+}
+
+async function desktopMarkSaleHoldsSynced(ids: string[], ts: string) {
+  await api().markSaleHoldsSynced(ids, ts);
+}
+
+async function desktopUpsertSaleHoldsFromServer(records: DirtyRecord[]) {
+  if (!records.length) return;
+  await api().bulkUpsertSaleHolds(records);
+}
+
+// Web has nothing to push — holds go straight to the API on write
+async function webGetDirtySaleHolds(
+  _licenseId: string,
+): Promise<DirtyRecord[]> {
+  return [];
+}
+
+async function webMarkSaleHoldsSynced(_ids: string[], _ts: string) {}
+
+// Web has nothing to upsert locally — it reads directly from API
+async function webUpsertSaleHoldsFromServer(_records: DirtyRecord[]) {}
+
+function saleHoldSyncKey() {
+  return `kynflow_sync_saleHold`;
+}
+
+async function getSaleHoldSyncState(): Promise<SyncStateRecord> {
+  try {
+    const raw = localStorage.getItem(saleHoldSyncKey());
+    return raw ? JSON.parse(raw) : { lastPulledAt: null, lastPushedAt: null };
+  } catch {
+    return { lastPulledAt: null, lastPushedAt: null };
+  }
+}
+
+async function setSaleHoldSyncState(state: Partial<SyncStateRecord>) {
+  const current = await getSaleHoldSyncState();
+  localStorage.setItem(
+    saleHoldSyncKey(),
+    JSON.stringify({ ...current, ...state }),
+  );
+}
+
+async function desktopGetSaleHoldSyncState(): Promise<SyncStateRecord> {
+  try {
+    const state = await api().getSyncState("saleHold");
+    return {
+      lastPulledAt: state?.lastPulledAt ?? null,
+      lastPushedAt: state?.lastPushedAt ?? null,
+    };
+  } catch {
+    return { lastPulledAt: null, lastPushedAt: null };
+  }
+}
+
+async function desktopSetSaleHoldSyncState(state: Partial<SyncStateRecord>) {
+  try {
+    await api().setSyncState("saleHold", state);
+  } catch {}
+}
+
+export function createSaleHoldsAdapter(isDesktop: boolean): SyncAdapter {
+  return {
+    entity: "saleHold",
+    getDirtyRecords: isDesktop
+      ? desktopGetDirtySaleHolds
+      : webGetDirtySaleHolds,
+    markSynced: isDesktop ? desktopMarkSaleHoldsSynced : webMarkSaleHoldsSynced,
+    upsertFromServer: isDesktop
+      ? desktopUpsertSaleHoldsFromServer
+      : webUpsertSaleHoldsFromServer,
+    getSyncState: isDesktop
+      ? desktopGetSaleHoldSyncState
+      : getSaleHoldSyncState,
+    setSyncState: isDesktop
+      ? desktopSetSaleHoldSyncState
+      : setSaleHoldSyncState,
+  };
+}

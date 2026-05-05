@@ -25,6 +25,8 @@ function api() {
   return window.electronAPI as any;
 }
 
+// ── Sales (unchanged — these already work correctly) ──────────────────────────
+
 export async function desktopCreateSale(
   sale: SaleCreatePayload,
   items: SaleItemInput[],
@@ -61,6 +63,8 @@ export async function desktopPeekNextSaleSlNo(
   return api().getNextSaleSlNo(licenseId);
 }
 
+// ── Holds — SQLite-only (sync adapter handles push/pull) ─────────────────────
+
 export async function desktopSaveSaleHold(
   payload: SaleHoldSavePayload,
 ): Promise<SaleHoldSaveResult> {
@@ -85,6 +89,8 @@ export async function desktopDeleteSaleHold(
 ): Promise<MutationResult> {
   return api().deleteSaleHold(id);
 }
+
+// ── Customers ─────────────────────────────────────────────────────────────────
 
 export async function desktopListCustomers(
   licenseId: string,
