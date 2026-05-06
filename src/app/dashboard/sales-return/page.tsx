@@ -8,6 +8,9 @@ import {
   useState,
   useCallback,
 } from "react";
+import { platform } from "@/platform";
+import { isSyncEnabled } from "@/platform/mode";
+import { SyncManager } from "@/sync/SyncManager";
 import { useRouter, useSearchParams } from "next/navigation";
 import SalesNavigation from "@/components/sales/SalesNavigation";
 import ItemsTableSection from "@/components/purchase/ItemsTableSection";
@@ -140,16 +143,14 @@ function SalesReturnPageInner() {
     if (!isClient) return;
 
     (async () => {
-      const res = await (window as any).electronAPI.getProducts(licenseId, {
+      const res = await platform.getProducts(licenseId, {
         page: 1,
         pageSize: 200,
       });
       setProducts(res.products);
     })();
     (async () => {
-      const res = await (window as any).electronAPI.getNextSaleReturnSlNo(
-        licenseId,
-      );
+      const res = await platform.peekNextSaleReturnSlNo?.(licenseId);
       setNextEntryNo(res?.nextSlNo ?? 1);
     })();
   }, [licenseId, isClient]);
@@ -159,10 +160,12 @@ function SalesReturnPageInner() {
   }, [showCustomerModal]);
 
   const loadCustomers = async () => {
-    const { customers: cs } = await (window as any).electronAPI.listCustomers(
-      licenseId,
-      { q: "", page: 1, pageSize: 100 },
-    );
+    const res = await platform.listCustomers?.(licenseId, {
+      q: "",
+      page: 1,
+      pageSize: 100,
+    });
+    const { customers: cs } = res ?? { customers: [] };
     setCustomers(cs.map((c: any) => ({ id: c.id, name: c.name })));
   };
 
@@ -175,7 +178,7 @@ function SalesReturnPageInner() {
       try {
         setOpeningId(openId);
 
-        const res = await (window as any).electronAPI.getSaleReturnFull(openId);
+        const res = await platform.getSaleReturnFull?.(openId);
         if (!res?.success || !res?.saleReturn) return;
 
         const sr = res.saleReturn;
@@ -252,10 +255,10 @@ function SalesReturnPageInner() {
   }, [openId]);
 
   const handleSelectProduct = async (rowIndex: number, productId: string) => {
-    const product = await (window as any).electronAPI.getProduct(productId);
+    const product = await platform.getProduct(productId);
     if (!product) return;
 
-    const batchesRes = await (window as any).electronAPI.listBarcodesForProduct(
+    const batchesRes = await platform.listBarcodesForProduct?.(
       licenseId,
       productId,
     );
@@ -359,9 +362,10 @@ function SalesReturnPageInner() {
     if (!productId) return;
 
     try {
-      const batchesRes = await (
-        window as any
-      ).electronAPI.listBarcodesForProduct(licenseId, productId);
+      const batchesRes = await platform.listBarcodesForProduct?.(
+        licenseId,
+        productId,
+      );
 
       const liveBatches: BatchInfo[] = (batchesRes?.rows || []).map(
         (b: any) => ({
@@ -439,71 +443,62 @@ function SalesReturnPageInner() {
       return false;
     }
 
-    const payload = editingId
-      ? {
-          id: editingId,
-          header: {
-            userId,
-            licenseId,
-            customerId: header.customer?.id || null,
-            customerName: header.customer?.name || null,
-            billNo: header.billNo || null,
-            department: header.department || null,
-            debitAccount: header.debitAccount || null,
-            natureOfEntry: header.natureOfEntry || null,
-            returnDate: header.saleDate,
-            entryTime: header.entryTime,
-            discount: header.discount || 0,
-            saleType: header.saleType,
-          },
-          items,
-        }
-      : {
-          header: {
-            userId,
-            licenseId,
-            customerId: header.customer?.id || null,
-            customerName: header.customer?.name || null,
-            billNo: header.billNo || null,
-            department: header.department || null,
-            debitAccount: header.debitAccount || null,
-            natureOfEntry: header.natureOfEntry || null,
-            returnDate: header.saleDate,
-            entryTime: header.entryTime,
-            discount: header.discount || 0,
-            saleType: header.saleType,
-          },
-          items,
-        };
+    const headerPayload = {
+      userId,
+      licenseId,
+      customerId: header.customer?.id || null,
+      customerName: header.customer?.name || null,
+      billNo: header.billNo || null,
+      department: header.department || null,
+      debitAccount: header.debitAccount || null,
+      natureOfEntry: header.natureOfEntry || null,
+      returnDate: header.saleDate,
+      entryTime: header.entryTime,
+      discount: header.discount || 0,
+      saleType: header.saleType,
+    };
 
-    const res = editingId
-      ? await (window as any).electronAPI.updateSaleReturn(payload)
-      : await (window as any).electronAPI.createSaleReturn(payload);
-    if (res?.success) {
-      alert(
-        `✅ Return ${editingId ? "updated" : "saved"}! ${!editingId ? `SlNo: ${res.slNo}, ` : ""}Total: ${(res.totalAmount ?? grandTotal).toFixed(2)}`,
-      );
-
-      if (!editingId) {
-        setEditingId(res.returnId || null);
-        setEditingSlNo(res.slNo ?? null);
-        initialSnapshot.current = makeSnapshot(header, rows);
-        setIsDirty(false);
-      }
-
-      try {
-        const peek = await (window as any).electronAPI.getNextSaleReturnSlNo(
-          licenseId,
+    if (editingId) {
+      const res = await platform.updateSaleReturn?.({
+        id: editingId,
+        header: headerPayload,
+        items,
+      });
+      if (res?.success) {
+        if (isSyncEnabled())
+          SyncManager.pushEntity("saleReturn").catch(() => {});
+        alert(
+          `✅ Return updated! Total: ${(res.totalAmount ?? grandTotal).toFixed(2)}`,
         );
+        try {
+          const peek = await platform.peekNextSaleReturnSlNo?.(licenseId);
+          setNextEntryNo(peek?.nextSlNo ?? null);
+        } catch {}
+        await finalizeAfterSuccessfulSaleReturn({ resetFn: resetAll });
+        return true;
+      }
+      setValidationMsgs([res?.error || "Failed to update sale return."]);
+      setValidationOpen(true);
+      return false;
+    }
+
+    const res = await platform.createSaleReturn?.({
+      header: headerPayload,
+      items,
+    });
+    if (res?.success) {
+      if (isSyncEnabled()) SyncManager.pushEntity("saleReturn").catch(() => {});
+      alert(
+        `✅ Return saved! SlNo: ${res.slNo}, Total: ${(res.totalAmount ?? grandTotal).toFixed(2)}`,
+      );
+      setEditingId(res.returnId || null);
+      setEditingSlNo(res.slNo ?? null);
+      initialSnapshot.current = makeSnapshot(header, rows);
+      setIsDirty(false);
+      try {
+        const peek = await platform.peekNextSaleReturnSlNo?.(licenseId);
         setNextEntryNo(peek?.nextSlNo ?? null);
       } catch {}
-
-      if (editingId) {
-        await finalizeAfterSuccessfulSaleReturn({
-          resetFn: resetAll,
-        });
-      }
-
       return true;
     }
 

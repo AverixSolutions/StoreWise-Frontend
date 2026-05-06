@@ -1,10 +1,13 @@
 // src/components/suppliers/SupplierFormModal.tsx
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { X, Truck, ReceiptIndianRupee } from "lucide-react";
 import SearchableDropdown from "../ui/SearchableDropdown";
 import SupplierLedgerModal from "../ledger/SupplierLedgerModal";
 import { platform } from "@/platform";
 import { webCreateSupplier, webUpdateSupplier } from "@/platform/web/suppliers";
+import { SyncManager } from "@/sync/SyncManager";
+import { isSyncEnabled } from "@/platform/mode";
 
 type Supplier = {
   id?: string;
@@ -33,23 +36,59 @@ type Supplier = {
   notes?: string;
 };
 
-// Shared input className for all text inputs
+// ── Shared input style ────────────────────────────────────────────────────────
 const inputCls =
-  "w-full px-3 py-2 rounded-md text-sm " +
-  "bg-[var(--kyn-surface-3)] border border-[var(--kyn-border)] " +
-  "text-[var(--kyn-text)] placeholder:text-[var(--kyn-text-muted)] " +
-  "focus:outline-none focus:border-[var(--kyn-primary)] focus:ring-1 focus:ring-[var(--kyn-glow-primary)] " +
-  "transition-all duration-150";
+  "w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 outline-none shadow-[0_1px_4px_rgba(0,0,0,0.06)] transition focus:border-cyan-400 focus:ring-4 focus:ring-cyan-400/15";
 
 const inputDisabledCls =
-  "w-full px-3 py-2 rounded-md text-sm " +
-  "bg-[var(--kyn-surface)] border border-[var(--kyn-border)] " +
-  "text-[var(--kyn-text-muted)] " +
-  "cursor-not-allowed";
+  "w-full rounded-xl border border-slate-200 bg-slate-100 px-3.5 py-2.5 text-sm text-slate-400 outline-none shadow-[0_1px_4px_rgba(0,0,0,0.06)] cursor-not-allowed font-mono";
 
-const labelCls =
-  "block text-xs font-medium text-[var(--kyn-text-muted)] mb-1 uppercase tracking-wide";
+// ── Section card ──────────────────────────────────────────────────────────────
+function SectionCard({
+  icon: Icon,
+  title,
+  iconColor = "text-cyan-300",
+  children,
+}: {
+  icon: React.ElementType;
+  title: string;
+  iconColor?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-xl border border-slate-200/80 bg-white shadow-[0_4px_20px_rgba(3,10,24,0.06)] overflow-hidden">
+      <div className="flex items-center gap-3 bg-[#1e3a5f] px-5 py-3">
+        <Icon className={`h-4 w-4 shrink-0 ${iconColor}`} />
+        <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/80">
+          {title}
+        </span>
+      </div>
+      <div className="bg-slate-50/60 p-5">{children}</div>
+    </div>
+  );
+}
 
+// ── Field wrapper ─────────────────────────────────────────────────────────────
+function Field({
+  label,
+  children,
+  className = "",
+}: {
+  label: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={className}>
+      <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">
+        {label}
+      </label>
+      {children}
+    </div>
+  );
+}
+
+// ── Main modal ────────────────────────────────────────────────────────────────
 export default function SupplierFormModal({
   isOpen,
   onClose,
@@ -63,7 +102,6 @@ export default function SupplierFormModal({
 }) {
   const [form, setForm] = useState<Supplier>({ name: "" });
   const [ledgerOpen, setLedgerOpen] = useState(false);
-
   const [openingSide, setOpeningSide] = useState<"we_owe" | "they_owe">(
     "we_owe",
   );
@@ -94,6 +132,7 @@ export default function SupplierFormModal({
 
   const [code, setCode] = useState<string>("SUP00001");
   const [codeNumber, setCodeNumber] = useState<number>(1);
+  const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<{
     type: "success" | "error" | null;
     message?: string;
@@ -241,15 +280,20 @@ export default function SupplierFormModal({
     requestAnimationFrame(() => nameRef.current?.focus());
   }, [isOpen, editSupplier]);
 
+  // ESC to close
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isOpen]);
+
   const handleChange = (k: keyof Supplier, v: any) =>
     setForm((f) => ({ ...f, [k]: v }));
 
-  const handleSubmit = async (
-    e: React.FormEvent,
-    saveAndClose: boolean = false,
-  ) => {
-    e.preventDefault();
+  const saveSupplier = async (saveAndClose = false) => {
     setStatus({ type: null });
+    setSaving(true);
 
     const licenseId = localStorage.getItem("licenseId") || "demo-license";
     const signedOpening =
@@ -284,6 +328,7 @@ export default function SupplierFormModal({
 
     try {
       if (editSupplier?.id) {
+        // ── UPDATE ──────────────────────────────────────────────────────────
         if ((window as any).electronAPI) {
           await (window as any).electronAPI.updateSupplier(
             editSupplier.id,
@@ -292,62 +337,91 @@ export default function SupplierFormModal({
         } else {
           await webUpdateSupplier(editSupplier.id, payload);
         }
+        // Trigger sync after update
+        if (isSyncEnabled()) {
+          SyncManager.pushEntity("supplier").catch(() => {});
+        }
         onSuccess();
         onClose();
-      } else {
-        if ((window as any).electronAPI) {
-          await (window as any).electronAPI.createSupplier(payload);
-        } else {
-          await webCreateSupplier(payload);
-        }
-        onSuccess();
-
-        if (saveAndClose) {
-          onClose();
-        } else {
-          setStatus({
-            type: "success",
-            message: "Supplier created successfully.",
-          });
-          if ((window as any).electronAPI) {
-            const { code: nextC, codeNumber: nextN } = await (
-              window as any
-            ).electronAPI.getNextSupplierCode(licenseId);
-            setCode(nextC);
-            setCodeNumber(nextN);
-          }
-          setForm({
-            name: "",
-            phone: "",
-            email: "",
-            gstin: "",
-            department: "",
-            addressLine1: "",
-            addressLine2: "",
-            city: "",
-            state: "",
-            pincode: "",
-            category: "",
-            native: "",
-            language: "",
-            aadhaar: "",
-            pan: "",
-            license1: "",
-            license2: "",
-            settlementDays: undefined,
-            creditLimit: undefined,
-            notes: "",
-          });
-          setOpeningSide("we_owe");
-          setOpeningAmount(0);
-          setHasCreditLimit(false);
-          await refreshDistincts();
-          requestAnimationFrame(() => nameRef.current?.focus());
-          setTimeout(() => setStatus({ type: null }), 3000);
-        }
+        return;
       }
+
+      // ── CREATE ──────────────────────────────────────────────────────────
+      if ((window as any).electronAPI) {
+        await (window as any).electronAPI.createSupplier(payload);
+      } else {
+        await webCreateSupplier(payload);
+      }
+      // Trigger sync after create
+      if (isSyncEnabled()) {
+        SyncManager.pushEntity("supplier").catch(() => {});
+      }
+      onSuccess();
+
+      if (saveAndClose) {
+        onClose();
+        return;
+      }
+
+      setStatus({ type: "success", message: "Supplier created successfully." });
+
+      if ((window as any).electronAPI) {
+        const { code: nextC, codeNumber: nextN } = await (
+          window as any
+        ).electronAPI.getNextSupplierCode(licenseId);
+        setCode(nextC);
+        setCodeNumber(nextN);
+      }
+
+      setForm({
+        name: "",
+        phone: "",
+        email: "",
+        gstin: "",
+        department: "",
+        addressLine1: "",
+        addressLine2: "",
+        city: "",
+        state: "",
+        pincode: "",
+        category: "",
+        native: "",
+        language: "",
+        aadhaar: "",
+        pan: "",
+        license1: "",
+        license2: "",
+        settlementDays: undefined,
+        creditLimit: undefined,
+        notes: "",
+      });
+      setOpeningSide("we_owe");
+      setOpeningAmount(0);
+      setHasCreditLimit(false);
+      await refreshDistincts();
+      requestAnimationFrame(() => nameRef.current?.focus());
+      setTimeout(() => setStatus({ type: null }), 3000);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await saveSupplier(false);
     } catch (error: any) {
-      console.error("Error saving supplier:", error);
+      setStatus({
+        type: "error",
+        message: error?.message || "Failed to save supplier. Please try again.",
+      });
+    }
+  };
+
+  const handleSaveClick = async (saveAndClose: boolean) => {
+    try {
+      await saveSupplier(saveAndClose);
+    } catch (error: any) {
       setStatus({
         type: "error",
         message: error?.message || "Failed to save supplier. Please try again.",
@@ -358,64 +432,62 @@ export default function SupplierFormModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4"
+      onClick={onClose}
+    >
       <div
-        className="w-full max-w-4xl max-h-[90vh] flex flex-col rounded-xl overflow-hidden"
-        style={{
-          background: "var(--kyn-surface)",
-          border: "1px solid var(--kyn-border)",
-          boxShadow:
-            "0 0 0 1px rgba(255,255,255,0.04), 0 24px 64px rgba(0,0,0,0.6), 0 0 40px var(--kyn-glow-primary)",
-        }}
+        className="w-full sm:max-w-3xl rounded-t-[24px] sm:rounded-[24px] border border-slate-200 bg-white shadow-[0_24px_60px_rgba(3,10,24,0.22)] flex flex-col max-h-[92dvh]"
+        onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div
-          className="px-6 py-4 flex-shrink-0 flex items-center justify-between"
-          style={{ borderBottom: "1px solid var(--kyn-border)" }}
-        >
-          <h3 className="text-base font-semibold text-[var(--kyn-text)]">
-            {editSupplier ? "Edit Supplier" : "Add Supplier"}
-          </h3>
-          <div className="flex items-center gap-2">
-            {editSupplier?.id && (
+        {/* ── Modal Header ── */}
+        <div className="relative overflow-hidden rounded-t-[24px] bg-[linear-gradient(135deg,#091120_0%,#0f1a31_60%,#16213d_100%)] px-5 py-4 text-white shrink-0">
+          <div className="pointer-events-none absolute -left-6 top-0 h-16 w-16 rounded-full bg-violet-400/20 blur-2xl" />
+          <div className="pointer-events-none absolute right-0 top-0 h-16 w-16 rounded-full bg-cyan-500/15 blur-2xl" />
+          <div className="relative flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-500/20 text-violet-300 border border-violet-400/20">
+                <Truck className="h-4 w-4" />
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/50">
+                  Supplier
+                </p>
+                <h3 className="text-base font-semibold text-white">
+                  {editSupplier
+                    ? `Edit — ${editSupplier.name}`
+                    : "New Supplier"}
+                </h3>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {editSupplier?.id && (
+                <button
+                  type="button"
+                  onClick={() => setLedgerOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/20 cursor-pointer"
+                >
+                  <ReceiptIndianRupee className="h-3.5 w-3.5" />
+                  Ledger
+                </button>
+              )}
               <button
-                type="button"
-                onClick={() => setLedgerOpen(true)}
-                className="px-3 py-1.5 text-xs font-medium rounded-md transition-all duration-150"
-                style={{
-                  background:
-                    "linear-gradient(135deg, rgba(32,183,255,0.15), rgba(176,38,255,0.12))",
-                  border: "1px solid var(--kyn-border)",
-                  color: "var(--kyn-primary)",
-                }}
+                onClick={onClose}
+                className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/15 bg-white/10 text-white transition hover:bg-white/20 cursor-pointer"
               >
-                Open Ledger
+                <X className="h-3.5 w-3.5" />
               </button>
-            )}
-            <button
-              type="button"
-              onClick={onClose}
-              className="w-7 h-7 flex items-center justify-center rounded-md text-[var(--kyn-text-muted)] hover:text-[var(--kyn-text)] hover:bg-[var(--kyn-surface-3)] transition-colors"
-            >
-              ✕
-            </button>
+            </div>
           </div>
         </div>
 
-        {/* Status banners */}
+        {/* ── Status Banner ── */}
         {status.type && (
-          <div className="px-6 pt-3">
+          <div className="px-5 pt-4 shrink-0">
             {status.type === "success" && (
-              <div
-                className="rounded-md px-3 py-2 text-sm flex items-center gap-2"
-                style={{
-                  background: "rgba(34,197,94,0.08)",
-                  border: "1px solid rgba(34,197,94,0.25)",
-                  color: "var(--kyn-success)",
-                }}
-              >
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 px-4 py-2.5 text-sm font-medium text-emerald-700 flex items-center gap-2">
                 <svg
-                  className="w-4 h-4 flex-shrink-0"
+                  className="w-4 h-4 shrink-0"
                   fill="currentColor"
                   viewBox="0 0 20 20"
                 >
@@ -429,16 +501,9 @@ export default function SupplierFormModal({
               </div>
             )}
             {status.type === "error" && (
-              <div
-                className="rounded-md px-3 py-2 text-sm flex items-center gap-2"
-                style={{
-                  background: "rgba(239,68,68,0.08)",
-                  border: "1px solid rgba(239,68,68,0.25)",
-                  color: "var(--kyn-danger)",
-                }}
-              >
+              <div className="rounded-xl border border-rose-200 bg-rose-50/80 px-4 py-2.5 text-sm font-medium text-rose-700 flex items-center gap-2">
                 <svg
-                  className="w-4 h-4 flex-shrink-0"
+                  className="w-4 h-4 shrink-0"
                   fill="currentColor"
                   viewBox="0 0 20 20"
                 >
@@ -454,32 +519,25 @@ export default function SupplierFormModal({
           </div>
         )}
 
-        {/* Scrollable body */}
-        <div className="flex-1 overflow-y-auto no-scrollbar">
-          <form onSubmit={(e) => handleSubmit(e)} className="p-6 space-y-8">
-            {/* Code + Name hero row */}
-            <div
-              className="p-4 rounded-lg"
-              style={{
-                background: "var(--kyn-surface-2)",
-                border: "1px solid var(--kyn-border)",
-              }}
+        {/* ── Scrollable Body ── */}
+        <div className="flex-1 overflow-y-auto px-5 py-5 space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Identity */}
+            <SectionCard
+              icon={Truck}
+              title="Identity"
+              iconColor="text-violet-300"
             >
-              <div className="flex items-end gap-4">
-                <div>
-                  <label className={labelCls}>Supplier Code</label>
+              <div className="grid grid-cols-[auto_1fr] gap-4">
+                <Field label="Code">
                   <input
                     type="text"
                     value={code}
                     readOnly
-                    className={inputDisabledCls + " w-32 font-mono"}
+                    className={inputDisabledCls + " w-32"}
                   />
-                </div>
-                <div className="flex-1">
-                  <label className={labelCls}>
-                    Supplier Name{" "}
-                    <span className="text-[var(--kyn-primary)]">*</span>
-                  </label>
+                </Field>
+                <Field label="Supplier Name *">
                   <input
                     ref={nameRef}
                     required
@@ -489,13 +547,17 @@ export default function SupplierFormModal({
                     className={inputCls}
                     placeholder="Enter supplier name"
                   />
-                </div>
+                </Field>
               </div>
-            </div>
+            </SectionCard>
 
-            {/* Section: Basic Information */}
-            <Section title="Basic Information">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* Basic Information */}
+            <SectionCard
+              icon={Truck}
+              title="Basic Information"
+              iconColor="text-cyan-300"
+            >
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <Field label="Phone">
                   <input
                     ref={phoneRef}
@@ -588,11 +650,15 @@ export default function SupplierFormModal({
                   />
                 </Field>
               </div>
-            </Section>
+            </SectionCard>
 
-            {/* Section: Address */}
-            <Section title="Address Information">
-              <div className="grid grid-cols-1 gap-4">
+            {/* Address */}
+            <SectionCard
+              icon={Truck}
+              title="Address Information"
+              iconColor="text-emerald-300"
+            >
+              <div className="space-y-4">
                 <Field label="Address Line 1">
                   <input
                     ref={addressLine1Ref}
@@ -617,7 +683,7 @@ export default function SupplierFormModal({
                     placeholder="Apartment, suite, unit, etc."
                   />
                 </Field>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <Field label="City">
                     <SearchableDropdown
                       ref={cityRef}
@@ -670,11 +736,15 @@ export default function SupplierFormModal({
                   </Field>
                 </div>
               </div>
-            </Section>
+            </SectionCard>
 
-            {/* Section: Legal & Tax */}
-            <Section title="Legal & Tax Information">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* Legal & Tax */}
+            <SectionCard
+              icon={Truck}
+              title="Legal & Tax Information"
+              iconColor="text-rose-300"
+            >
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <Field label="GSTIN">
                   <input
                     ref={gstinRef}
@@ -726,39 +796,30 @@ export default function SupplierFormModal({
                   />
                 </Field>
               </div>
-            </Section>
+            </SectionCard>
 
-            {/* Section: Financial */}
-            <Section title="Financial Information">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {/* Opening Balance */}
+            {/* Financial */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {/* Opening Balance */}
+              <SectionCard
+                icon={Truck}
+                title="Opening Balance"
+                iconColor="text-amber-300"
+              >
                 <div className="space-y-3">
-                  <label className={labelCls}>Opening Balance</label>
-                  <div className="flex gap-2">
+                  <div className="flex items-center gap-1 rounded-2xl border border-slate-200 bg-white p-1">
                     {(["we_owe", "they_owe"] as const).map((side) => (
                       <button
                         key={side}
                         type="button"
                         onClick={() => setOpeningSide(side)}
-                        className="flex-1 px-3 py-2 rounded-md text-xs font-medium transition-all duration-150"
-                        style={
+                        className={`flex-1 rounded-xl px-2 py-2 text-[11px] font-semibold transition-all cursor-pointer ${
                           openingSide === side
-                            ? {
-                                background:
-                                  "linear-gradient(135deg, rgba(32,183,255,0.2), rgba(176,38,255,0.15))",
-                                border: "1px solid var(--kyn-primary)",
-                                color: "var(--kyn-primary)",
-                              }
-                            : {
-                                background: "var(--kyn-surface-3)",
-                                border: "1px solid var(--kyn-border)",
-                                color: "var(--kyn-text-muted)",
-                              }
-                        }
+                            ? "bg-[#1e3a5f] text-white shadow-[0_2px_8px_rgba(15,23,42,0.15)]"
+                            : "text-slate-500 hover:text-slate-700"
+                        }`}
                       >
-                        {side === "we_owe"
-                          ? "We owe supplier"
-                          : "Supplier owes us"}
+                        {side === "we_owe" ? "We owe" : "They owe"}
                       </button>
                     ))}
                   </div>
@@ -777,23 +838,25 @@ export default function SupplierFormModal({
                     placeholder="0.00"
                   />
                   {editSupplier?.id && (
-                    <p
-                      className="text-xs"
-                      style={{ color: "var(--kyn-warning)" }}
-                    >
-                      Opening balance is locked after supplier creation.
+                    <p className="text-[11px] text-amber-600 font-medium">
+                      Locked after creation.
                     </p>
                   )}
-                  <p className="text-xs text-[var(--kyn-text-muted)]">
+                  <p className="text-[11px] text-slate-400">
                     {openingSide === "we_owe"
-                      ? `Saved as +₹${(openingAmount || 0).toFixed(2)} (we owe)`
-                      : `Saved as -₹${(openingAmount || 0).toFixed(2)} (they owe)`}
+                      ? `Saved as +₹${(openingAmount || 0).toFixed(2)}`
+                      : `Saved as −₹${(openingAmount || 0).toFixed(2)}`}
                   </p>
                 </div>
+              </SectionCard>
 
-                {/* Credit Limit */}
+              {/* Credit Limit */}
+              <SectionCard
+                icon={Truck}
+                title="Credit Limit"
+                iconColor="text-cyan-300"
+              >
                 <div className="space-y-3">
-                  <label className={labelCls}>Credit Limit</label>
                   <label className="inline-flex items-center gap-2 cursor-pointer">
                     <input
                       type="checkbox"
@@ -804,9 +867,9 @@ export default function SupplierFormModal({
                           handleChange("creditLimit", null);
                       }}
                       className="rounded"
-                      style={{ accentColor: "var(--kyn-primary)" }}
+                      style={{ accentColor: "#1e3a5f" }}
                     />
-                    <span className="text-sm text-[var(--kyn-text-soft)]">
+                    <span className="text-sm text-slate-600 font-medium">
                       Has credit limit
                     </span>
                   </label>
@@ -828,14 +891,19 @@ export default function SupplierFormModal({
                       placeholder="0.00"
                     />
                   )}
-                  <p className="text-xs text-[var(--kyn-text-muted)]">
-                    Max outstanding comfortable with this supplier.
+                  <p className="text-[11px] text-slate-400">
+                    Max outstanding with this supplier.
                   </p>
                 </div>
+              </SectionCard>
 
-                {/* Settlement Days */}
+              {/* Settlement Days */}
+              <SectionCard
+                icon={Truck}
+                title="Settlement Days"
+                iconColor="text-violet-300"
+              >
                 <div className="space-y-3">
-                  <label className={labelCls}>Settlement Days</label>
                   <input
                     ref={settlementDaysRef}
                     type="number"
@@ -851,15 +919,19 @@ export default function SupplierFormModal({
                     className={inputCls}
                     placeholder="e.g., 30"
                   />
-                  <p className="text-xs text-[var(--kyn-text-muted)]">
+                  <p className="text-[11px] text-slate-400">
                     Expected days to pay invoices.
                   </p>
                 </div>
-              </div>
-            </Section>
+              </SectionCard>
+            </div>
 
-            {/* Section: Notes */}
-            <Section title="Additional Information">
+            {/* Notes */}
+            <SectionCard
+              icon={Truck}
+              title="Additional Notes"
+              iconColor="text-slate-400"
+            >
               <Field label="Notes">
                 <textarea
                   ref={notesRef}
@@ -867,78 +939,64 @@ export default function SupplierFormModal({
                   onChange={(e) => handleChange("notes", e.target.value)}
                   onKeyDown={(e) => handleKeyDown(e, 20)}
                   rows={3}
-                  className={inputCls + " resize-none"}
+                  className={`${inputCls} resize-none`}
                   placeholder="Additional notes about the supplier..."
                 />
               </Field>
-            </Section>
+            </SectionCard>
           </form>
         </div>
 
-        {/* Footer */}
-        <div
-          className="px-6 py-4 flex justify-end gap-3 flex-shrink-0"
-          style={{ borderTop: "1px solid var(--kyn-border)" }}
-        >
+        {/* ── Footer ── */}
+        <div className="shrink-0 border-t border-slate-100 bg-slate-50/60 px-5 py-4 flex gap-3 justify-end">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium rounded-md transition-all duration-150"
-            style={{
-              background: "var(--kyn-surface-3)",
-              border: "1px solid var(--kyn-border)",
-              color: "var(--kyn-text-muted)",
-            }}
-            onMouseEnter={(e) =>
-              (e.currentTarget.style.color = "var(--kyn-text)")
-            }
-            onMouseLeave={(e) =>
-              (e.currentTarget.style.color = "var(--kyn-text-muted)")
-            }
+            className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
           >
             Cancel
           </button>
 
           {editSupplier ? (
             <button
-              type="submit"
-              onClick={(e) => handleSubmit(e)}
-              className="px-4 py-2 text-sm font-medium rounded-md transition-all duration-150"
-              style={{
-                background:
-                  "linear-gradient(135deg, var(--kyn-primary), var(--kyn-secondary))",
-                color: "var(--kyn-white)",
-                boxShadow: "0 0 16px var(--kyn-glow-primary)",
-              }}
+              type="button"
+              onClick={() => handleSaveClick(true)}
+              disabled={saving}
+              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#20b7ff] to-[#b026ff] px-6 py-2.5 text-sm font-semibold text-white shadow-[0_4px_20px_rgba(32,183,255,0.22)] hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition cursor-pointer"
             >
-              Update Supplier
+              {saving ? (
+                <>
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  Saving…
+                </>
+              ) : (
+                "Update Supplier"
+              )}
             </button>
           ) : (
             <>
               <button
                 type="button"
-                onClick={(e) => handleSubmit(e, true)}
-                className="px-4 py-2 text-sm font-medium rounded-md transition-all duration-150"
-                style={{
-                  background: "var(--kyn-surface-3)",
-                  border: "1px solid var(--kyn-primary)",
-                  color: "var(--kyn-primary)",
-                }}
+                onClick={() => handleSaveClick(true)}
+                disabled={saving}
+                className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 transition cursor-pointer"
               >
                 Save & Close
               </button>
               <button
-                type="submit"
-                onClick={(e) => handleSubmit(e)}
-                className="px-4 py-2 text-sm font-medium rounded-md transition-all duration-150"
-                style={{
-                  background:
-                    "linear-gradient(135deg, var(--kyn-primary), var(--kyn-secondary))",
-                  color: "var(--kyn-white)",
-                  boxShadow: "0 0 16px var(--kyn-glow-primary)",
-                }}
+                type="button"
+                onClick={() => handleSaveClick(false)}
+                disabled={saving}
+                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#20b7ff] to-[#b026ff] px-6 py-2.5 text-sm font-semibold text-white shadow-[0_4px_20px_rgba(32,183,255,0.22)] hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition cursor-pointer"
               >
-                Save & Add Another
+                {saving ? (
+                  <>
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                    Saving…
+                  </>
+                ) : (
+                  "Save & Add Another"
+                )}
               </button>
             </>
           )}
@@ -954,51 +1012,6 @@ export default function SupplierFormModal({
           supplierName={editSupplier.name}
         />
       )}
-    </div>
-  );
-}
-
-// ── Small layout helpers ────────────────────────────────────────────────────
-
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <h4
-        className="text-xs font-semibold uppercase tracking-widest mb-4 pb-2"
-        style={{
-          color: "var(--kyn-text-muted)",
-          borderBottom: "1px solid var(--kyn-border)",
-        }}
-      >
-        {title}
-      </h4>
-      {children}
-    </div>
-  );
-}
-
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <label
-        className="block text-xs font-medium uppercase tracking-wide mb-1"
-        style={{ color: "var(--kyn-text-muted)" }}
-      >
-        {label}
-      </label>
-      {children}
     </div>
   );
 }

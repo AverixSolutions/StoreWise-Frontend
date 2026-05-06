@@ -666,6 +666,11 @@ db.prepare(
   `CREATE INDEX IF NOT EXISTS idx_supl_tx_ref ON supplier_transactions(licenseId, kind, refId)`,
 ).run();
 
+addColumnIfMissing("supplier_transactions", "chequeNo", "TEXT");
+addColumnIfMissing("supplier_transactions", "chequeIssueDate", "TEXT");
+addColumnIfMissing("supplier_transactions", "chequeClearanceDate", "TEXT");
+addColumnIfMissing("supplier_transactions", "paymentStatus", "TEXT");
+
 // --- Purchases: link supplier ---
 addColumnIfMissing("purchases", "supplierId", "TEXT");
 db.prepare(
@@ -729,6 +734,36 @@ db.prepare(
 db.prepare(
   `CREATE INDEX IF NOT EXISTS idx_supl_settle_purchase ON supplier_bill_settlements(licenseId, purchaseId)`,
 ).run();
+
+// Customer Bill Settlements (bill-wise receipts)
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS customer_bill_settlements (
+    id TEXT PRIMARY KEY,
+    licenseId TEXT NOT NULL,
+    customerId TEXT NOT NULL,
+    receiptTxId TEXT NOT NULL,
+    saleId TEXT NOT NULL,
+    amount REAL NOT NULL CHECK(amount >= 0),
+    createdAt TEXT,
+    FOREIGN KEY (receiptTxId) REFERENCES customer_transactions(id) ON DELETE CASCADE,
+    FOREIGN KEY (saleId) REFERENCES sales(id) ON DELETE CASCADE
+  )
+`,
+).run();
+
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_cust_settle_customer ON customer_bill_settlements(licenseId, customerId)`,
+).run();
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_cust_settle_sale ON customer_bill_settlements(licenseId, saleId)`,
+).run();
+
+// Cheque fields on customer_transactions
+addColumnIfMissing("customer_transactions", "paymentStatus", "TEXT");
+addColumnIfMissing("customer_transactions", "chequeNo", "TEXT");
+addColumnIfMissing("customer_transactions", "chequeIssueDate", "TEXT");
+addColumnIfMissing("customer_transactions", "chequeClearanceDate", "TEXT");
 
 // --- SALES TABLES ----------------------------------------------------------
 
@@ -1717,6 +1752,109 @@ db.prepare(
   ON units(licenseId, updatedAt, syncedAt, deletedAt)
 `,
 ).run();
+
+// ── Transaction Types Master ─────────────────────────────────────────────────
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS transaction_types (
+    id       TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    licenseId TEXT NOT NULL,
+    name      TEXT NOT NULL,
+    code      TEXT,
+    category  TEXT NOT NULL CHECK (category IN ('sale','purchase','saleReturn','purchaseReturn')),
+    isDefault INTEGER DEFAULT 0,
+    sortOrder INTEGER DEFAULT 999,
+    createdAt TEXT,
+    updatedAt TEXT,
+    deletedAt TEXT,
+    UNIQUE(licenseId, category, name)
+  )
+`,
+).run();
+
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_txn_types_license
+   ON transaction_types(licenseId, category, isDefault)`,
+).run();
+
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_txn_types_dirty
+   ON transaction_types(licenseId, updatedAt, deletedAt)`,
+).run();
+
+db.prepare(
+  `
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_txn_types_code_live
+  ON transaction_types(licenseId, category, code)
+  WHERE code IS NOT NULL
+    AND code <> ''
+    AND COALESCE(deletedAt,'') = ''
+`,
+).run();
+
+addColumnIfMissing("transaction_types", "isSynced", "INTEGER DEFAULT 0");
+addColumnIfMissing("transaction_types", "syncedAt", "TEXT");
+
+// ── Add typeId to all four transaction headers ───────────────────────────────
+addColumnIfMissing("sales", "typeId", "TEXT");
+addColumnIfMissing("purchases", "typeId", "TEXT");
+addColumnIfMissing("sale_returns", "typeId", "TEXT");
+addColumnIfMissing("purchase_returns", "typeId", "TEXT");
+
+// ── Seed default transaction types per existing license ──────────────────────
+const seedTxnTypesRan = db
+  .prepare(`SELECT 1 FROM _migrations WHERE name='seed_txn_types_v1' LIMIT 1`)
+  .get();
+
+if (!seedTxnTypesRan) {
+  try {
+    const ts = new Date().toISOString();
+    const { v4: uuidv4 } = require("uuid");
+
+    // Collect every licenseId we know about across all major tables
+    const licenses = db
+      .prepare(
+        `
+      SELECT licenseId FROM sales
+      UNION SELECT licenseId FROM purchases
+      UNION SELECT licenseId FROM sale_returns
+      UNION SELECT licenseId FROM purchase_returns
+      UNION SELECT licenseId FROM products
+    `,
+      )
+      .all()
+      .map((r) => r.licenseId);
+
+    const defaults = [
+      { category: "purchase", name: "Purchase", code: "PUR" },
+      { category: "sale", name: "Sales", code: "SAL" },
+      { category: "purchaseReturn", name: "Purchase Return", code: "PRN" },
+      { category: "saleReturn", name: "Sale Return", code: "SRN" },
+    ];
+
+    const insert = db.prepare(`
+      INSERT OR IGNORE INTO transaction_types
+        (id, licenseId, name, code, category, isDefault, sortOrder, createdAt, updatedAt, isSynced)
+      VALUES
+        (?, ?, ?, ?, ?, 1, 1, ?, ?, 0)
+    `);
+
+    db.transaction(() => {
+      for (const licenseId of licenses) {
+        for (const d of defaults) {
+          insert.run(uuidv4(), licenseId, d.name, d.code, d.category, ts, ts);
+        }
+      }
+      db.prepare(
+        `INSERT INTO _migrations(name, ranAt) VALUES('seed_txn_types_v1', ?)`,
+      ).run(ts);
+    })();
+
+    console.log("[db] seed_txn_types_v1 completed");
+  } catch (e) {
+    console.error("[db] seed_txn_types_v1 failed:", e);
+  }
+}
 
 // ── Migration: remove hard-coded unit CHECK constraints ─────────────────────
 // SQLite can't ALTER CHECK constraints — we must recreate the affected tables.

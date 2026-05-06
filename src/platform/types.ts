@@ -447,6 +447,41 @@ export type AccountListResult = {
   error?: string;
 };
 
+// ── Transaction Type types ────────────────────────────────────────────────────
+
+export type TransactionTypeRecord = {
+  id: string;
+  licenseId: string;
+  name: string;
+  code: string | null;
+  category: "sale" | "purchase" | "saleReturn" | "purchaseReturn";
+  isDefault: number; // 0 | 1
+  sortOrder: number;
+  createdAt?: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
+  isSynced?: number;
+  syncedAt?: string | null;
+};
+
+export type TransactionTypeListResult = {
+  success: boolean;
+  rows: TransactionTypeRecord[];
+  error?: string;
+};
+
+export type TransactionTypeSavePayload = {
+  id?: string;
+  licenseId: string;
+  name: string;
+  code?: string | null;
+  category: "sale" | "purchase" | "saleReturn" | "purchaseReturn";
+  isDefault?: boolean;
+  sortOrder?: number;
+};
+
+export type TransactionTypeMutationResult = MutationResult & { id?: string };
+
 // ── Purchase types ────────────────────────────────────────────────────────────
 
 export type PurchaseItemInput = {
@@ -488,6 +523,7 @@ export type PurchaseCreatePayload = {
   licenseId: string;
   userId?: string;
   purchaseType: "CASH" | "CREDIT";
+  typeId?: string | null;
 };
 
 export type PurchaseUpdatePayload = {
@@ -505,6 +541,7 @@ export type PurchaseUpdatePayload = {
     licenseId: string;
     purchaseType: "CASH" | "CREDIT";
     supplier?: { id: string; name: string } | null;
+    typeId?: string | null;
   };
   items: PurchaseItemInput[];
 };
@@ -541,6 +578,7 @@ export type PurchaseRow = {
   isSynced?: number;
   deletedAt?: string | null;
   syncedAt?: string | null;
+  typeId?: string | null;
 };
 
 export type PurchaseListResult = {
@@ -694,6 +732,257 @@ export type HoldNoResult = {
   nextHoldNo: number;
 };
 
+// ── Purchase Return types ─────────────────────────────────────────────────────
+
+export type PurchaseReturnItemInput = {
+  productId: string;
+  barcode?: string | null;
+  quantity: number;
+  unit: string;
+  rate: number;
+  mrp?: number | null;
+  taxPercent: string;
+  discount?: number;
+  discountType?: "ABS" | "PCT";
+  salePrice?: number | null;
+  batchNo?: string | null;
+  mfgDate?: string | null;
+  expiryDate?: string | null;
+  lineNo?: number;
+  batchId?: string | null;
+  profitPercent?: number;
+};
+
+export type PurchaseReturnCreatePayload = {
+  licenseId: string;
+  userId?: string;
+  billNo?: string | null;
+  supplierId?: string | null;
+  supplierName?: string | null;
+  department?: string | null;
+  debitAccount?: string | null;
+  natureOfEntry?: string | null;
+  returnDate: string;
+  entryTime?: string;
+  discount?: number;
+  purchaseType: "CASH" | "CREDIT";
+};
+
+export type PurchaseReturnUpdatePayload = {
+  id: string;
+  header: PurchaseReturnCreatePayload;
+  items: PurchaseReturnItemInput[];
+};
+
+export type CreatePurchaseReturnResult = {
+  success: boolean;
+  returnId?: string;
+  slNo?: number;
+  totalAmount?: number;
+  error?: string;
+};
+
+export type PurchaseReturnListFilters = {
+  q?: string;
+  supplierId?: string | null;
+  dateFrom?: string | null;
+  dateTo?: string | null;
+  page?: number;
+  pageSize?: number;
+};
+
+export type PurchaseReturnRow = {
+  id: string;
+  slNo?: number;
+  billNo?: string | null;
+  supplierId?: string | null;
+  supplierName?: string | null;
+  returnDate: string;
+  totalAmount: number;
+  discount?: number;
+  purchaseType?: string;
+  deletedAt?: string | null;
+};
+
+export type PurchaseReturnListResult = {
+  returns: PurchaseReturnRow[];
+  total: number;
+};
+
+export type PurchaseReturnFullResult = {
+  success: boolean;
+  purchaseReturn?: PurchaseReturnRow & { licenseId?: string };
+  items?: any[];
+  error?: string;
+};
+
+export type PurchaseReturnHoldSavePayload = {
+  id?: string;
+  licenseId: string;
+  userId?: string;
+  title?: string | null;
+  header: Record<string, any>;
+  rows: any[];
+};
+
+export type PurchaseReturnHoldSaveResult = {
+  success: boolean;
+  id?: string;
+  holdNo?: number | null;
+  error?: string;
+};
+
+export type PurchaseReturnHoldsListResult = {
+  holds: Array<{
+    id: string;
+    holdNo: number;
+    title?: string | null;
+    createdAt?: string;
+    updatedAt?: string;
+  }>;
+  total: number;
+};
+
+export type PurchaseReturnHoldGetResult = {
+  success: boolean;
+  hold?: {
+    id: string;
+    holdNo: number;
+    title?: string | null;
+    header: Record<string, any>;
+    rows: any[];
+  };
+  error?: string;
+};
+
+// ── Sale Return types ─────────────────────────────────────────────────────────
+
+export type SaleReturnItemInput = {
+  productId: string;
+  barcode?: string | null;
+  quantity: number;
+  unit: string;
+  rate: number;
+  mrp?: number | null;
+  taxPercent: string;
+  discount?: number;
+  discountType?: "ABS" | "PCT";
+  salePrice?: number | null;
+  batchNo?: string | null;
+  mfgDate?: string | null;
+  expiryDate?: string | null;
+  lineNo?: number;
+  batchId?: string | null;
+  profitPercent?: number;
+};
+
+export type SaleReturnCreatePayload = {
+  licenseId: string;
+  userId?: string;
+  billNo?: string | null;
+  customerId?: string | null;
+  customerName?: string | null;
+  department?: string | null;
+  debitAccount?: string | null;
+  natureOfEntry?: string | null;
+  returnDate: string;
+  entryTime?: string;
+  discount?: number;
+  saleType: "CASH" | "CREDIT";
+};
+
+export type SaleReturnUpdatePayload = {
+  id: string;
+  header: SaleReturnCreatePayload;
+  items: SaleReturnItemInput[];
+};
+
+export type CreateSaleReturnResult = {
+  success: boolean;
+  returnId?: string;
+  slNo?: number;
+  totalAmount?: number;
+  error?: string;
+};
+
+export type SaleReturnListFilters = {
+  q?: string;
+  customerId?: string | null;
+  dateFrom?: string | null;
+  dateTo?: string | null;
+  page?: number;
+  pageSize?: number;
+};
+
+export type SaleReturnRow = {
+  id: string;
+  slNo?: number;
+  billNo?: string | null;
+  customerId?: string | null;
+  customerName?: string | null;
+  returnDate: string;
+  totalAmount: number;
+  discount?: number;
+  saleType?: "CASH" | "CREDIT";
+  deletedAt?: string | null;
+  // additional fields present in the getFull response
+  department?: string | null;
+  debitAccount?: string | null;
+  natureOfEntry?: string | null;
+  entryTime?: string | null;
+};
+
+export type SaleReturnListResult = {
+  returns: SaleReturnRow[];
+  total: number;
+};
+
+export type SaleReturnFullResult = {
+  success: boolean;
+  saleReturn?: SaleReturnRow & { licenseId?: string };
+  items?: any[];
+  error?: string;
+};
+
+export type SaleReturnHoldSavePayload = {
+  id?: string;
+  licenseId: string;
+  userId?: string;
+  title?: string | null;
+  header: Record<string, any>;
+  rows: any[];
+};
+
+export type SaleReturnHoldSaveResult = {
+  success: boolean;
+  id?: string;
+  holdNo?: number | null;
+  error?: string;
+};
+
+export type SaleReturnHoldsListResult = {
+  holds: Array<{
+    id: string;
+    holdNo: number;
+    title?: string | null;
+    createdAt?: string;
+    updatedAt?: string;
+  }>;
+  total: number;
+};
+
+export type SaleReturnHoldGetResult = {
+  success: boolean;
+  hold?: {
+    id: string;
+    holdNo: number;
+    title?: string | null;
+    header: Record<string, any>;
+    rows: any[];
+  };
+  error?: string;
+};
+
 // ── Sale types ────────────────────────────────────────────────────────────────
 
 export type SaleItemInput = {
@@ -734,6 +1023,7 @@ export type SaleCreatePayload = {
   licenseId: string;
   userId?: string;
   saleType: "CASH" | "CREDIT";
+  typeId?: string | null;
 };
 
 export type SaleUpdatePayload = {
@@ -750,6 +1040,7 @@ export type SaleUpdatePayload = {
     discount?: number;
     licenseId: string;
     saleType: "CASH" | "CREDIT";
+    typeId?: string | null;
   };
   items: SaleItemInput[];
 };
@@ -786,6 +1077,7 @@ export type SaleRow = {
   isSynced?: number;
   deletedAt?: string | null;
   syncedAt?: string | null;
+  typeId?: string | null;
 };
 
 export type SaleListResult = {
@@ -1038,6 +1330,36 @@ export type PlatformAPI = {
   seedIndiaGST: (licenseId: string) => Promise<MutationResult>;
   listDefaultableAccounts: (licenseId: string) => Promise<AccountListResult>;
 
+  // Transaction Types
+  listTransactionTypes?: (
+    licenseId: string,
+    category: string,
+  ) => Promise<TransactionTypeListResult>;
+
+  listAllTransactionTypes?: (
+    licenseId: string,
+  ) => Promise<TransactionTypeListResult>;
+
+  saveTransactionType?: (
+    payload: TransactionTypeSavePayload,
+  ) => Promise<TransactionTypeMutationResult>;
+
+  deleteTransactionType?: (
+    id: string,
+    licenseId: string,
+  ) => Promise<MutationResult>;
+
+  setDefaultTransactionType?: (
+    id: string,
+    licenseId: string,
+    category: string,
+  ) => Promise<MutationResult>;
+
+  getDefaultTransactionType?: (
+    licenseId: string,
+    category: string,
+  ) => Promise<{ success: boolean; row: TransactionTypeRecord | null }>;
+
   // ── Purchases ───────────────────────────────────────────────────────────────
   createPurchase?: (
     purchase: PurchaseCreatePayload,
@@ -1081,6 +1403,187 @@ export type PlatformAPI = {
 
   getSupplier?: (id: string) => Promise<SupplierRecord | null>;
 
+  deleteSupplier?: (id: string) => Promise<MutationResult>;
+
+  // ── Purchase Returns ──────────────────────────────────────────────────────
+  createPurchaseReturn?: (payload: {
+    header: PurchaseReturnCreatePayload;
+    items: PurchaseReturnItemInput[];
+  }) => Promise<CreatePurchaseReturnResult>;
+  updatePurchaseReturn?: (
+    payload: PurchaseReturnUpdatePayload,
+  ) => Promise<MutationResult & { returnId?: string; totalAmount?: number }>;
+  deletePurchaseReturn?: (
+    id: string,
+  ) => Promise<MutationResult & { deletedAt?: string }>;
+  listPurchaseReturns?: (
+    licenseId: string,
+    filters?: PurchaseReturnListFilters,
+  ) => Promise<PurchaseReturnListResult>;
+  getPurchaseReturnFull?: (id: string) => Promise<PurchaseReturnFullResult>;
+  peekNextPurchaseReturnSlNo?: (licenseId: string) => Promise<SlNoResult>;
+  savePurchaseReturnHold?: (
+    payload: PurchaseReturnHoldSavePayload,
+  ) => Promise<PurchaseReturnHoldSaveResult>;
+  listPurchaseReturnHolds?: (
+    licenseId: string,
+    pagination?: Pagination,
+  ) => Promise<PurchaseReturnHoldsListResult>;
+  getPurchaseReturnHold?: (id: string) => Promise<PurchaseReturnHoldGetResult>;
+  deletePurchaseReturnHold?: (id: string) => Promise<MutationResult>;
+
+  // ── Sale Returns ──────────────────────────────────────────────────────────
+  createSaleReturn?: (payload: {
+    header: SaleReturnCreatePayload;
+    items: SaleReturnItemInput[];
+  }) => Promise<CreateSaleReturnResult>;
+  updateSaleReturn?: (
+    payload: SaleReturnUpdatePayload,
+  ) => Promise<MutationResult & { returnId?: string; totalAmount?: number }>;
+  deleteSaleReturn?: (
+    id: string,
+  ) => Promise<MutationResult & { deletedAt?: string }>;
+  listSaleReturns?: (
+    licenseId: string,
+    filters?: SaleReturnListFilters,
+  ) => Promise<SaleReturnListResult>;
+  getSaleReturnFull?: (id: string) => Promise<SaleReturnFullResult>;
+  peekNextSaleReturnSlNo?: (licenseId: string) => Promise<SlNoResult>;
+  saveSaleReturnHold?: (
+    payload: SaleReturnHoldSavePayload,
+  ) => Promise<SaleReturnHoldSaveResult>;
+  listSaleReturnHolds?: (
+    licenseId: string,
+    pagination?: Pagination,
+  ) => Promise<SaleReturnHoldsListResult>;
+  getSaleReturnHold?: (id: string) => Promise<SaleReturnHoldGetResult>;
+  deleteSaleReturnHold?: (id: string) => Promise<MutationResult>;
+
+  // ── Supplier Ledger & Payments ───────────────────────────────────────────
+  getSupplierLedger?: (params: {
+    licenseId: string;
+    supplierId: string;
+    dateFrom?: string | null;
+    dateTo?: string | null;
+    page?: number;
+    pageSize?: number;
+  }) => Promise<{
+    success: boolean;
+    rows: any[];
+    total: number;
+    openingBalance: number;
+    balance: number;
+    error?: string;
+  }>;
+
+  getSupplierOutstandingBills?: (params: {
+    licenseId: string;
+    supplierId: string;
+    q?: string;
+    page?: number;
+    pageSize?: number;
+  }) => Promise<{
+    success: boolean;
+    rows: any[];
+    total: number;
+    error?: string;
+  }>;
+
+  createSupplierPayment?: (payload: {
+    licenseId: string;
+    supplierId: string;
+    amount: number;
+    date: string;
+    mode: "CASH" | "BANK" | "CHEQUE";
+    notes?: string | null;
+    chequeNo?: string | null;
+    chequeIssueDate?: string | null;
+    chequeClearanceDate?: string | null;
+    allocations?: Array<{ purchaseId: string; amount: number }>;
+  }) => Promise<MutationResult & { id?: string; paymentStatus?: string }>;
+
+  listPayments?: (params: {
+    licenseId: string;
+    supplierId?: string | null;
+    q?: string;
+    dateFrom?: string | null;
+    dateTo?: string | null;
+    page?: number;
+    pageSize?: number;
+  }) => Promise<{
+    success: boolean;
+    rows: any[];
+    total: number;
+    error?: string;
+  }>;
+
+  markChequeReceived?: (
+    licenseId: string,
+    txId: string,
+  ) => Promise<MutationResult>;
+
+  getCustomerLedger?: (params: {
+    licenseId: string;
+    customerId: string;
+    dateFrom?: string | null;
+    dateTo?: string | null;
+    page?: number;
+    pageSize?: number;
+  }) => Promise<{
+    success: boolean;
+    rows: any[];
+    total: number;
+    openingBalance: number;
+    balance: number;
+    error?: string;
+  }>;
+
+  getCustomerOutstandingSales?: (params: {
+    licenseId: string;
+    customerId: string;
+    q?: string;
+    page?: number;
+    pageSize?: number;
+  }) => Promise<{
+    success: boolean;
+    rows: any[];
+    total: number;
+    error?: string;
+  }>;
+
+  createCustomerReceipt?: (payload: {
+    licenseId: string;
+    customerId: string;
+    amount: number;
+    date: string;
+    mode: "CASH" | "BANK" | "CHEQUE";
+    notes?: string | null;
+    chequeNo?: string | null;
+    chequeIssueDate?: string | null;
+    chequeClearanceDate?: string | null;
+    allocations?: Array<{ saleId: string; amount: number }>;
+  }) => Promise<MutationResult & { id?: string; paymentStatus?: string }>;
+
+  listReceipts?: (params: {
+    licenseId: string;
+    customerId?: string | null;
+    q?: string;
+    dateFrom?: string | null;
+    dateTo?: string | null;
+    page?: number;
+    pageSize?: number;
+  }) => Promise<{
+    success: boolean;
+    rows: any[];
+    total: number;
+    error?: string;
+  }>;
+
+  markCustomerChequeReceived?: (
+    licenseId: string,
+    txId: string,
+  ) => Promise<MutationResult>;
+
   bulkUpdateProductPrices?: (
     updates: BulkPriceUpdate[],
   ) => Promise<MutationResult>;
@@ -1119,4 +1622,32 @@ export type PlatformAPI = {
     licenseId: string,
     filters?: CustomerListFilters,
   ) => Promise<CustomerListResult>;
+
+  getCustomer?: (
+    id: string,
+  ) => Promise<{ success: boolean; customer?: any; error?: string }>;
+
+  saveCustomer?: (
+    payload: any,
+  ) => Promise<
+    MutationResult & { id?: string; code?: string; codeNumber?: number }
+  >;
+
+  deleteCustomer?: (id: string, licenseId: string) => Promise<MutationResult>;
+
+  peekNextCustomerCode?: (
+    licenseId: string,
+  ) => Promise<{ nextCodeNumber: number; suggestedCode: string }>;
+
+  getCustomerCount?: (
+    licenseId: string,
+    params?: { q?: string },
+  ) => Promise<{ count: number }>;
+
+  getCustomerDistincts?: (licenseId: string) => Promise<{
+    names: string[];
+    categories: string[];
+    cities: string[];
+    states: string[];
+  }>;
 };

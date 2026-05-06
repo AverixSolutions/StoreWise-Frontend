@@ -59,6 +59,30 @@ contextBridge.exposeInMainWorld("electronAPI", {
   saveUnit: (payload) => ipcRenderer.invoke("unit:save", payload),
   deleteUnit: (id) => ipcRenderer.invoke("unit:delete", id),
 
+  // ---- Transaction Types ----
+  listTransactionTypes: (licenseId, category) =>
+    ipcRenderer.invoke("txn-type:list", { licenseId, category }),
+  listAllTransactionTypes: (licenseId) =>
+    ipcRenderer.invoke("txn-type:list-all", { licenseId }),
+  getTransactionType: (id, licenseId) =>
+    ipcRenderer.invoke("txn-type:get", { id, licenseId }),
+  saveTransactionType: (payload) =>
+    ipcRenderer.invoke("txn-type:save", payload),
+  setDefaultTransactionType: (id, licenseId, category) =>
+    ipcRenderer.invoke("txn-type:set-default", { id, licenseId, category }),
+  deleteTransactionType: (id, licenseId) =>
+    ipcRenderer.invoke("txn-type:delete", { id, licenseId }),
+  getDefaultTransactionType: (licenseId, category) =>
+    ipcRenderer.invoke("txn-type:get-default", { licenseId, category }),
+
+  // Transaction Type sync
+  getDirtyTransactionTypes: (licenseId, limit) =>
+    ipcRenderer.invoke("txn-type:get-dirty", { licenseId, limit }),
+  markTransactionTypesSynced: (ids, ts) =>
+    ipcRenderer.invoke("txn-type:mark-synced", { ids, ts }),
+  bulkUpsertTransactionTypes: (records) =>
+    ipcRenderer.invoke("txn-type:bulk-upsert", records),
+
   // Product sync
   getDirtyProducts: (licenseId, limit) =>
     ipcRenderer.invoke("get-dirty-products", licenseId, limit),
@@ -76,6 +100,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("product.batch:delete", { batchId }),
   rebuildProductStock: (productId) =>
     ipcRenderer.invoke("product:rebuild-stock", productId),
+  resolveProductBatch: (payload) =>
+    ipcRenderer.invoke("product.batch:resolve", payload),
 
   // richer fetch
   getProductWithBatches: (productId) =>
@@ -137,6 +163,26 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getNextPurchaseReturnHoldNo: (licenseId) =>
     ipcRenderer.invoke("purchase-return-hold:peek-next-no", licenseId),
 
+  // Purchase return sync
+  getDirtyPurchaseReturns: (licenseId, limit) =>
+    ipcRenderer.invoke("purchase-return:get-dirty", licenseId, limit),
+  getDirtyPurchaseReturnItems: (licenseId, limit) =>
+    ipcRenderer.invoke("purchase-return:get-dirty-items", licenseId, limit),
+  markPurchaseReturnItemsSynced: (ids, ts) =>
+    ipcRenderer.invoke("purchase-return:mark-items-synced", ids, ts),
+  bulkUpsertPurchaseReturns: (records) =>
+    ipcRenderer.invoke("purchase-return:bulk-upsert", records),
+  bulkUpsertPurchaseReturnItems: (records) =>
+    ipcRenderer.invoke("purchase-return:bulk-upsert-items", records),
+
+  // Purchase return hold sync
+  getDirtyPurchaseReturnHolds: (licenseId, limit) =>
+    ipcRenderer.invoke("purchase-return-hold:get-dirty", licenseId, limit),
+  markPurchaseReturnHoldsSynced: (ids, ts) =>
+    ipcRenderer.invoke("purchase-return-hold:mark-synced", ids, ts),
+  bulkUpsertPurchaseReturnHolds: (records) =>
+    ipcRenderer.invoke("purchase-return-hold:bulk-upsert", records),
+
   // Purchase sync
   getDirtyPurchases: (licenseId, limit) =>
     ipcRenderer.invoke("get-dirty-purchases", licenseId, limit),
@@ -185,6 +231,43 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getSupplierOutstandingBills: (params) =>
     ipcRenderer.invoke("supplier:outstanding-bills", params),
   listPayments: (filters) => ipcRenderer.invoke("payments:list", filters),
+  markChequeReceived: (payload) =>
+    ipcRenderer.invoke("supplier-cheque:mark-received", payload),
+
+  // Customer Ledger
+  getCustomerLedger: (params) =>
+    ipcRenderer.invoke("customer-ledger:list", params),
+  createCustomerReceipt: (payload) =>
+    ipcRenderer.invoke("customer-ledger:receipt:create", payload),
+  getCustomerOutstandingSales: (params) =>
+    ipcRenderer.invoke("customer:outstanding-sales", params),
+  listReceipts: (filters) => ipcRenderer.invoke("receipts:list", filters),
+  markCustomerChequeReceived: (payload) =>
+    ipcRenderer.invoke("customer-cheque:mark-received", payload),
+
+  // Customer transaction sync
+  getDirtyCustomerTransactions: (licenseId, limit) =>
+    ipcRenderer.invoke("get-dirty-customer-transactions", licenseId, limit),
+  markCustomerTransactionsSynced: (ids, serverSyncedAt) =>
+    ipcRenderer.invoke(
+      "mark-customer-transactions-synced",
+      ids,
+      serverSyncedAt,
+    ),
+  bulkUpsertCustomerTransactions: (records) =>
+    ipcRenderer.invoke("bulk-upsert-customer-transactions", records),
+
+  // Supplier transaction sync
+  getDirtySupplierTransactions: (licenseId, limit) =>
+    ipcRenderer.invoke("get-dirty-supplier-transactions", licenseId, limit),
+  markSupplierTransactionsSynced: (ids, serverSyncedAt) =>
+    ipcRenderer.invoke(
+      "mark-supplier-transactions-synced",
+      ids,
+      serverSyncedAt,
+    ),
+  bulkUpsertSupplierTransactions: (records) =>
+    ipcRenderer.invoke("bulk-upsert-supplier-transactions", records),
 
   // Supplier sync
   getDirtySuppliers: (licenseId, limit) =>
@@ -267,6 +350,14 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("customer:count", licenseId, params),
   getCustomerDistincts: (licenseId) =>
     ipcRenderer.invoke("customer:distinct", licenseId),
+
+  // Customer sync
+  getDirtyCustomers: (licenseId, limit) =>
+    ipcRenderer.invoke("customer:get-dirty", licenseId, limit),
+  markCustomersSynced: (ids, ts) =>
+    ipcRenderer.invoke("customer:mark-synced", ids, ts),
+  bulkUpsertCustomers: (records) =>
+    ipcRenderer.invoke("customer:bulk-upsert", records),
 
   // ---- Account Master ----
   listAccountGroups: () => ipcRenderer.invoke("accountGroup:list"),

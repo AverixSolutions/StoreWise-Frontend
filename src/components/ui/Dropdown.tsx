@@ -2,6 +2,7 @@
 "use client";
 import { useState, useRef, useEffect, forwardRef } from "react";
 import { ChevronDown } from "lucide-react";
+import { createPortal } from "react-dom";
 
 interface Option {
   value: string;
@@ -35,13 +36,46 @@ const Dropdown = forwardRef<HTMLButtonElement, DropdownProps>(
   ) => {
     const [isOpen, setIsOpen] = useState(false);
     const [highlightIndex, setHighlightIndex] = useState<number>(-1);
+    const [menuPosition, setMenuPosition] = useState({
+      top: 0,
+      left: 0,
+      width: 0,
+    });
     const dropdownRef = useRef<HTMLDivElement>(null);
+    const menuRef = useRef<HTMLDivElement>(null);
+    const triggerRef = useRef<HTMLButtonElement | null>(null);
+
+    // Recalculate menu position whenever it opens or on scroll/resize
+    useEffect(() => {
+      if (!isOpen) return;
+
+      const updatePosition = () => {
+        const trigger = triggerRef.current;
+        if (!trigger) return;
+        const rect = trigger.getBoundingClientRect();
+        setMenuPosition({
+          top: rect.bottom + window.scrollY + 6, // 6px gap (mt-1.5)
+          left: rect.left + window.scrollX,
+          width: rect.width,
+        });
+      };
+
+      updatePosition();
+      window.addEventListener("scroll", updatePosition, true);
+      window.addEventListener("resize", updatePosition);
+      return () => {
+        window.removeEventListener("scroll", updatePosition, true);
+        window.removeEventListener("resize", updatePosition);
+      };
+    }, [isOpen]);
 
     useEffect(() => {
       const handleClickOutside = (event: MouseEvent) => {
         if (
           dropdownRef.current &&
-          !dropdownRef.current.contains(event.target as Node)
+          !dropdownRef.current.contains(event.target as Node) &&
+          menuRef.current &&
+          !menuRef.current.contains(event.target as Node)
         ) {
           setIsOpen(false);
           setHighlightIndex(-1);
@@ -85,36 +119,19 @@ const Dropdown = forwardRef<HTMLButtonElement, DropdownProps>(
       }
     };
 
-    return (
-      <div className={`relative w-full ${className}`} ref={dropdownRef}>
-        {/* Trigger */}
-        <button
-          ref={ref}
-          type="button"
-          onClick={() => {
-            setIsOpen(!isOpen);
-            setHighlightIndex(0);
-          }}
-          onKeyDown={handleKeyDown}
-          className={`w-full flex items-center justify-between rounded-xl border px-3.5 py-2.5 bg-white/80 text-sm outline-none transition focus:ring-4 ${
-            error
-              ? "border-rose-300 focus:border-rose-400 focus:ring-rose-400/10"
-              : "border-slate-200 focus:border-cyan-400/60 focus:ring-cyan-400/10"
-          }`}
-        >
-          <span
-            className={selectedOption ? "text-slate-900" : "text-slate-400"}
+    const menu = isOpen
+      ? createPortal(
+          <div
+            ref={menuRef}
+            style={{
+              position: "absolute",
+              top: menuPosition.top,
+              left: menuPosition.left,
+              width: menuPosition.width,
+              zIndex: 100,
+            }}
+            className="overflow-hidden rounded-[14px] border border-slate-200 bg-white shadow-[0_16px_40px_rgba(3,10,24,0.12)]"
           >
-            {selectedOption ? selectedOption.label : placeholder}
-          </span>
-          <ChevronDown
-            className={`ml-2 h-4 w-4 text-slate-400 transition-transform duration-200 ${isOpen ? "rotate-180" : "rotate-0"}`}
-          />
-        </button>
-
-        {/* Dropdown list */}
-        {isOpen && (
-          <div className="absolute z-50 mt-1.5 w-full overflow-hidden rounded-[14px] border border-slate-200 bg-white shadow-[0_16px_40px_rgba(3,10,24,0.12)]">
             <div className="max-h-60 overflow-y-auto">
               {options.map((option, idx) => (
                 <button
@@ -138,8 +155,47 @@ const Dropdown = forwardRef<HTMLButtonElement, DropdownProps>(
                 </button>
               ))}
             </div>
-          </div>
-        )}
+          </div>,
+          document.body,
+        )
+      : null;
+
+    return (
+      <div className={`relative w-full ${className}`} ref={dropdownRef}>
+        {/* Trigger */}
+        <button
+          ref={(node) => {
+            triggerRef.current = node;
+            if (typeof ref === "function") {
+              ref(node);
+            } else if (ref) {
+              ref.current = node;
+            }
+          }}
+          type="button"
+          onClick={() => {
+            setIsOpen(!isOpen);
+            setHighlightIndex(0);
+          }}
+          onKeyDown={handleKeyDown}
+          className={`w-full flex items-center justify-between rounded-xl border px-3.5 py-2.5 bg-white/80 text-sm outline-none transition focus:ring-4 ${
+            error
+              ? "border-rose-300 focus:border-rose-400 focus:ring-rose-400/10"
+              : "border-slate-200 focus:border-cyan-400/60 focus:ring-cyan-400/10"
+          }`}
+        >
+          <span
+            className={selectedOption ? "text-slate-900" : "text-slate-400"}
+          >
+            {selectedOption ? selectedOption.label : placeholder}
+          </span>
+          <ChevronDown
+            className={`ml-2 h-4 w-4 text-slate-400 transition-transform duration-200 ${isOpen ? "rotate-180" : "rotate-0"}`}
+          />
+        </button>
+
+        {/* Portal-rendered dropdown menu */}
+        {menu}
       </div>
     );
   },

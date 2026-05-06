@@ -943,6 +943,58 @@ LIMIT ? OFFSET ?
     const totalFromBatches = sum(batches.map((b) => b.stock || 0));
     return { success: true, product: p, batches, totalFromBatches };
   });
+
+  // ===== BATCH CONFLICT RESOLUTION (for purchase page) =====
+  ipcMain.handle("product.batch:resolve", (e, payload) => {
+    const {
+      licenseId,
+      productId,
+      barcode,
+      mrp = null,
+      salePrice = null,
+      batchNo = null,
+      mfgDate = null,
+      expiryDate = null,
+    } = payload;
+
+    if (!barcode) return { success: true, decision: "NEW", diffs: {} };
+
+    const existing = db
+      .prepare(
+        `SELECT * FROM product_batches
+         WHERE licenseId = ? AND barcode = ?
+           AND COALESCE(deletedAt,'') = ''
+         LIMIT 1`,
+      )
+      .get(licenseId, barcode);
+
+    if (!existing) return { success: true, decision: "NEW", diffs: {} };
+
+    if (existing.productId !== productId) {
+      return { success: true, decision: "CONFLICT_PRODUCT", diffs: {} };
+    }
+
+    const fields = { mrp, salePrice, batchNo, mfgDate, expiryDate };
+    const diffs = {};
+
+    for (const [key, proposed] of Object.entries(fields)) {
+      const current =
+        existing[key] === undefined ? null : (existing[key] ?? null);
+      const prop = proposed ?? null;
+      if (
+        String(current ?? "") !== String(prop ?? "") &&
+        !(current === null && prop === null)
+      ) {
+        diffs[key] = { current, proposed: prop };
+      }
+    }
+
+    if (Object.keys(diffs).length > 0) {
+      return { success: true, decision: "CONFLICT_BARCODE", diffs };
+    }
+
+    return { success: true, decision: "EXISTS", diffs: {} };
+  });
 }
 
 module.exports = { registerProductHandlers };

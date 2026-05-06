@@ -58,4 +58,5 @@ export interface HeaderForm {
   entryTime: string;
   discount: number;
   saleType: SaleType;
+  typeId?: string | null;
 }

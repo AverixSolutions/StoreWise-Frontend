@@ -122,7 +122,7 @@ function registerSaleHandlers() {
       .prepare(
         `
       SELECT id, slNo, billNo, customerId, customerName, saleDate, entryTime,
-             totalAmount, discount, saleType, isSynced, deletedAt, syncedAt
+             totalAmount, discount, saleType, isSynced, deletedAt, syncedAt, typeId
       ${base}
       ORDER BY datetime(saleDate) DESC, slNo DESC
       LIMIT @limit OFFSET @offset
@@ -135,7 +135,7 @@ function registerSaleHandlers() {
 
   // ---- get / getFull ----
   ipcMain.handle("sale:get", (evt, id) => {
-    const s = db.prepare(`SELECT * FROM sales WHERE id = ?`).get(id);
+    const s = db.prepare(`SELECT *, typeId FROM sales WHERE id = ?`).get(id);
     if (!s) return { success: false, error: "Not found" };
     const items = db
       .prepare(
@@ -152,7 +152,7 @@ function registerSaleHandlers() {
   });
 
   ipcMain.handle("sale:getFull", (evt, id) => {
-    const s = db.prepare(`SELECT * FROM sales WHERE id = ?`).get(id);
+    const s = db.prepare(`SELECT *, typeId FROM sales WHERE id = ?`).get(id);
     if (!s) return { success: false, error: "Not found" };
     const items = db
       .prepare(
@@ -186,10 +186,10 @@ function registerSaleHandlers() {
 
     const insSale = db.prepare(`
       INSERT INTO sales(
-        id, slNo, userId, licenseId, customerId, customerName, billNo,
+        id, slNo, userId, licenseId, typeId, customerId, customerName, billNo,
         department, debitAccount, natureOfEntry, saleDate, entryTime,
         totalAmount, discount, saleType, createdAt, updatedAt, isSynced
-      ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+      ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
     `);
 
     const insItem = db.prepare(`
@@ -207,6 +207,7 @@ function registerSaleHandlers() {
         slNo,
         header.userId || null,
         header.licenseId,
+        header.typeId || null,
         header.customerId || null,
         header.customerName || null,
         header.billNo || null,
@@ -255,7 +256,6 @@ function registerSaleHandlers() {
 
         totalAmount += billedValue;
 
-        // Resolve batchId
         let batchId = it.batchId || null;
 
         if (
@@ -354,7 +354,6 @@ function registerSaleHandlers() {
         newId,
       );
 
-      // Customer ledger (CREDIT -> receivable increases)
       if (header.saleType !== "CASH" && header.customerId) {
         const grand = Math.max(0, totalAmount - (header.discount || 0));
         db.prepare(
@@ -391,7 +390,6 @@ function registerSaleHandlers() {
       if (!existing) throw new Error("Sale not found");
       const now = new Date().toISOString();
 
-      // Reverse stock from old items (add back what we subtracted on sale)
       const oldItems = getItemsForSale(id);
       for (const it of oldItems) {
         if (!it.isFree) {
@@ -411,18 +409,16 @@ function registerSaleHandlers() {
         }
       }
 
-      // Compute totals
       const totalAmount = items.reduce(
         (s, it) => s + Number(it.billedValue || 0),
         0,
       );
       const grand = Math.max(0, totalAmount - Number(header.discount || 0));
 
-      // Update header
       db.prepare(
         `
         UPDATE sales SET
-          billNo=@billNo, customerId=@customerId, customerName=@customerName,
+          billNo=@billNo, typeId=@typeId, customerId=@customerId, customerName=@customerName,
           department=@department, debitAccount=@debitAccount, natureOfEntry=@natureOfEntry,
           saleDate=@saleDate, entryTime=@entryTime, discount=@discount,
           totalAmount=@totalAmount, saleType=@saleType,
@@ -432,6 +428,7 @@ function registerSaleHandlers() {
       ).run({
         id,
         billNo: header.billNo || null,
+        typeId: header.typeId || null,
         customerId: header.customerId || null,
         customerName: header.customerName || null,
         department: header.department || null,
@@ -445,7 +442,6 @@ function registerSaleHandlers() {
         now,
       });
 
-      // Replace items
       db.prepare(`DELETE FROM sale_items WHERE saleId = ?`).run(id);
       const insItem = db.prepare(`
   INSERT INTO sale_items(
@@ -556,7 +552,6 @@ function registerSaleHandlers() {
         }
       });
 
-      // Rewrite customer ledger row for this sale
       db.prepare(
         `
         DELETE FROM customer_transactions
@@ -679,6 +674,7 @@ function registerSaleHandlers() {
     SELECT id, slNo, billNo, userId, licenseId,
            customerId, customerName, department,
            debitAccount, natureOfEntry, saleType,
+           typeId,
            saleDate, entryTime,
            totalAmount, discount,
            createdAt, updatedAt, deletedAt,
@@ -826,7 +822,7 @@ function registerSaleHandlers() {
     const now = new Date().toISOString();
     const upsert = db.prepare(`
     INSERT INTO sales (
-      id, slNo, billNo, userId, licenseId,
+      id, slNo, billNo, userId, licenseId, typeId,
       customerId, customerName, department,
       debitAccount, natureOfEntry, saleType,
       saleDate, entryTime,
@@ -834,7 +830,7 @@ function registerSaleHandlers() {
       createdAt, updatedAt, deletedAt,
       isSynced, syncedAt
     ) VALUES (
-      @id, @slNo, @billNo, @userId, @licenseId,
+      @id, @slNo, @billNo, @userId, @licenseId, @typeId,
       @customerId, @customerName, @department,
       @debitAccount, @natureOfEntry, @saleType,
       @saleDate, @entryTime,
@@ -845,6 +841,7 @@ function registerSaleHandlers() {
     ON CONFLICT(id) DO UPDATE SET
       slNo          = excluded.slNo,
       billNo        = excluded.billNo,
+      typeId        = excluded.typeId,
       customerId    = excluded.customerId,
       customerName  = excluded.customerName,
       department    = excluded.department,
@@ -871,6 +868,7 @@ function registerSaleHandlers() {
           billNo: r.billNo ?? null,
           userId: r.userId ?? null,
           licenseId: r.licenseId,
+          typeId: r.typeId ?? null,
           customerId: r.customerId ?? null,
           customerName: r.customerName ?? null,
           department: r.department ?? null,
@@ -907,7 +905,6 @@ function registerSaleHandlers() {
 
     trx(records);
 
-    // Keep sale_sequence in sync (mirrors purchase bulk-upsert pattern)
     const maxRow = db
       .prepare(
         `SELECT MAX(slNo) AS maxSlNo FROM sales WHERE licenseId = ? AND deletedAt IS NULL`,

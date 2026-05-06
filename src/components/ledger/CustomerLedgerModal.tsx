@@ -1,4 +1,4 @@
-// src/components/ledger/SupplierLedgerModal.tsx
+// src/components/ledger/CustomerLedgerModal.tsx
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -9,7 +9,6 @@ import {
   Wand2,
   ReceiptIndianRupee,
   CreditCard,
-  TrendingDown,
   Activity,
   CheckCircle2,
   Clock,
@@ -80,13 +79,7 @@ function StatPill({
         {label}
       </span>
       <span
-        className={`text-sm font-bold ${
-          accent
-            ? positive
-              ? "text-emerald-600"
-              : "text-rose-600"
-            : "text-slate-800"
-        }`}
+        className={`text-sm font-bold ${accent ? (positive ? "text-emerald-600" : "text-rose-600") : "text-slate-800"}`}
       >
         {value}
       </span>
@@ -96,16 +89,15 @@ function StatPill({
 
 function KindBadge({ kind }: { kind: string }) {
   const map: Record<string, string> = {
-    PURCHASE: "bg-violet-100 text-violet-700 border-violet-200",
-    PAYMENT: "bg-emerald-100 text-emerald-700 border-emerald-200",
+    SALE: "bg-violet-100 text-violet-700 border-violet-200",
+    RECEIPT: "bg-emerald-100 text-emerald-700 border-emerald-200",
     OPENING: "bg-cyan-100 text-cyan-700 border-cyan-200",
     RETURN: "bg-amber-100 text-amber-700 border-amber-200",
     ADJUSTMENT: "bg-slate-100 text-slate-600 border-slate-200",
   };
-  const cls = map[kind] || "bg-slate-100 text-slate-600 border-slate-200";
   return (
     <span
-      className={`inline-flex items-center rounded-lg border px-2 py-0.5 text-[11px] font-semibold ${cls}`}
+      className={`inline-flex items-center rounded-lg border px-2 py-0.5 text-[11px] font-semibold ${map[kind] || "bg-slate-100 text-slate-600 border-slate-200"}`}
     >
       {kind}
     </span>
@@ -113,19 +105,17 @@ function KindBadge({ kind }: { kind: string }) {
 }
 
 function PaymentStatusBadge({ status }: { status?: string | null }) {
-  if (!status || status === "CLEARED") {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
-        <CheckCircle2 className="h-3 w-3" />
-        Cleared
-      </span>
-    );
-  }
   if (status === "PENDING_CHEQUE") {
     return (
       <span className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
-        <Clock className="h-3 w-3" />
-        Cheque Pending
+        <Clock className="h-3 w-3" /> Cheque Pending
+      </span>
+    );
+  }
+  if (!status || status === "CLEARED") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+        <CheckCircle2 className="h-3 w-3" /> Cleared
       </span>
     );
   }
@@ -138,7 +128,7 @@ function PaymentStatusBadge({ status }: { status?: string | null }) {
 
 type Tx = {
   id: string;
-  kind: "PURCHASE" | "PAYMENT" | "OPENING" | "RETURN" | "ADJUSTMENT" | string;
+  kind: string;
   refId: string | null;
   refNo: string | null;
   date: string;
@@ -152,32 +142,32 @@ type Tx = {
   chequeClearanceDate?: string | null;
 };
 
-type OutstandingBill = {
+type OutstandingSale = {
   id: string;
   slNo: number | null;
   billNo: string | null;
-  purchaseDate: string;
+  saleDate: string;
   totalAmount: number;
   discount: number;
-  purchaseType: "CREDIT" | "CASH" | string;
+  saleType: string;
   grandAmount: number;
   paidAmount: number;
   remainingDue: number;
 };
 
-export default function LedgerModal({
+export default function CustomerLedgerModal({
   isOpen,
   onClose,
   licenseId,
-  supplierId,
-  supplierName,
+  customerId,
+  customerName,
   onSaved,
 }: {
   isOpen: boolean;
   onClose: () => void;
   licenseId: string;
-  supplierId: string;
-  supplierName?: string;
+  customerId: string;
+  customerName?: string;
   onSaved?: () => void;
 }) {
   const [loading, setLoading] = useState(true);
@@ -186,7 +176,6 @@ export default function LedgerModal({
 
   const [rows, setRows] = useState<Tx[]>([]);
   const [total, setTotal] = useState(0);
-  const [openingBalance, setOpeningBalance] = useState(0);
   const [balance, setBalance] = useState(0);
 
   const [payAmount, setPayAmount] = useState<number>(0);
@@ -194,16 +183,15 @@ export default function LedgerModal({
   const [payMode, setPayMode] = useState<"CASH" | "BANK" | "CHEQUE">("CASH");
   const [payNotes, setPayNotes] = useState<string>("");
 
-  // Cheque fields
   const [chequeNo, setChequeNo] = useState("");
   const [chequeIssueDate, setChequeIssueDate] = useState<string>(
     new Date().toISOString().slice(0, 10),
   );
   const [chequeClearanceDate, setChequeClearanceDate] = useState<string>("");
 
-  const [billWise, setBillWise] = useState<boolean>(false);
+  const [billWise, setBillWise] = useState(false);
   const [billsLoading, setBillsLoading] = useState(false);
-  const [bills, setBills] = useState<OutstandingBill[]>([]);
+  const [bills, setBills] = useState<OutstandingSale[]>([]);
   const [billPage, setBillPage] = useState(1);
   const billPageSize = 50;
   const [billTotal, setBillTotal] = useState(0);
@@ -224,16 +212,15 @@ export default function LedgerModal({
     if (!isOpen) return;
     setLoading(true);
     try {
-      const res = await platform.getSupplierLedger?.({
+      const res = await platform.getCustomerLedger?.({
         licenseId,
-        supplierId,
+        customerId,
         page,
         pageSize,
       });
       if (res?.success) {
         setRows(res.rows || []);
         setTotal(res.total || 0);
-        setOpeningBalance(Number(res.openingBalance || 0));
         setBalance(Number(res.balance || 0));
       }
     } finally {
@@ -245,9 +232,9 @@ export default function LedgerModal({
     if (!isOpen || !billWise) return;
     setBillsLoading(true);
     try {
-      const res = await platform.getSupplierOutstandingBills?.({
+      const res = await platform.getCustomerOutstandingSales?.({
         licenseId,
-        supplierId,
+        customerId,
         page: billPage,
         pageSize: billPageSize,
         q: billQueryDebounced,
@@ -258,9 +245,8 @@ export default function LedgerModal({
         setAllocs((prev) => {
           const next: Record<string, number> = {};
           for (const b of res.rows || []) {
-            if (prev[b.id] && prev[b.id] > 0) {
+            if (prev[b.id] && prev[b.id] > 0)
               next[b.id] = clamp(0, prev[b.id], b.remainingDue);
-            }
           }
           return next;
         });
@@ -272,12 +258,9 @@ export default function LedgerModal({
 
   useEffect(() => {
     if (isOpen) loadLedger();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, page, refetchKey]);
-
   useEffect(() => {
     if (isOpen) loadBills();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, billWise, billPage, billQueryDebounced, refetchKey]);
 
   useEffect(() => {
@@ -287,7 +270,6 @@ export default function LedgerModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [isOpen, onClose]);
 
-  // Reset cheque fields when mode changes
   useEffect(() => {
     if (payMode !== "CHEQUE") {
       setChequeNo("");
@@ -303,18 +285,15 @@ export default function LedgerModal({
     () => Math.max(1, Math.ceil(billTotal / billPageSize)),
     [billTotal],
   );
-
   const allocSum = useMemo(
     () => Object.values(allocs).reduce((s, v) => s + (Number(v) || 0), 0),
     [allocs],
   );
-
   const effectiveAmount = useMemo(() => {
     if (billWise)
       return Number(payAmount || 0) > 0 ? Number(payAmount) : allocSum;
     return Number(payAmount || 0);
   }, [billWise, payAmount, allocSum]);
-
   const unallocated = Math.max(0, effectiveAmount - allocSum);
 
   const addEnabled =
@@ -326,24 +305,15 @@ export default function LedgerModal({
   function clamp(min: number, v: number, max: number) {
     return Math.max(min, Math.min(max, v));
   }
-
-  function setAlloc(purchaseId: string, value: number, cap?: number) {
+  function setAlloc(saleId: string, value: number, cap?: number) {
     setAllocs((prev) => ({
       ...prev,
-      [purchaseId]: clamp(
-        0,
-        Number(value) || 0,
-        cap ?? Number.MAX_SAFE_INTEGER,
-      ),
+      [saleId]: clamp(0, Number(value) || 0, cap ?? Number.MAX_SAFE_INTEGER),
     }));
   }
 
-  function clearAllocations() {
-    setAllocs({});
-  }
-
   function autoDistribute() {
-    let remaining = billWise ? effectiveAmount : Number(payAmount || 0);
+    let remaining = effectiveAmount;
     const next: Record<string, number> = {};
     for (const b of bills) {
       if (remaining <= 0) break;
@@ -359,22 +329,17 @@ export default function LedgerModal({
   const handleMarkReceived = async (txId: string) => {
     setMarkingId(txId);
     try {
-      const res = await platform.markChequeReceived?.(licenseId, txId);
+      const res = await platform.markCustomerChequeReceived?.(licenseId, txId);
       if (res?.success) {
         setRefetchKey((k) => k + 1);
         onSaved?.();
-      } else {
-        alert(
-          "Failed to mark cheque as received: " +
-            (res?.error || "Unknown error"),
-        );
-      }
+      } else alert("Failed: " + (res?.error || "Unknown error"));
     } finally {
       setMarkingId(null);
     }
   };
 
-  const handleCreatePayment = async () => {
+  const handleCreateReceipt = async () => {
     const amount = billWise
       ? Number(payAmount || 0) > 0
         ? Number(payAmount)
@@ -382,52 +347,37 @@ export default function LedgerModal({
       : Number(payAmount || 0);
 
     if (!amount || amount <= 0) return;
-
     if (payMode === "CHEQUE" && !chequeClearanceDate) {
-      alert("Please enter the cheque clearance/expiry date.");
+      alert("Please enter cheque clearance date.");
       return;
     }
-
-    if (billWise) {
-      if (allocSum > amount) {
-        alert("Allocated amount exceeds payment amount.");
-        return;
-      }
-      for (const b of bills) {
-        const v = Number(allocs[b.id] || 0);
-        if (v > b.remainingDue + 1e-6) {
-          alert(
-            `Allocation for bill ${b.billNo || b.slNo || b.id} exceeds remaining due`,
-          );
-          return;
-        }
-      }
+    if (billWise && allocSum > amount) {
+      alert("Allocated amount exceeds receipt amount.");
+      return;
     }
 
     setSaving(true);
     try {
       const payload: any = {
         licenseId,
-        supplierId,
+        customerId,
         amount,
         date: payDate,
         mode: payMode,
         notes: payNotes || null,
       };
-
       if (payMode === "CHEQUE") {
         payload.chequeNo = chequeNo || null;
         payload.chequeIssueDate = chequeIssueDate || null;
         payload.chequeClearanceDate = chequeClearanceDate || null;
       }
-
       if (billWise) {
         payload.allocations = Object.entries(allocs)
           .filter(([, v]) => Number(v) > 0)
-          .map(([purchaseId, v]) => ({ purchaseId, amount: Number(v) }));
+          .map(([saleId, v]) => ({ saleId, amount: Number(v) }));
       }
 
-      const res = await platform.createSupplierPayment?.(payload);
+      const res = await platform.createCustomerReceipt?.(payload);
       if (res?.success) {
         setPayAmount(0);
         setPayNotes("");
@@ -435,11 +385,11 @@ export default function LedgerModal({
         setChequeNo("");
         setChequeClearanceDate("");
         setChequeIssueDate(new Date().toISOString().slice(0, 10));
-        clearAllocations();
+        setAllocs({});
         setRefetchKey((k) => k + 1);
         onSaved?.();
       } else {
-        alert("Payment failed: " + (res?.error || "Unknown error"));
+        alert("Receipt failed: " + (res?.error || "Unknown error"));
       }
     } finally {
       setSaving(false);
@@ -457,21 +407,21 @@ export default function LedgerModal({
         className="w-full sm:max-w-5xl rounded-t-[24px] sm:rounded-[24px] border border-slate-200 bg-white shadow-[0_24px_60px_rgba(3,10,24,0.22)] flex flex-col max-h-[92dvh]"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* ── Modal Header ── */}
+        {/* Header */}
         <div className="relative overflow-hidden rounded-t-[24px] bg-[linear-gradient(135deg,#091120_0%,#0f1a31_60%,#16213d_100%)] px-5 py-4 text-white shrink-0">
-          <div className="pointer-events-none absolute -left-6 top-0 h-16 w-16 rounded-full bg-violet-400/20 blur-2xl" />
+          <div className="pointer-events-none absolute -left-6 top-0 h-16 w-16 rounded-full bg-emerald-400/20 blur-2xl" />
           <div className="pointer-events-none absolute right-0 top-0 h-16 w-16 rounded-full bg-cyan-500/15 blur-2xl" />
           <div className="relative flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-300 border border-cyan-400/20">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-400/20">
                 <ReceiptIndianRupee className="h-4 w-4" />
               </div>
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/50">
-                  Supplier Ledger
+                  Customer Ledger
                 </p>
                 <h3 className="text-base font-semibold text-white">
-                  {supplierName || "Ledger"}
+                  {customerName || "Ledger"}
                 </h3>
               </div>
             </div>
@@ -484,18 +434,14 @@ export default function LedgerModal({
           </div>
         </div>
 
-        {/* ── Summary Bar ── */}
+        {/* Summary Bar */}
         <div className="shrink-0 px-5 py-3 bg-slate-50/80 border-b border-slate-200/80">
           <div className="flex flex-wrap gap-3">
-            <StatPill
-              label="Opening Balance"
-              value={`₹${openingBalance.toFixed(2)}`}
-            />
             <StatPill
               label="Current Balance"
               value={
                 balance > 0
-                  ? `₹${balance.toFixed(2)} (we owe)`
+                  ? `₹${balance.toFixed(2)} (receivable)`
                   : `₹${Math.abs(balance).toFixed(2)} (advance)`
               }
               accent
@@ -505,12 +451,12 @@ export default function LedgerModal({
           </div>
         </div>
 
-        {/* ── Scrollable Body ── */}
+        {/* Body */}
         <div className="flex-1 overflow-y-auto px-5 py-5 space-y-4">
-          {/* ── Payment Section ── */}
+          {/* Add Receipt */}
           <SectionCard
             icon={CreditCard}
-            title="Add Payment"
+            title="Add Receipt"
             iconColor="text-emerald-300"
           >
             <div className="space-y-4">
@@ -526,7 +472,6 @@ export default function LedgerModal({
                     placeholder="0.00"
                   />
                 </Field>
-
                 <Field label="Date">
                   <input
                     type="datetime-local"
@@ -537,7 +482,6 @@ export default function LedgerModal({
                     className={inputCls}
                   />
                 </Field>
-
                 <Field label="Mode">
                   <Dropdown
                     value={payMode}
@@ -549,7 +493,6 @@ export default function LedgerModal({
                     ]}
                   />
                 </Field>
-
                 <Field label="Notes">
                   <input
                     value={payNotes}
@@ -560,13 +503,12 @@ export default function LedgerModal({
                 </Field>
               </div>
 
-              {/* Cheque-specific fields */}
               {payMode === "CHEQUE" && (
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 rounded-xl border border-amber-200 bg-amber-50/60 p-4">
                   <div className="sm:col-span-3">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-amber-700 mb-3 flex items-center gap-1.5">
                       <Clock className="h-3.5 w-3.5" />
-                      Cheque Details — Balance will only update when cheque is
+                      Cheque Details — Balance updates only when cheque is
                       marked as received
                     </p>
                   </div>
@@ -598,7 +540,6 @@ export default function LedgerModal({
                 </div>
               )}
 
-              {/* Bill-wise controls row */}
               <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
                 <div className="flex items-center gap-4">
                   <label className="inline-flex items-center gap-2 cursor-pointer">
@@ -613,7 +554,6 @@ export default function LedgerModal({
                       Allocate bill-wise
                     </span>
                   </label>
-
                   {billWise && (
                     <div className="flex items-center gap-2">
                       <button
@@ -621,12 +561,11 @@ export default function LedgerModal({
                         onClick={autoDistribute}
                         className="inline-flex items-center gap-1.5 rounded-xl border border-[#1e3a5f]/30 bg-[#1e3a5f]/8 px-3 py-2 text-xs font-semibold text-[#1e3a5f] transition hover:bg-[#1e3a5f] hover:text-white cursor-pointer"
                       >
-                        <Wand2 className="h-3.5 w-3.5" />
-                        Auto-distribute
+                        <Wand2 className="h-3.5 w-3.5" /> Auto-distribute
                       </button>
                       <button
                         type="button"
-                        onClick={clearAllocations}
+                        onClick={() => setAllocs({})}
                         className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition cursor-pointer"
                       >
                         Clear
@@ -634,9 +573,8 @@ export default function LedgerModal({
                     </div>
                   )}
                 </div>
-
                 <button
-                  onClick={handleCreatePayment}
+                  onClick={handleCreateReceipt}
                   disabled={!addEnabled}
                   className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#20b7ff] to-[#b026ff] px-6 py-2.5 text-sm font-semibold text-white shadow-[0_4px_20px_rgba(32,183,255,0.22)] hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition cursor-pointer"
                 >
@@ -648,12 +586,11 @@ export default function LedgerModal({
                   ) : (
                     <>
                       <Plus className="h-4 w-4" />
-                      {payMode === "CHEQUE" ? "Record Cheque" : "Add Payment"}
+                      {payMode === "CHEQUE" ? "Record Cheque" : "Add Receipt"}
                     </>
                   )}
                 </button>
               </div>
-
               {billWise && (
                 <p className="text-[11px] text-slate-400 -mt-1">
                   {Number(payAmount || 0) > 0
@@ -664,11 +601,11 @@ export default function LedgerModal({
             </div>
           </SectionCard>
 
-          {/* ── Outstanding Bills ── */}
+          {/* Outstanding Sales */}
           {billWise && (
             <SectionCard
               icon={ListChecks}
-              title="Outstanding Bills"
+              title="Outstanding Credit Sales"
               iconColor="text-amber-300"
             >
               <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
@@ -687,26 +624,16 @@ export default function LedgerModal({
                     : `Unallocated: ₹${unallocated.toFixed(2)}`}
                 </div>
               </div>
-
-              <div
-                className="rounded-xl border border-slate-200/80 overflow-hidden"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === "PageDown" && billPage < billPages)
-                    setBillPage((p) => p + 1);
-                  if (e.key === "PageUp" && billPage > 1)
-                    setBillPage((p) => p - 1);
-                }}
-              >
+              <div className="rounded-xl border border-slate-200/80 overflow-hidden">
                 <div className="max-h-64 overflow-auto no-scrollbar">
                   {billsLoading ? (
                     <div className="p-8 flex items-center justify-center gap-2 text-slate-400 text-sm">
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      Loading bills…
+                      Loading sales…
                     </div>
                   ) : bills.length === 0 ? (
                     <div className="p-10 text-center text-slate-400 text-sm">
-                      No outstanding credit bills.
+                      No outstanding credit sales.
                     </div>
                   ) : (
                     <table className="w-full text-sm">
@@ -739,7 +666,7 @@ export default function LedgerModal({
                               className="hover:bg-slate-50/60 transition-colors"
                             >
                               <td className="px-4 py-2.5 text-slate-600 text-xs">
-                                {new Date(b.purchaseDate).toLocaleDateString()}
+                                {new Date(b.saleDate).toLocaleDateString()}
                               </td>
                               <td className="px-4 py-2.5 font-medium text-slate-800 text-xs">
                                 {b.billNo || b.slNo || "—"}
@@ -767,12 +694,6 @@ export default function LedgerModal({
                                     )
                                   }
                                   onFocus={(e) => e.currentTarget.select()}
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter" && addEnabled) {
-                                      e.preventDefault();
-                                      handleCreatePayment();
-                                    }
-                                  }}
                                   className="w-28 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-right text-xs text-slate-800 outline-none shadow-[0_1px_4px_rgba(0,0,0,0.06)] transition focus:border-cyan-400 focus:ring-4 focus:ring-cyan-400/15"
                                   placeholder="0.00"
                                 />
@@ -784,7 +705,6 @@ export default function LedgerModal({
                     </table>
                   )}
                 </div>
-
                 {billPages > 1 && (
                   <div className="flex items-center justify-between px-4 py-3 bg-slate-50/80 border-t border-slate-200/80">
                     <span className="text-[11px] text-slate-400 font-medium">
@@ -814,7 +734,7 @@ export default function LedgerModal({
             </SectionCard>
           )}
 
-          {/* ── Transaction History ── */}
+          {/* Transaction History */}
           <SectionCard
             icon={Activity}
             title="Transaction History"
@@ -869,7 +789,7 @@ export default function LedgerModal({
                             <KindBadge kind={r.kind} />
                           </td>
                           <td className="px-4 py-3">
-                            {r.kind === "PAYMENT" ? (
+                            {r.kind === "RECEIPT" ? (
                               <PaymentStatusBadge status={r.paymentStatus} />
                             ) : (
                               <span className="text-slate-300 text-xs">—</span>
@@ -880,13 +800,7 @@ export default function LedgerModal({
                           </td>
                           <td className="px-4 py-3">
                             <span
-                              className={`text-sm font-bold ${
-                                isPendingCheque
-                                  ? "text-slate-400"
-                                  : r.sign > 0
-                                    ? "text-rose-600"
-                                    : "text-emerald-600"
-                              }`}
+                              className={`text-sm font-bold ${isPendingCheque ? "text-slate-400" : r.sign > 0 ? "text-rose-600" : "text-emerald-600"}`}
                             >
                               {isPendingCheque ? "~" : r.sign > 0 ? "+" : "−"}
                             </span>
@@ -936,7 +850,7 @@ export default function LedgerModal({
           </SectionCard>
         </div>
 
-        {/* ── Footer Pagination ── */}
+        {/* Footer pagination */}
         <div className="shrink-0 border-t border-slate-100 bg-slate-50/60 px-5 py-4 flex items-center justify-between gap-3">
           <span className="text-[11px] text-slate-400 font-medium">
             Page {page} of {pages} · {total} transactions

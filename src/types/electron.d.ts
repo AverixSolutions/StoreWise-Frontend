@@ -78,6 +78,28 @@ type ProductWritePayload = {
   image?: ProductImagePayload | null;
 };
 
+type PurchaseRecord = {
+  id: string;
+  slNo: number;
+  billNo: string | null;
+  licenseId: string;
+  supplierId: string | null;
+  supplierName: string | null;
+  typeId: string | null;
+  [key: string]: any; // allow additional fields without breaking existing usage
+};
+
+type SaleRecord = {
+  id: string;
+  slNo: number;
+  billNo: string | null;
+  licenseId: string;
+  customerId: string | null;
+  customerName: string | null;
+  typeId: string | null;
+  [key: string]: any; // allow additional fields without breaking existing usage
+};
+
 declare global {
   interface Window {
     electronAPI: {
@@ -266,8 +288,10 @@ declare global {
         batchId: string,
       ) => Promise<{ success: boolean; error?: string }>;
 
+      // ─── Purchases ──────────────────────────────────────────────────────────
+
       createPurchase: (
-        purchase: any,
+        purchase: any, // header may include typeId?: string | null
         items: any[],
       ) => Promise<{
         success: boolean;
@@ -279,12 +303,282 @@ declare global {
       getPurchases: (
         licenseId: string,
         pagination?: { page?: number; pageSize?: number },
-      ) => Promise<{ purchases: any[]; total: number }>;
+      ) => Promise<{
+        purchases: Array<PurchaseRecord>;
+        total: number;
+      }>;
+
+      getPurchaseFull: (id: string) => Promise<{
+        success: boolean;
+        purchase: PurchaseRecord;
+        items: any[];
+      }>;
 
       markPurchasesSynced: (
         ids: string[],
         serverSyncedAt?: string,
       ) => Promise<{ success: boolean; syncedAt: string }>;
+
+      bulkUpsertPurchases?: (
+        records: Array<PurchaseRecord & { typeId?: string | null }>,
+      ) => Promise<{ success: boolean; upserted: number }>;
+
+      // ─── Sales ──────────────────────────────────────────────────────────────
+
+      createSale: (
+        header: any, // may include typeId?: string | null
+        items: any[],
+      ) => Promise<{
+        success: boolean;
+        saleId: string;
+        slNo: number;
+        totalAmount: number;
+      }>;
+
+      listSales: (
+        licenseId: string,
+        filters?: any,
+      ) => Promise<{
+        success: boolean;
+        total: number;
+        page: number;
+        pageSize: number;
+        rows: Array<SaleRecord>;
+      }>;
+
+      getSaleFull: (id: string) => Promise<{
+        success: boolean;
+        sale: SaleRecord;
+        items: any[];
+      }>;
+
+      updateSale: (
+        payload: any, // payload.header may contain typeId
+      ) => Promise<{ success: boolean }>;
+
+      markSalesSynced?: (
+        ids: string[],
+        serverSyncedAt?: string,
+      ) => Promise<{ success: boolean; syncedAt: string }>;
+
+      bulkUpsertSales?: (
+        records: Array<SaleRecord & { typeId?: string | null }>,
+      ) => Promise<{ success: boolean; upserted: number }>;
+
+      // ────────────────────────────────────────────────────────────────────────
+
+      // ─── Purchase Returns ──────────────────────────────────────────────────────
+      createPurchaseReturn: (payload: {
+        header: any;
+        items: any[];
+      }) => Promise<{
+        success: boolean;
+        returnId?: string;
+        slNo?: number;
+        totalAmount?: number;
+      }>;
+
+      updatePurchaseReturn: (payload: {
+        id: string;
+        header: any;
+        items: any[];
+      }) => Promise<{
+        success: boolean;
+        returnId?: string;
+        totalAmount?: number;
+      }>;
+
+      deletePurchaseReturn: (
+        id: string,
+      ) => Promise<{ success: boolean; deletedAt?: string }>;
+
+      listPurchaseReturns: (
+        licenseId: string,
+        filters?: {
+          q?: string;
+          supplierId?: string | null;
+          dateFrom?: string;
+          dateTo?: string;
+          page?: number;
+          pageSize?: number;
+        },
+      ) => Promise<{ returns: any[]; total: number }>;
+
+      getPurchaseReturnFull: (id: string) => Promise<{
+        success: boolean;
+        purchaseReturn: any;
+        items: any[];
+      }>;
+
+      getNextPurchaseReturnSlNo: (
+        licenseId: string,
+      ) => Promise<{ nextSlNo: number }>;
+
+      savePurchaseReturnHold: (payload: {
+        id?: string;
+        licenseId: string;
+        userId?: string;
+        title?: string | null;
+        header: any;
+        rows: any[];
+      }) => Promise<{ success: boolean; id?: string; holdNo?: number }>;
+
+      listPurchaseReturnHolds: (
+        licenseId: string,
+        pagination?: { page?: number; pageSize?: number },
+      ) => Promise<{ holds: any[]; total: number }>;
+
+      getPurchaseReturnHold: (
+        id: string,
+      ) => Promise<{ success: boolean; hold: any }>;
+
+      deletePurchaseReturnHold: (id: string) => Promise<{ success: boolean }>;
+
+      // === Supplier Ledger & Payments (Cheque support) ===
+      getSupplierLedger: (params: {
+        licenseId: string;
+        supplierId: string;
+        dateFrom?: string | null;
+        dateTo?: string | null;
+        page?: number;
+        pageSize?: number;
+      }) => Promise<{
+        success: boolean;
+        rows: any[];
+        total: number;
+        openingBalance: number;
+        balance: number;
+        error?: string;
+      }>;
+
+      getSupplierOutstandingBills: (params: {
+        licenseId: string;
+        supplierId: string;
+        q?: string;
+        page?: number;
+        pageSize?: number;
+      }) => Promise<{
+        success: boolean;
+        rows: any[];
+        total: number;
+        error?: string;
+      }>;
+
+      createSupplierPayment: (payload: {
+        licenseId: string;
+        supplierId: string;
+        amount: number;
+        date: string;
+        mode: "CASH" | "BANK" | "CHEQUE";
+        notes?: string | null;
+        chequeNo?: string | null;
+        chequeIssueDate?: string | null;
+        chequeClearanceDate?: string | null;
+        allocations?: Array<{ purchaseId: string; amount: number }>;
+      }) => Promise<{
+        success: boolean;
+        id?: string;
+        allocated?: number;
+        unallocated?: number;
+        paymentStatus?: string;
+        error?: string;
+      }>;
+
+      listPayments: (params: {
+        licenseId: string;
+        supplierId?: string | null;
+        q?: string;
+        dateFrom?: string | null;
+        dateTo?: string | null;
+        page?: number;
+        pageSize?: number;
+      }) => Promise<{
+        success: boolean;
+        rows: any[];
+        total: number;
+        error?: string;
+      }>;
+
+      markChequeReceived: (params: {
+        licenseId: string;
+        txId: string;
+      }) => Promise<{
+        success: boolean;
+        error?: string;
+      }>;
+
+      // === Customer Ledger & Receipts (Cheque support) ===
+      getCustomerLedger: (params: {
+        licenseId: string;
+        customerId: string;
+        dateFrom?: string | null;
+        dateTo?: string | null;
+        page?: number;
+        pageSize?: number;
+      }) => Promise<{
+        success: boolean;
+        rows: any[];
+        total: number;
+        openingBalance: number;
+        balance: number;
+        error?: string;
+      }>;
+
+      getCustomerOutstandingSales: (params: {
+        licenseId: string;
+        customerId: string;
+        q?: string;
+        page?: number;
+        pageSize?: number;
+      }) => Promise<{
+        success: boolean;
+        rows: any[];
+        total: number;
+        error?: string;
+      }>;
+
+      createCustomerReceipt: (payload: {
+        licenseId: string;
+        customerId: string;
+        amount: number;
+        date: string;
+        mode: "CASH" | "BANK" | "CHEQUE";
+        notes?: string | null;
+        chequeNo?: string | null;
+        chequeIssueDate?: string | null;
+        chequeClearanceDate?: string | null;
+        allocations?: Array<{ saleId: string; amount: number }>;
+      }) => Promise<{
+        success: boolean;
+        id?: string;
+        allocated?: number;
+        unallocated?: number;
+        paymentStatus?: string;
+        error?: string;
+      }>;
+
+      listReceipts: (params: {
+        licenseId: string;
+        customerId?: string | null;
+        q?: string;
+        dateFrom?: string | null;
+        dateTo?: string | null;
+        page?: number;
+        pageSize?: number;
+      }) => Promise<{
+        success: boolean;
+        rows: any[];
+        total: number;
+        error?: string;
+      }>;
+
+      markCustomerChequeReceived: (params: {
+        licenseId: string;
+        txId: string;
+      }) => Promise<{
+        success: boolean;
+        error?: string;
+      }>;
 
       getShopSettings: (licenseId: string) => Promise<{
         success: boolean;
@@ -330,6 +624,51 @@ declare global {
         authorizedSignatory?: string | null;
       }) => Promise<{ success: boolean; error?: string }>;
 
+      // Transaction Types
+      listTransactionTypes: (
+        licenseId: string,
+        category: string,
+      ) => Promise<{ success: boolean; rows: any[] }>;
+
+      listAllTransactionTypes: (
+        licenseId: string,
+      ) => Promise<{ success: boolean; rows: any[] }>;
+
+      saveTransactionType: (
+        payload: any,
+      ) => Promise<{ success: boolean; id?: string; error?: string }>;
+
+      deleteTransactionType: (
+        id: string,
+        licenseId: string,
+      ) => Promise<{ success: boolean; error?: string }>;
+
+      setDefaultTransactionType: (
+        id: string,
+        licenseId: string,
+        category: string,
+      ) => Promise<{ success: boolean; error?: string }>;
+
+      getDefaultTransactionType: (
+        licenseId: string,
+        category: string,
+      ) => Promise<{ success: boolean; row: any | null }>;
+
+      // Transaction Type sync
+      getDirtyTransactionTypes: (
+        licenseId: string,
+        limit: number,
+      ) => Promise<any[]>;
+
+      markTransactionTypesSynced: (
+        ids: string[],
+        ts: string,
+      ) => Promise<{ success: boolean }>;
+
+      bulkUpsertTransactionTypes: (
+        records: any[],
+      ) => Promise<{ success: boolean }>;
+
       getSupplierCount: (
         licenseId: string,
         params?: { q?: string | null },
@@ -341,6 +680,59 @@ declare global {
         licenseId: string,
         params?: { q?: string | null },
       ) => Promise<{ count: number }>;
+
+      // ─── Customers ──────────────────────────────────────────────────────────
+      listCustomers: (
+        licenseId: string,
+        filters?: {
+          q?: string;
+          page?: number;
+          pageSize?: number;
+        },
+      ) => Promise<{
+        success: boolean;
+        customers: any[];
+        total: number;
+        page: number;
+        pageSize: number;
+      }>;
+
+      getCustomer: (id: string) => Promise<any | null>;
+
+      saveCustomer: (payload: {
+        id?: string;
+        licenseId: string;
+        name: string;
+        phone?: string | null;
+        email?: string | null;
+        gstin?: string | null;
+        category?: string | null;
+        addressLine1?: string | null;
+        addressLine2?: string | null;
+        city?: string | null;
+        state?: string | null;
+        pincode?: string | null;
+        openingBalance?: number;
+        notes?: string | null;
+      }) => Promise<{ success: boolean; id?: string; error?: string }>;
+
+      deleteCustomer: (
+        id: string,
+        licenseId: string,
+      ) => Promise<{ success: boolean; error?: string }>;
+
+      peekNextCustomerCode: (
+        licenseId: string,
+      ) => Promise<{ nextCodeNumber: number; suggestedCode: string }>;
+
+      getCustomerDistincts: (licenseId: string) => Promise<{
+        names: string[];
+        categories: string[];
+        cities: string[];
+        states: string[];
+        languages?: string[];
+        departments?: string[];
+      }>;
 
       getDirtyProducts: (licenseId: string, limit?: number) => Promise<any[]>;
       markProductsSynced: (
@@ -447,6 +839,69 @@ declare global {
 
       getSyncState: (scope: string) => Promise<any>;
       setSyncState: (scope: string, changes: any) => Promise<any>;
+
+      getDirtyCustomers: (
+        licenseId: string,
+        limit?: number,
+      ) => Promise<{ success: boolean; records: any[] }>;
+
+      markCustomersSynced: (
+        ids: string[],
+        serverSyncedAt?: string,
+      ) => Promise<{ success: boolean }>;
+
+      bulkUpsertCustomers: (
+        records: any[],
+      ) => Promise<{ success: boolean; upserted: number }>;
+
+      // ─── Customer Transaction Sync ──────────────────────────────────────────
+      getDirtyCustomerTransactions: (
+        licenseId: string,
+        limit?: number,
+      ) => Promise<{ success: boolean; records: any[] }>;
+
+      markCustomerTransactionsSynced: (
+        ids: string[],
+        serverSyncedAt?: string,
+      ) => Promise<{ success: boolean }>;
+
+      bulkUpsertCustomerTransactions: (
+        records: any[],
+      ) => Promise<{ success: boolean; upserted: number }>;
+
+      // Purchase return sync
+      getDirtyPurchaseReturns: (
+        licenseId: string,
+        limit?: number,
+      ) => Promise<{ success: boolean; records: any[] }>;
+      getDirtyPurchaseReturnItems: (
+        licenseId: string,
+        limit?: number,
+      ) => Promise<{ success: boolean; records: any[] }>;
+      markPurchaseReturnItemsSynced: (
+        ids: string[],
+        serverSyncedAt?: string,
+      ) => Promise<{ success: boolean }>;
+      bulkUpsertPurchaseReturns: (
+        records: any[],
+      ) => Promise<{ success: boolean; upserted: number }>;
+      bulkUpsertPurchaseReturnItems: (
+        records: any[],
+      ) => Promise<{ success: boolean; upserted: number }>;
+
+      // Purchase return hold sync
+      getDirtyPurchaseReturnHolds: (
+        licenseId: string,
+        limit?: number,
+      ) => Promise<{ success: boolean; records: any[] }>;
+      markPurchaseReturnHoldsSynced: (
+        ids: string[],
+        serverSyncedAt?: string,
+      ) => Promise<{ success: boolean }>;
+      bulkUpsertPurchaseReturnHolds: (
+        records: any[],
+      ) => Promise<{ success: boolean; upserted: number }>;
+
       wipeLocalData: () => Promise<any>;
     };
   }

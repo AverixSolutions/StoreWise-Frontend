@@ -1,26 +1,78 @@
 // src/components/customers/CustomerFormModal.tsx
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { X, UserPlus, User } from "lucide-react";
 import SearchableDropdown from "../ui/SearchableDropdown";
+import { platform } from "@/platform";
 
 type Customer = {
   id?: string;
-  code?: string;
-  codeNumber?: number;
+  code?: string | null;
+  codeNumber?: number | null;
   name: string;
-  phone?: string;
-  email?: string;
-  gstin?: string;
-  category?: string;
-  addressLine1?: string;
-  addressLine2?: string;
-  city?: string;
-  state?: string;
-  pincode?: string;
-  openingBalance?: number;
-  notes?: string;
+  phone?: string | null;
+  email?: string | null;
+  gstin?: string | null;
+  category?: string | null;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  pincode?: string | null;
+  openingBalance?: number | null;
+  notes?: string | null;
 };
 
+// ── Shared input style (mirrors TaxSettings inputCls) ─────────────────────────
+const inputCls =
+  "w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 outline-none shadow-[0_1px_4px_rgba(0,0,0,0.06)] transition focus:border-cyan-400 focus:ring-4 focus:ring-cyan-400/15";
+
+// ── Section card (dark header strip + light body) ─────────────────────────────
+function SectionCard({
+  icon: Icon,
+  title,
+  iconColor = "text-cyan-300",
+  children,
+}: {
+  icon: React.ElementType;
+  title: string;
+  iconColor?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-xl border border-slate-200/80 bg-white shadow-[0_4px_20px_rgba(3,10,24,0.06)] overflow-hidden">
+      <div className="flex items-center gap-3 bg-[#1e3a5f] px-5 py-3">
+        <Icon className={`h-4 w-4 shrink-0 ${iconColor}`} />
+        <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/80">
+          {title}
+        </span>
+      </div>
+      <div className="bg-slate-50/60 p-5">{children}</div>
+    </div>
+  );
+}
+
+// ── Field wrapper ─────────────────────────────────────────────────────────────
+function Field({
+  label,
+  children,
+  className = "",
+}: {
+  label: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={className}>
+      <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">
+        {label}
+      </label>
+      {children}
+    </div>
+  );
+}
+
+// ── Main modal ────────────────────────────────────────────────────────────────
 export default function CustomerFormModal({
   isOpen,
   onClose,
@@ -33,8 +85,6 @@ export default function CustomerFormModal({
   editCustomer?: Customer | null;
 }) {
   const [form, setForm] = useState<Customer>({ name: "" });
-
-  // Derived UI state for opening balance
   const [openingSide, setOpeningSide] = useState<"they_owe" | "we_owe">(
     "they_owe",
   );
@@ -55,6 +105,7 @@ export default function CustomerFormModal({
 
   const [code, setCode] = useState<string>("C00001");
   const [codeNumber, setCodeNumber] = useState<number>(1);
+  const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<{
     type: "success" | "error" | null;
     message?: string;
@@ -64,11 +115,7 @@ export default function CustomerFormModal({
     categories: string[];
     cities: string[];
     states: string[];
-  }>({
-    categories: [],
-    cities: [],
-    states: [],
-  });
+  }>({ categories: [], cities: [], states: [] });
 
   const inputRefs = [
     nameRef,
@@ -110,10 +157,12 @@ export default function CustomerFormModal({
   const refreshDistincts = async () => {
     const licenseId = localStorage.getItem("licenseId") || "demo-license";
     try {
-      const { categories, cities, states } = await (
-        window as any
-      ).electronAPI.getCustomerDistincts(licenseId);
-      setDistincts({ categories, cities, states });
+      const res = await platform.getCustomerDistincts?.(licenseId);
+      setDistincts({
+        categories: res?.categories || [],
+        cities: res?.cities || [],
+        states: res?.states || [],
+      });
     } catch (e) {
       console.error("customer distincts failed", e);
     }
@@ -126,15 +175,12 @@ export default function CustomerFormModal({
 
   useEffect(() => {
     if (!isOpen) return;
-
     setStatus({ type: null });
 
     if (editCustomer) {
       setForm(editCustomer);
       setCode((editCustomer as any).code || "C00001");
       setCodeNumber((editCustomer as any).codeNumber || 1);
-
-      // Initialize opening balance UI state
       const ob = Number(editCustomer.openingBalance ?? 0);
       setOpeningSide(ob >= 0 ? "they_owe" : "we_owe");
       setOpeningAmount(Math.abs(ob));
@@ -153,18 +199,15 @@ export default function CustomerFormModal({
         openingBalance: 0,
         notes: "",
       });
-      // Reset UI state for new customer
       setOpeningSide("they_owe");
       setOpeningAmount(0);
 
       const licenseId = localStorage.getItem("licenseId") || "demo-license";
       (async () => {
         try {
-          const { suggestedCode, nextCodeNumber } = await (
-            window as any
-          ).electronAPI.peekNextCustomerCode(licenseId);
-          setCode(suggestedCode);
-          setCodeNumber(nextCodeNumber);
+          const codeRes = await platform.peekNextCustomerCode?.(licenseId);
+          setCode(codeRes?.suggestedCode || "C00001");
+          setCodeNumber(codeRes?.nextCodeNumber || 1);
         } catch (error) {
           console.error("Error fetching next customer code:", error);
         }
@@ -174,11 +217,20 @@ export default function CustomerFormModal({
     requestAnimationFrame(() => nameRef.current?.focus());
   }, [isOpen, editCustomer]);
 
+  // ESC to close
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isOpen]);
+
   const handleChange = (k: keyof Customer, v: any) =>
     setForm((f) => ({ ...f, [k]: v }));
 
   const saveCustomer = async (saveAndClose: boolean = false) => {
     setStatus({ type: null });
+    setSaving(true);
 
     const licenseId = localStorage.getItem("licenseId") || "demo-license";
     const signedOpening =
@@ -202,54 +254,54 @@ export default function CustomerFormModal({
       notes: form.notes || null,
     };
 
-    if (editCustomer?.id) {
-      await (window as any).electronAPI.saveCustomer({
-        ...payload,
-        id: editCustomer.id,
-      });
+    try {
+      if (editCustomer?.id) {
+        await platform.saveCustomer?.({
+          ...payload,
+          id: editCustomer.id,
+        });
+        onSuccess();
+        onClose();
+        return;
+      }
+
+      await platform.saveCustomer?.(payload);
       onSuccess();
-      onClose();
-      return;
+
+      if (saveAndClose) {
+        onClose();
+        return;
+      }
+
+      setStatus({ type: "success", message: "Customer created successfully." });
+
+      const nextRes = await platform.peekNextCustomerCode?.(licenseId);
+      setCode(nextRes?.suggestedCode || "C00001");
+      setCodeNumber(nextRes?.nextCodeNumber || 1);
+
+      setForm({
+        name: "",
+        phone: "",
+        email: "",
+        gstin: "",
+        category: "",
+        addressLine1: "",
+        addressLine2: "",
+        city: "",
+        state: "",
+        pincode: "",
+        openingBalance: 0,
+        notes: "",
+      });
+      setOpeningSide("they_owe");
+      setOpeningAmount(0);
+
+      await refreshDistincts();
+      requestAnimationFrame(() => nameRef.current?.focus());
+      setTimeout(() => setStatus({ type: null }), 3000);
+    } finally {
+      setSaving(false);
     }
-
-    await (window as any).electronAPI.saveCustomer(payload);
-    onSuccess();
-
-    if (saveAndClose) {
-      onClose();
-      return;
-    }
-
-    setStatus({ type: "success", message: "Customer created successfully." });
-
-    const { suggestedCode: nextC, nextCodeNumber: nextN } = await (
-      window as any
-    ).electronAPI.peekNextCustomerCode(licenseId);
-    setCode(nextC);
-    setCodeNumber(nextN);
-
-    setForm({
-      name: "",
-      phone: "",
-      email: "",
-      gstin: "",
-      category: "",
-      addressLine1: "",
-      addressLine2: "",
-      city: "",
-      state: "",
-      pincode: "",
-      openingBalance: 0,
-      notes: "",
-    });
-
-    setOpeningSide("they_owe");
-    setOpeningAmount(0);
-
-    await refreshDistincts();
-    requestAnimationFrame(() => nameRef.current?.focus());
-
-    setTimeout(() => setStatus({ type: null }), 3000);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -257,7 +309,6 @@ export default function CustomerFormModal({
     try {
       await saveCustomer(false);
     } catch (error: any) {
-      console.error("Error saving customer:", error);
       setStatus({
         type: "error",
         message: error?.message || "Failed to save customer. Please try again.",
@@ -269,7 +320,6 @@ export default function CustomerFormModal({
     try {
       await saveCustomer(saveAndClose);
     } catch (error: any) {
-      console.error("Error saving customer:", error);
       setStatus({
         type: "error",
         message: error?.message || "Failed to save customer. Please try again.",
@@ -280,20 +330,50 @@ export default function CustomerFormModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl w-full max-w-4xl max-h-[90vh] shadow-xl flex flex-col">
-        <div className="px-6 py-4 border-b border-gray-200 flex-shrink-0">
-          <h3 className="text-xl font-semibold text-gray-900">
-            {editCustomer ? "Edit Customer" : "Add Customer"}
-          </h3>
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full sm:max-w-2xl rounded-t-[24px] sm:rounded-[24px] border border-slate-200 bg-white shadow-[0_24px_60px_rgba(3,10,24,0.22)] flex flex-col max-h-[92dvh]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* ── Modal Header ── */}
+        <div className="relative overflow-hidden rounded-t-[24px] bg-[linear-gradient(135deg,#091120_0%,#0f1a31_60%,#16213d_100%)] px-5 py-4 text-white shrink-0">
+          <div className="pointer-events-none absolute -left-6 top-0 h-16 w-16 rounded-full bg-cyan-400/20 blur-2xl" />
+          <div className="pointer-events-none absolute right-0 top-0 h-16 w-16 rounded-full bg-fuchsia-500/15 blur-2xl" />
+          <div className="relative flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-300 border border-cyan-400/20">
+                <User className="h-4 w-4" />
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/50">
+                  Customer
+                </p>
+                <h3 className="text-base font-semibold text-white">
+                  {editCustomer
+                    ? `Edit — ${editCustomer.name}`
+                    : "New Customer"}
+                </h3>
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/15 bg-white/10 text-white transition hover:bg-white/20 cursor-pointer"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
         </div>
 
+        {/* ── Status Banner ── */}
         {status.type && (
-          <div className="px-6 mt-3">
+          <div className="px-5 pt-4 shrink-0">
             {status.type === "success" && (
-              <div className="mb-3 rounded-md bg-green-50 text-green-800 border border-green-200 px-3 py-2 text-sm flex items-center">
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 px-4 py-2.5 text-sm font-medium text-emerald-700 flex items-center gap-2">
                 <svg
-                  className="w-4 h-4 mr-2 flex-shrink-0"
+                  className="w-4 h-4 shrink-0"
                   fill="currentColor"
                   viewBox="0 0 20 20"
                 >
@@ -307,9 +387,9 @@ export default function CustomerFormModal({
               </div>
             )}
             {status.type === "error" && (
-              <div className="mb-3 rounded-md bg-red-50 text-red-800 border border-red-200 px-3 py-2 text-sm flex items-center">
+              <div className="rounded-xl border border-rose-200 bg-rose-50/80 px-4 py-2.5 text-sm font-medium text-rose-700 flex items-center gap-2">
                 <svg
-                  className="w-4 h-4 mr-2 flex-shrink-0"
+                  className="w-4 h-4 shrink-0"
                   fill="currentColor"
                   viewBox="0 0 20 20"
                 >
@@ -325,317 +405,270 @@ export default function CustomerFormModal({
           </div>
         )}
 
-        <div className="flex-1 overflow-y-auto no-scrollbar">
-          <form onSubmit={handleSubmit} className="p-6">
-            <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-              <div className="flex items-center gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Customer Code
-                  </label>
+        {/* ── Scrollable Body ── */}
+        <div className="flex-1 overflow-y-auto px-5 py-5 space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Customer Code + Name */}
+            <SectionCard icon={User} title="Identity" iconColor="text-cyan-300">
+              <div className="grid grid-cols-[auto_1fr] gap-4">
+                <Field label="Code">
                   <input
                     type="text"
                     value={code}
                     readOnly
-                    className="w-32 px-3 py-2 bg-gray-100 border border-gray-300 rounded-md text-sm font-mono"
+                    className="w-28 rounded-xl border border-slate-200 bg-slate-100 px-3.5 py-2.5 text-sm font-mono text-slate-500 outline-none shadow-[0_1px_4px_rgba(0,0,0,0.06)]"
                   />
-                </div>
-                <div className="flex-1">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Customer Name *
-                  </label>
+                </Field>
+                <Field label="Customer Name *">
                   <input
                     ref={nameRef}
                     required
                     value={form.name}
                     onChange={(e) => handleChange("name", e.target.value)}
                     onKeyDown={(e) => handleKeyDown(e, 0)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-averix-red-light focus:border-transparent"
+                    className={inputCls}
                     placeholder="Enter customer name"
                   />
-                </div>
+                </Field>
               </div>
-            </div>
+            </SectionCard>
 
-            <div className="space-y-8">
-              <div>
-                <h4 className="text-lg font-medium text-gray-900 mb-4 border-b border-gray-200 pb-2">
-                  Basic Information
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Phone
-                    </label>
-                    <input
-                      ref={phoneRef}
-                      value={form.phone || ""}
-                      onChange={(e) => handleChange("phone", e.target.value)}
-                      onKeyDown={(e) => handleKeyDown(e, 1)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-averix-red-light focus:border-transparent"
-                      placeholder="Phone number"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Email
-                    </label>
-                    <input
-                      ref={emailRef}
-                      type="email"
-                      value={form.email || ""}
-                      onChange={(e) => handleChange("email", e.target.value)}
-                      onKeyDown={(e) => handleKeyDown(e, 2)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-averix-red-light focus:border-transparent"
-                      placeholder="Email address"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Category
-                    </label>
+            {/* Basic Information */}
+            <SectionCard
+              icon={User}
+              title="Basic Information"
+              iconColor="text-emerald-300"
+            >
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <Field label="Phone">
+                  <input
+                    ref={phoneRef}
+                    value={form.phone || ""}
+                    onChange={(e) => handleChange("phone", e.target.value)}
+                    onKeyDown={(e) => handleKeyDown(e, 1)}
+                    className={inputCls}
+                    placeholder="Phone number"
+                  />
+                </Field>
+                <Field label="Email">
+                  <input
+                    ref={emailRef}
+                    type="email"
+                    value={form.email || ""}
+                    onChange={(e) => handleChange("email", e.target.value)}
+                    onKeyDown={(e) => handleKeyDown(e, 2)}
+                    className={inputCls}
+                    placeholder="Email address"
+                  />
+                </Field>
+                <Field label="Category">
+                  <SearchableDropdown
+                    ref={categoryRef}
+                    value={form.category || ""}
+                    onChange={(v) => handleChange("category", v)}
+                    onEnter={() => inputRefs[4].current?.focus()}
+                    options={distincts.categories.map((c) => ({
+                      value: c,
+                      label: c,
+                    }))}
+                    placeholder="Category"
+                    allowCustom
+                    onCreate={(v) =>
+                      setDistincts((d) => ({
+                        ...d,
+                        categories: Array.from(new Set([...d.categories, v])),
+                      }))
+                    }
+                  />
+                </Field>
+              </div>
+            </SectionCard>
+
+            {/* Address */}
+            <SectionCard
+              icon={User}
+              title="Address Information"
+              iconColor="text-violet-300"
+            >
+              <div className="space-y-4">
+                <Field label="Address Line 1">
+                  <input
+                    ref={addressLine1Ref}
+                    value={form.addressLine1 || ""}
+                    onChange={(e) =>
+                      handleChange("addressLine1", e.target.value)
+                    }
+                    onKeyDown={(e) => handleKeyDown(e, 4)}
+                    className={inputCls}
+                    placeholder="Street address, building, etc."
+                  />
+                </Field>
+                <Field label="Address Line 2">
+                  <input
+                    ref={addressLine2Ref}
+                    value={form.addressLine2 || ""}
+                    onChange={(e) =>
+                      handleChange("addressLine2", e.target.value)
+                    }
+                    onKeyDown={(e) => handleKeyDown(e, 5)}
+                    className={inputCls}
+                    placeholder="Apartment, suite, unit, etc."
+                  />
+                </Field>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <Field label="City">
                     <SearchableDropdown
-                      ref={categoryRef}
-                      value={form.category || ""}
-                      onChange={(v) => handleChange("category", v)}
-                      onEnter={() => inputRefs[4].current?.focus()}
-                      options={distincts.categories.map((c) => ({
+                      ref={cityRef}
+                      value={form.city || ""}
+                      onChange={(v) => handleChange("city", v)}
+                      onEnter={() => inputRefs[7].current?.focus()}
+                      options={distincts.cities.map((c) => ({
                         value: c,
                         label: c,
                       }))}
-                      placeholder="Category"
+                      placeholder="City"
                       allowCustom
                       onCreate={(v) =>
                         setDistincts((d) => ({
                           ...d,
-                          categories: Array.from(new Set([...d.categories, v])),
+                          cities: Array.from(new Set([...d.cities, v])),
                         }))
                       }
                     />
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <h4 className="text-lg font-medium text-gray-900 mb-4 border-b border-gray-200 pb-2">
-                  Address Information
-                </h4>
-                <div className="grid grid-cols-1 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Address Line 1
-                    </label>
-                    <input
-                      ref={addressLine1Ref}
-                      value={form.addressLine1 || ""}
-                      onChange={(e) =>
-                        handleChange("addressLine1", e.target.value)
+                  </Field>
+                  <Field label="State">
+                    <SearchableDropdown
+                      ref={stateRef}
+                      value={form.state || ""}
+                      onChange={(v) => handleChange("state", v)}
+                      onEnter={() => inputRefs[8].current?.focus()}
+                      options={distincts.states.map((s) => ({
+                        value: s,
+                        label: s,
+                      }))}
+                      placeholder="State"
+                      allowCustom
+                      onCreate={(v) =>
+                        setDistincts((d) => ({
+                          ...d,
+                          states: Array.from(new Set([...d.states, v])),
+                        }))
                       }
-                      onKeyDown={(e) => handleKeyDown(e, 4)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-averix-red-light focus:border-transparent"
-                      placeholder="Street address, building, etc."
                     />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Address Line 2
-                    </label>
+                  </Field>
+                  <Field label="Pincode">
                     <input
-                      ref={addressLine2Ref}
-                      value={form.addressLine2 || ""}
-                      onChange={(e) =>
-                        handleChange("addressLine2", e.target.value)
-                      }
-                      onKeyDown={(e) => handleKeyDown(e, 5)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-averix-red-light focus:border-transparent"
-                      placeholder="Apartment, suite, unit, etc."
+                      ref={pincodeRef}
+                      value={form.pincode || ""}
+                      onChange={(e) => handleChange("pincode", e.target.value)}
+                      onKeyDown={(e) => handleKeyDown(e, 8)}
+                      className={inputCls}
+                      placeholder="PIN code"
                     />
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        City
-                      </label>
-                      <SearchableDropdown
-                        ref={cityRef}
-                        value={form.city || ""}
-                        onChange={(v) => handleChange("city", v)}
-                        onEnter={() => inputRefs[7].current?.focus()}
-                        options={distincts.cities.map((c) => ({
-                          value: c,
-                          label: c,
-                        }))}
-                        placeholder="City"
-                        allowCustom
-                        onCreate={(v) =>
-                          setDistincts((d) => ({
-                            ...d,
-                            cities: Array.from(new Set([...d.cities, v])),
-                          }))
-                        }
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        State
-                      </label>
-                      <SearchableDropdown
-                        ref={stateRef}
-                        value={form.state || ""}
-                        onChange={(v) => handleChange("state", v)}
-                        onEnter={() => inputRefs[8].current?.focus()}
-                        options={distincts.states.map((s) => ({
-                          value: s,
-                          label: s,
-                        }))}
-                        placeholder="State"
-                        allowCustom
-                        onCreate={(v) =>
-                          setDistincts((d) => ({
-                            ...d,
-                            states: Array.from(new Set([...d.states, v])),
-                          }))
-                        }
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Pincode
-                      </label>
-                      <input
-                        ref={pincodeRef}
-                        value={form.pincode || ""}
-                        onChange={(e) =>
-                          handleChange("pincode", e.target.value)
-                        }
-                        onKeyDown={(e) => handleKeyDown(e, 8)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-averix-red-light focus:border-transparent"
-                        placeholder="PIN code"
-                      />
-                    </div>
-                  </div>
+                  </Field>
                 </div>
               </div>
+            </SectionCard>
 
-              <div>
-                <h4 className="text-lg font-medium text-gray-900 mb-4 border-b border-gray-200 pb-2">
-                  Tax Information
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      GSTIN
-                    </label>
-                    <input
-                      ref={gstinRef}
-                      value={form.gstin || ""}
-                      onChange={(e) => handleChange("gstin", e.target.value)}
-                      onKeyDown={(e) => handleKeyDown(e, 9)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-averix-red-light focus:border-transparent"
-                      placeholder="GST number"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <h4 className="text-lg font-medium text-gray-900 mb-4 border-b border-gray-200 pb-2">
-                  Financial Information
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Opening Balance */}
-                  <div className="space-y-3">
-                    <label className="block text-sm font-medium text-gray-700">
-                      Opening Balance
-                    </label>
-
-                    {/* Side selector buttons */}
-                    <div className="flex flex-col gap-2">
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setOpeningSide("they_owe")}
-                          className={`flex-1 px-3 py-2 rounded-md border text-sm transition-colors ${
-                            openingSide === "they_owe"
-                              ? "bg-averix-red-light text-white border-averix-red-light"
-                              : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
-                          }`}
-                        >
-                          Customer owes us
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setOpeningSide("we_owe")}
-                          className={`flex-1 px-3 py-2 rounded-md border text-sm transition-colors ${
-                            openingSide === "we_owe"
-                              ? "bg-averix-red-light text-white border-averix-red-light"
-                              : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
-                          }`}
-                        >
-                          We owe customer
-                        </button>
-                      </div>
-
-                      {/* Amount input */}
-                      <div className="space-y-2">
-                        <input
-                          ref={openingBalanceRef}
-                          type="number"
-                          min={0}
-                          step="0.01"
-                          value={openingAmount}
-                          onChange={(e) =>
-                            setOpeningAmount(
-                              Math.max(0, Number(e.target.value || 0)),
-                            )
-                          }
-                          onKeyDown={(e) => handleKeyDown(e, 10)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-averix-red-light focus:border-transparent"
-                          placeholder="0.00"
-                        />
-                        <p className="text-xs text-gray-500">
-                          {openingSide === "they_owe"
-                            ? `Will be saved as +₹${(
-                                openingAmount || 0
-                              ).toFixed(2)} (they owe)`
-                            : `Will be saved as -₹${(
-                                openingAmount || 0
-                              ).toFixed(2)} (we owe)`}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <h4 className="text-lg font-medium text-gray-900 mb-4 border-b border-gray-200 pb-2">
-                  Additional Information
-                </h4>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Notes
-                  </label>
-                  <textarea
-                    ref={notesRef}
-                    value={form.notes || ""}
-                    onChange={(e) => handleChange("notes", e.target.value)}
-                    onKeyDown={(e) => handleKeyDown(e, 11)}
-                    rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-averix-red-light focus:border-transparent resize-none"
-                    placeholder="Additional notes about the customer..."
+            {/* Tax + Financial */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <SectionCard
+                icon={User}
+                title="Tax Information"
+                iconColor="text-rose-300"
+              >
+                <Field label="GSTIN">
+                  <input
+                    ref={gstinRef}
+                    value={form.gstin || ""}
+                    onChange={(e) => handleChange("gstin", e.target.value)}
+                    onKeyDown={(e) => handleKeyDown(e, 9)}
+                    className={inputCls}
+                    placeholder="GST number"
                   />
+                </Field>
+              </SectionCard>
+
+              <SectionCard
+                icon={User}
+                title="Opening Balance"
+                iconColor="text-amber-300"
+              >
+                <div className="space-y-3">
+                  {/* Side toggle */}
+                  <div className="flex items-center gap-1 rounded-2xl border border-slate-200 bg-white p-1">
+                    <button
+                      type="button"
+                      onClick={() => setOpeningSide("they_owe")}
+                      className={`flex-1 rounded-xl px-3 py-2 text-xs font-semibold transition-all cursor-pointer ${
+                        openingSide === "they_owe"
+                          ? "bg-[#1e3a5f] text-white shadow-[0_2px_8px_rgba(15,23,42,0.15)]"
+                          : "text-slate-500 hover:text-slate-700"
+                      }`}
+                    >
+                      They owe us
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setOpeningSide("we_owe")}
+                      className={`flex-1 rounded-xl px-3 py-2 text-xs font-semibold transition-all cursor-pointer ${
+                        openingSide === "we_owe"
+                          ? "bg-[#1e3a5f] text-white shadow-[0_2px_8px_rgba(15,23,42,0.15)]"
+                          : "text-slate-500 hover:text-slate-700"
+                      }`}
+                    >
+                      We owe them
+                    </button>
+                  </div>
+                  <input
+                    ref={openingBalanceRef}
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={openingAmount}
+                    onChange={(e) =>
+                      setOpeningAmount(Math.max(0, Number(e.target.value || 0)))
+                    }
+                    onKeyDown={(e) => handleKeyDown(e, 10)}
+                    className={inputCls}
+                    placeholder="0.00"
+                  />
+                  <p className="text-[11px] text-slate-400">
+                    {openingSide === "they_owe"
+                      ? `Saved as +₹${(openingAmount || 0).toFixed(2)}`
+                      : `Saved as −₹${(openingAmount || 0).toFixed(2)}`}
+                  </p>
                 </div>
-              </div>
+              </SectionCard>
             </div>
+
+            {/* Notes */}
+            <SectionCard
+              icon={User}
+              title="Additional Notes"
+              iconColor="text-slate-400"
+            >
+              <Field label="Notes">
+                <textarea
+                  ref={notesRef}
+                  value={form.notes || ""}
+                  onChange={(e) => handleChange("notes", e.target.value)}
+                  onKeyDown={(e) => handleKeyDown(e, 11)}
+                  rows={3}
+                  className={`${inputCls} resize-none`}
+                  placeholder="Additional notes about the customer..."
+                />
+              </Field>
+            </SectionCard>
           </form>
         </div>
 
-        <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3 flex-shrink-0">
+        {/* ── Footer ── */}
+        <div className="shrink-0 border-t border-slate-100 bg-slate-50/60 px-5 py-4 flex gap-3 justify-end">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+            className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition cursor-pointer"
           >
             Cancel
           </button>
@@ -644,25 +677,42 @@ export default function CustomerFormModal({
             <button
               type="button"
               onClick={() => handleSaveClick(true)}
-              className="px-4 py-2 text-sm font-medium text-white bg-averix-red-dark hover:bg-averix-red-darker rounded-md transition-colors"
+              disabled={saving}
+              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#20b7ff] to-[#b026ff] px-6 py-2.5 text-sm font-semibold text-white shadow-[0_4px_20px_rgba(32,183,255,0.22)] hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition cursor-pointer"
             >
-              Update Customer
+              {saving ? (
+                <>
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  Saving…
+                </>
+              ) : (
+                "Update Customer"
+              )}
             </button>
           ) : (
             <>
               <button
                 type="button"
                 onClick={() => handleSaveClick(true)}
-                className="px-4 py-2 text-sm font-medium text-averix-red-dark bg-white border border-averix-red-dark hover:bg-averix-red-light/10 rounded-md transition-colors"
+                disabled={saving}
+                className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 transition cursor-pointer"
               >
                 Save & Close
               </button>
               <button
                 type="button"
                 onClick={() => handleSaveClick(false)}
-                className="px-4 py-2 text-sm font-medium text-white bg-averix-red-dark hover:bg-averix-red-darker rounded-md transition-colors"
+                disabled={saving}
+                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#20b7ff] to-[#b026ff] px-6 py-2.5 text-sm font-semibold text-white shadow-[0_4px_20px_rgba(32,183,255,0.22)] hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition cursor-pointer"
               >
-                Save & Add Another
+                {saving ? (
+                  <>
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                    Saving…
+                  </>
+                ) : (
+                  "Save & Add Another"
+                )}
               </button>
             </>
           )}

@@ -173,6 +173,7 @@ export default function PurchasePage() {
     entryTime: new Date().toISOString(),
     discount: 0,
     purchaseType: "CREDIT",
+    typeId: null,
   });
 
   const [batchPicker, setBatchPicker] = useState<{
@@ -204,6 +205,10 @@ export default function PurchasePage() {
   const [showBarcodePrint, setShowBarcodePrint] = useState(false);
   const [billDetailsOpen, setBillDetailsOpen] = useState(true);
   const [isMobileSheetOpen, setIsMobileSheetOpen] = useState(false);
+
+  const [transactionTypes, setTransactionTypes] = useState<
+    Array<{ id: string; name: string; isDefault: number }>
+  >([]);
 
   const [batchConflicts, setBatchConflicts] = useState<{
     rows: {
@@ -310,6 +315,25 @@ export default function PurchasePage() {
   useEffect(() => {
     loadSuppliers();
   }, [showSupplierModal]);
+
+  useEffect(() => {
+    if (!isClient) return;
+    platform.listTransactionTypes?.(licenseId, "purchase").then((res) => {
+      if (!res?.success) return;
+      const rows = (res.rows ?? []).map((t: any) => ({
+        id: t.id,
+        name: t.name,
+        isDefault: t.isDefault,
+      }));
+      setTransactionTypes(rows);
+      // Auto-select default only for new (non-editing) bills with no typeId set
+      setHeader((prev) => {
+        if (prev.typeId) return prev;
+        const def = rows.find((t) => t.isDefault === 1);
+        return def ? { ...prev, typeId: def.id } : prev;
+      });
+    });
+  }, [licenseId, isClient]);
 
   useEffect(() => {
     if (header.purchaseType === "CREDIT" && !header.supplier) {
@@ -1111,7 +1135,11 @@ export default function PurchasePage() {
       entryTime: new Date().toISOString(),
       discount: 0,
       purchaseType: "CREDIT",
+      typeId: null,
     };
+
+    const defType = transactionTypes.find((t) => t.isDefault === 1);
+    if (defType) freshHeader.typeId = defType.id;
 
     const freshRows = [createEmptyRow(1)];
 
@@ -1269,6 +1297,7 @@ export default function PurchasePage() {
               isEditing={Boolean(editingPurchaseId)}
               isOpen={billDetailsOpen}
               onToggle={() => setBillDetailsOpen((v) => !v)}
+              transactionTypes={transactionTypes}
             />
           </div>
 
@@ -1352,6 +1381,7 @@ export default function PurchasePage() {
               isEditing={Boolean(editingPurchaseId)}
               isOpen={true}
               onToggle={() => {}}
+              transactionTypes={transactionTypes}
             />
           </div>
         </div>

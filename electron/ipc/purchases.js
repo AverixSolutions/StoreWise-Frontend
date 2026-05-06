@@ -343,7 +343,7 @@ function registerPurchaseHandlers() {
       .prepare(
         `
     SELECT id, slNo, billNo, supplierId, supplierName, purchaseDate, entryTime,
-           totalAmount, discount, purchaseType, isSynced, deletedAt, syncedAt
+           totalAmount, discount, purchaseType, isSynced, deletedAt, syncedAt, typeId
     ${base}
     ORDER BY datetime(purchaseDate) DESC, slNo DESC
     LIMIT @limit OFFSET @offset
@@ -374,7 +374,9 @@ function registerPurchaseHandlers() {
 
   // ========= GET PURCHASE FULL  =========
   ipcMain.handle("purchase:getFull", (event, id) => {
-    const p = db.prepare(`SELECT * FROM purchases WHERE id = ?`).get(id);
+    const p = db
+      .prepare(`SELECT *, typeId FROM purchases WHERE id = ?`)
+      .get(id);
     if (!p) return { success: false, error: "Not found" };
     const items = db
       .prepare(
@@ -408,11 +410,11 @@ function registerPurchaseHandlers() {
 
     const insertPurchase = db.prepare(`
     INSERT INTO purchases (
-  id, slNo, userId, licenseId, billNo, purchaseBatchNo, supplierId, supplierName, department,
+  id, slNo, userId, licenseId, typeId, billNo, purchaseBatchNo, supplierId, supplierName, department,
   debitAccount, natureOfEntry, purchaseDate, entryTime,
   totalAmount, discount, createdAt, isSynced, purchaseType
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
   `);
 
     const insertItem = db.prepare(`
@@ -431,6 +433,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
         slNo,
         purchase.userId,
         purchase.licenseId,
+        purchase.typeId || null,
         purchase.billNo || null,
         purchaseBatchNo,
         purchase.supplierId || null,
@@ -485,7 +488,6 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
         // ──── BARCODE / BATCH RESOLUTION WITH GROUP MERGING ────
         let batchBarcode = item.barcode?.trim() || null;
 
-        // First try to merge into an already-created same purchase-group batch
         let existingGroupedBatch = null;
 
         if (!batchBarcode) {
@@ -678,6 +680,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
         `
         UPDATE purchases SET
           billNo = @billNo,
+          typeId = @typeId,
           purchaseBatchNo = @purchaseBatchNo,
           supplierId = @supplierId,
           supplierName = @supplierName,
@@ -696,6 +699,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
       ).run({
         id,
         billNo: header.billNo || null,
+        typeId: header.typeId || null,
         purchaseBatchNo,
         supplierId: header.supplier?.id || null,
         supplierName: header.supplier?.name || null,
@@ -1288,6 +1292,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
     ) => {
       if (!licenseId || !supplierId)
         return { success: false, error: "licenseId & supplierId required" };
+
       const where = [
         "licenseId=@licenseId",
         "supplierId=@supplierId",
@@ -1306,9 +1311,9 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
       }
 
       const base = `
-    FROM supplier_transactions
-    WHERE ${where.join(" AND ")}
-  `;
+      FROM supplier_transactions
+      WHERE ${where.join(" AND ")}
+    `;
 
       const total = db
         .prepare(`SELECT COUNT(*) AS cnt ${base}`)
@@ -1317,24 +1322,29 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
       const rows = db
         .prepare(
           `
-    SELECT id, kind, refId, refNo, date, amount, sign, notes, createdAt
-    ${base}
-    ORDER BY datetime(date) DESC, datetime(createdAt) DESC
-    LIMIT @limit OFFSET @offset
-  `,
+        SELECT id, kind, refId, refNo, date, amount, sign, notes, createdAt,
+               paymentStatus, chequeNo, chequeIssueDate, chequeClearanceDate
+        ${base}
+        ORDER BY datetime(date) DESC, datetime(createdAt) DESC
+        LIMIT @limit OFFSET @offset
+      `,
         )
         .all({ ...params, limit: pageSize, offset: (page - 1) * pageSize });
 
+      // Balance calculation: exclude payments that are not CLEARED
       const sum = db
         .prepare(
           `
-    SELECT COALESCE(SUM(sign*amount),0) AS txSum
-    ${base}
-  `,
+        SELECT COALESCE(SUM(sign*amount),0) AS txSum
+        FROM supplier_transactions
+        WHERE licenseId=@licenseId AND supplierId=@supplierId
+          AND COALESCE(deletedAt,'')=''
+          AND kind IN ('OPENING','PURCHASE','PAYMENT','ADJUSTMENT')
+          AND (kind != 'PAYMENT' OR COALESCE(paymentStatus,'CLEARED') = 'CLEARED')
+      `,
         )
         .get(params).txSum;
 
-      // openingBalance (from suppliers table)
       const openingBalance = 0;
       const balance = Number(sum || 0);
 
@@ -1345,7 +1355,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
         pageSize,
         rows,
         openingBalance: 0,
-        balance: Number(sum || 0),
+        balance,
       };
     },
   );
@@ -1362,6 +1372,9 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
         mode = "CASH",
         notes = null,
         allocations = [],
+        chequeNo = null,
+        chequeIssueDate = null,
+        chequeClearanceDate = null,
       },
     ) => {
       if (!licenseId || !supplierId || !amount || Number(amount) <= 0) {
@@ -1374,6 +1387,8 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
       const now = new Date().toISOString();
       const txId = uuidv4();
       const payAmt = Number(amount);
+      const isCheque = mode === "CHEQUE";
+      const paymentStatus = isCheque ? "PENDING_CHEQUE" : "CLEARED";
 
       let allocSum = 0;
       for (const a of allocations || []) {
@@ -1415,12 +1430,16 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
       }
 
       const trx = db.transaction(() => {
-        // Supplier ledger payment (reduces balance => sign = -1)
+        // Supplier ledger payment entry
         db.prepare(
           `
         INSERT INTO supplier_transactions
-        (id, licenseId, supplierId, kind, refId, refNo, date, amount, sign, notes, createdAt, updatedAt, isSynced)
-        VALUES(?, ?, ?, 'PAYMENT', NULL, NULL, ?, ?, -1, ?, ?, ?, 0)
+        (id, licenseId, supplierId, kind, refId, refNo, date, amount, sign, notes,
+         paymentStatus, chequeNo, chequeIssueDate, chequeClearanceDate,
+         createdAt, updatedAt, isSynced)
+        VALUES(?, ?, ?, 'PAYMENT', NULL, NULL, ?, ?, -1, ?,
+               ?, ?, ?, ?,
+               ?, ?, 0)
       `,
         ).run(
           txId,
@@ -1428,7 +1447,11 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
           supplierId,
           date || now,
           payAmt,
-          notes || "Payment",
+          notes || (isCheque ? "Cheque Payment" : "Payment"),
+          paymentStatus,
+          chequeNo || null,
+          chequeIssueDate || null,
+          chequeClearanceDate || null,
           now,
           now,
         );
@@ -1453,7 +1476,8 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
           );
         }
 
-        if (mode === "CASH" || mode === "BANK") {
+        // Only create cash transaction immediately for CASH/BANK; cheque waits for clearance
+        if (!isCheque && (mode === "CASH" || mode === "BANK")) {
           db.prepare(
             `
           INSERT INTO cash_transactions
@@ -1485,6 +1509,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
           id: txId,
           allocated: allocSum,
           unallocated: payAmt - allocSum,
+          paymentStatus,
         };
       } catch (err) {
         return { success: false, error: String(err?.message || err) };
@@ -1492,6 +1517,58 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
     },
   );
 
+  // ===== CHEQUE: Mark as received / cleared =====
+  ipcMain.handle("supplier-cheque:mark-received", (e, { licenseId, txId }) => {
+    if (!licenseId || !txId)
+      return { success: false, error: "licenseId and txId required" };
+
+    const now = new Date().toISOString();
+
+    const tx = db
+      .prepare(
+        `SELECT * FROM supplier_transactions WHERE id = ? AND licenseId = ? AND kind = 'PAYMENT'`,
+      )
+      .get(txId, licenseId);
+
+    if (!tx) return { success: false, error: "Transaction not found" };
+
+    if (tx.paymentStatus !== "PENDING_CHEQUE")
+      return { success: false, error: "Transaction is not a pending cheque" };
+
+    try {
+      db.transaction(() => {
+        // Mark as cleared — now it counts in balance calc
+        db.prepare(
+          `UPDATE supplier_transactions
+             SET paymentStatus = 'CLEARED', updatedAt = ?, isSynced = 0
+             WHERE id = ?`,
+        ).run(now, txId);
+
+        // Create cash transaction (cheque clears through bank)
+        db.prepare(
+          `INSERT INTO cash_transactions
+             (id, licenseId, kind, refId, refNo, date, amount, sign, notes, createdAt, updatedAt, isSynced)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?, 0)`,
+        ).run(
+          uuidv4(),
+          licenseId,
+          "PAYMENT",
+          txId,
+          tx.chequeNo || null,
+          now,
+          Number(tx.amount),
+          -1,
+          `Cheque Cleared${tx.chequeNo ? " - " + tx.chequeNo : ""}`,
+          now,
+          now,
+        );
+      })();
+
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: String(err?.message || err) };
+    }
+  });
   // ===== SUPPLIER OUTSTANDING BILLS (bill-wise) =====
   ipcMain.handle(
     "supplier:outstanding-bills",
@@ -1635,7 +1712,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
       const rows = db
         .prepare(
           `
-      SELECT
+        SELECT
         st.id,
         st.supplierId,
         COALESCE(s.name,'') AS supplierName,
@@ -1643,7 +1720,10 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
         st.amount,
         st.notes,
         st.createdAt,
+        st.paymentStatus,
+        st.chequeNo,
         CASE
+          WHEN st.chequeNo IS NOT NULL OR st.paymentStatus IS NOT NULL THEN 'CHEQUE'
           WHEN LOWER(COALESCE(ct.notes,'')) LIKE '%bank%' THEN 'BANK'
           WHEN LOWER(COALESCE(ct.notes,'')) LIKE '%cash%' THEN 'CASH'
           ELSE 'CASH'
@@ -1697,6 +1777,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
         SELECT id, slNo, billNo, userId, licenseId,
                supplierId, supplierName, department,
                debitAccount, natureOfEntry, purchaseType,
+               typeId,
                purchaseBatchNo, purchaseDate, entryTime,
                totalAmount, discount,
                createdAt, updatedAt, deletedAt,
@@ -1771,7 +1852,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
 
     const upsert = db.prepare(`
       INSERT INTO purchases (
-        id, slNo, billNo, userId, licenseId,
+        id, slNo, billNo, userId, licenseId, typeId,
         supplierId, supplierName, department,
         debitAccount, natureOfEntry, purchaseType,
         purchaseBatchNo, purchaseDate, entryTime,
@@ -1779,7 +1860,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
         createdAt, updatedAt, deletedAt,
         isSynced, syncedAt
       ) VALUES (
-        @id, @slNo, @billNo, @userId, @licenseId,
+        @id, @slNo, @billNo, @userId, @licenseId, @typeId,
         @supplierId, @supplierName, @department,
         @debitAccount, @natureOfEntry, @purchaseType,
         @purchaseBatchNo, @purchaseDate, @entryTime,
@@ -1790,6 +1871,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
       ON CONFLICT(id) DO UPDATE SET
         slNo            = excluded.slNo,
         billNo          = excluded.billNo,
+        typeId          = excluded.typeId,
         supplierId      = excluded.supplierId,
         supplierName    = excluded.supplierName,
         department      = excluded.department,
@@ -1817,6 +1899,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
           billNo: r.billNo ?? null,
           userId: r.userId ?? null,
           licenseId: r.licenseId,
+          typeId: r.typeId ?? null,
           supplierId: r.supplierId ?? null,
           supplierName: r.supplierName ?? null,
           department: r.department ?? null,

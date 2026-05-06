@@ -27,9 +27,9 @@ async function apiFetch<T = any>(
   return res.json();
 }
 
-function triggerSupplierPull() {
+async function triggerSupplierPull() {
   if (typeof window === "undefined") return;
-  SyncManager.pullNow("supplier").catch(() => {});
+  await SyncManager.pullNow("supplier").catch(() => {});
 }
 
 export async function webCreateSupplier(payload: any) {
@@ -38,7 +38,7 @@ export async function webCreateSupplier(payload: any) {
       method: "POST",
       body: JSON.stringify(payload),
     });
-    if (res.success) triggerSupplierPull();
+    if (res.success) await triggerSupplierPull();
     return res;
   } catch (err: any) {
     return { success: false, error: String(err?.message || err) };
@@ -51,7 +51,7 @@ export async function webUpdateSupplier(id: string, changes: any) {
       method: "PUT",
       body: JSON.stringify(changes),
     });
-    if (res.success) triggerSupplierPull();
+    if (res.success) await triggerSupplierPull();
     return res;
   } catch (err: any) {
     return { success: false, error: String(err?.message || err) };
@@ -61,7 +61,7 @@ export async function webUpdateSupplier(id: string, changes: any) {
 export async function webDeleteSupplier(id: string) {
   try {
     const res = await apiFetch(`/api/suppliers/${id}`, { method: "DELETE" });
-    if (res.success) triggerSupplierPull();
+    if (res.success) await triggerSupplierPull();
     return res;
   } catch (err: any) {
     return { success: false, error: String(err?.message || err) };

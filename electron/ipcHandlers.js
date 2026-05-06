@@ -19,12 +19,18 @@ const { registerDashboardHandlers } = require("./ipc/dashboard");
 const { registerCategoryHandlers } = require("./ipc/categories");
 const { registerBrandHandlers } = require("./ipc/brands");
 const { registerUnitHandlers } = require("./ipc/units");
+const { registerTransactionTypeHandlers } = require("./ipc/transactionTypes");
+const {
+  registerSupplierLedgerSyncHandlers,
+} = require("./ipc/supplierLedgerSync");
+const { registerCustomerLedgerHandlers } = require("./ipc/customerLedger");
 
 function registerAllHandlers() {
   registerProductHandlers();
   registerCategoryHandlers();
   registerBrandHandlers();
   registerUnitHandlers();
+  registerTransactionTypeHandlers();
   registerProductSyncHandlers();
   registerMaintenanceHandlers();
   registerBarcodeHandlers();
@@ -41,6 +47,8 @@ function registerAllHandlers() {
   registerShopSettingsHandlers();
   registerLabelPrintingHandlers();
   registerDashboardHandlers();
+  registerSupplierLedgerSyncHandlers();
+  registerCustomerLedgerHandlers();
 }
 
 module.exports = { registerAllHandlers };

@@ -2,9 +2,17 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { Plus, Search, Calendar as CalendarIcon } from "lucide-react";
+import {
+  Plus,
+  Search,
+  Calendar as CalendarIcon,
+  Wallet,
+  TrendingUp,
+  CreditCard,
+} from "lucide-react";
 import SupplierLedgerModal from "@/components/ledger/SupplierLedgerModal";
 import SearchableDropdown from "@/components/ui/SearchableDropdown";
+import { platform } from "@/platform";
 
 type SupplierOpt = { id: string; name: string };
 type PaymentRow = {
@@ -13,11 +21,12 @@ type PaymentRow = {
   supplierName: string;
   date: string;
   amount: number;
-  mode: "CASH" | "BANK" | string;
+  mode: "CASH" | "BANK" | "CHEQUE";
   notes: string | null;
   allocated: number;
   unallocated: number;
   bills?: { purchaseId: string; billRef: string }[];
+  paymentStatus?: string; // for cheque
 };
 
 export default function PaymentPage() {
@@ -41,8 +50,6 @@ export default function PaymentPage() {
   );
 
   const [loading, setLoading] = useState(true);
-
-  // modal
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -51,12 +58,10 @@ export default function PaymentPage() {
     setLicenseId(savedLicenseId);
   }, []);
 
-  // load suppliers (for dropdown)
   useEffect(() => {
     if (!isClient) return;
-
     (async () => {
-      const res = await (window as any).electronAPI.listSuppliers(licenseId, {
+      const res = await platform.listSuppliers?.(licenseId, {
         page: 1,
         pageSize: 1000,
       });
@@ -70,10 +75,9 @@ export default function PaymentPage() {
 
   async function loadPayments() {
     if (!isClient) return;
-
     setLoading(true);
     try {
-      const res = await (window as any).electronAPI.listPayments({
+      const res = await platform.listPayments?.({
         licenseId,
         supplierId: selected?.id ?? null,
         q,
@@ -97,194 +101,266 @@ export default function PaymentPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isClient, licenseId, selected?.id, q, dateFrom, dateTo, page]);
 
-  if (!isClient) {
-    return null;
-  }
+  if (!isClient) return null;
+
+  const totalAmount = rows.reduce((sum, r) => sum + Number(r.amount || 0), 0);
+  const billWiseCount = rows.filter(
+    (r) => (r.bills?.length || 0) > 0 || Number(r.allocated || 0) > 0,
+  ).length;
+
+  // Helper to get mode badge classes
+  const getModeClasses = (mode: string) => {
+    if (mode === "CASH")
+      return "bg-emerald-50 text-emerald-600 ring-1 ring-emerald-200";
+    if (mode === "CHEQUE")
+      return "bg-amber-50 text-amber-600 ring-1 ring-amber-200";
+    return "bg-cyan-50 text-cyan-600 ring-1 ring-cyan-200";
+  };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">Payments</h2>
-          <p className="text-gray-600">
-            Record supplier payments and review history
-          </p>
+    <div className="space-y-5">
+      {/* Hero banner – unchanged */}
+      <section className="relative overflow-hidden rounded-[24px] border border-white/10 bg-[linear-gradient(135deg,#0a1324_0%,#101a31_58%,#16213d_100%)] px-5 py-5 text-white shadow-[0_8px_24px_rgba(7,12,24,0.14)] md:px-6">
+        <div className="pointer-events-none absolute -left-10 top-0 h-32 w-32 rounded-full bg-cyan-400/10 blur-3xl" />
+        <div className="pointer-events-none absolute right-0 bottom-0 h-32 w-32 rounded-full bg-fuchsia-500/10 blur-3xl" />
+        <div className="relative flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <div className="kyn-brand-pill mb-3 inline-flex items-center rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/80">
+              KYNFLOW • PAYMENTS
+            </div>
+            <h1 className="text-2xl font-semibold tracking-[-0.04em] text-white md:text-[28px]">
+              Supplier <span className="kyn-brand-text">Payments</span>
+            </h1>
+            <p className="mt-1 text-sm text-slate-300">
+              Record payments and review supplier history
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <div className="kyn-brand-chip flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium text-white/80">
+              <Wallet className="h-3.5 w-3.5 text-cyan-400" />
+              <span>{rows.length} records</span>
+            </div>
+            <div className="kyn-brand-chip flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium text-white/80">
+              <TrendingUp className="h-3.5 w-3.5 text-fuchsia-400" />
+              <span>
+                ₹
+                {totalAmount.toLocaleString("en-IN", {
+                  maximumFractionDigits: 2,
+                })}
+              </span>
+            </div>
+            <div className="kyn-brand-chip flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium text-white/80">
+              <CreditCard className="h-3.5 w-3.5 text-emerald-400" />
+              <span>{billWiseCount} bill-wise</span>
+            </div>
+          </div>
         </div>
-        <button
-          onClick={() => setOpen(true)}
-          disabled={!selected}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-averix-red-dark text-white rounded-lg hover:bg-averix-red-accent transition-colors disabled:opacity-50 font-medium"
-          title={!selected ? "Select a supplier first" : undefined}
-        >
-          <Plus className="w-4 h-4" />
-          Record Payment
-        </button>
-      </div>
+      </section>
 
       {/* Filters */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-white p-4 rounded-xl border border-gray-100 shadow-lg">
-        <div className="md:col-span-1">
-          <SearchableDropdown
-            value={selected?.id || ""}
-            onChange={(id) => {
-              const s = suppliers.find((x) => x.id === id) || null;
-              setSelected(s);
-              setPage(1);
-            }}
-            options={suppliers.map((s) => ({ value: s.id, label: s.name }))}
-            placeholder="Select supplier"
-          />
+      <div className="rounded-[20px] border border-slate-200 bg-white p-4 shadow-[0_2px_12px_rgba(15,23,42,0.06)]">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+          <div className="md:col-span-1">
+            <SearchableDropdown
+              value={selected?.id || ""}
+              onChange={(id) => {
+                const s = suppliers.find((x) => x.id === id) || null;
+                setSelected(s);
+                setPage(1);
+              }}
+              options={suppliers.map((s) => ({ value: s.id, label: s.name }))}
+              placeholder="Select supplier"
+            />
+          </div>
+          <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 transition-all focus-within:border-cyan-400 focus-within:ring-2 focus-within:ring-cyan-400/20">
+            <CalendarIcon className="h-4 w-4 shrink-0 text-slate-400" />
+            <input
+              type="date"
+              value={dateFrom ?? ""}
+              onChange={(e) => {
+                setDateFrom(e.target.value || null);
+                setPage(1);
+              }}
+              className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
+              placeholder="From"
+            />
+          </div>
+          <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 transition-all focus-within:border-cyan-400 focus-within:ring-2 focus-within:ring-cyan-400/20">
+            <CalendarIcon className="h-4 w-4 shrink-0 text-slate-400" />
+            <input
+              type="date"
+              value={dateTo ?? ""}
+              onChange={(e) => {
+                setDateTo(e.target.value || null);
+                setPage(1);
+              }}
+              className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
+              placeholder="To"
+            />
+          </div>
+          <div className="relative flex items-center">
+            <Search className="absolute left-3 h-4 w-4 text-slate-400" />
+            <input
+              value={q}
+              onChange={(e) => {
+                setQ(e.target.value);
+                setPage(1);
+              }}
+              placeholder="Search notes / supplier…"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm text-slate-700 outline-none placeholder:text-slate-400 transition-all focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20"
+            />
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <CalendarIcon className="w-4 h-4 text-gray-400" />
-          <input
-            type="date"
-            value={dateFrom ?? ""}
-            onChange={(e) => {
-              setDateFrom(e.target.value || null);
-              setPage(1);
-            }}
-            className="w-full px-3 py-2 border border-gray-200 rounded-md focus:ring-2 focus:ring-averix-red-light focus:border-transparent transition-all"
-            placeholder="From"
-          />
-        </div>
-        <div className="flex items-center gap-2">
-          <CalendarIcon className="w-4 h-4 text-gray-400" />
-          <input
-            type="date"
-            value={dateTo ?? ""}
-            onChange={(e) => {
-              setDateTo(e.target.value || null);
-              setPage(1);
-            }}
-            className="w-full px-3 py-2 border border-gray-200 rounded-md focus:ring-2 focus:ring-averix-red-light focus:border-transparent transition-all"
-            placeholder="To"
-          />
-        </div>
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-          <input
-            value={q}
-            onChange={(e) => {
-              setQ(e.target.value);
-              setPage(1);
-            }}
-            placeholder="Search notes/supplier…"
-            className="w-full pl-10 pr-3 py-2 border border-gray-200 rounded-md focus:ring-2 focus:ring-averix-red-light focus:border-transparent transition-all"
-          />
+        <div className="mt-3 flex justify-end">
+          <button
+            onClick={() => setOpen(true)}
+            disabled={!selected}
+            title={!selected ? "Select a supplier first" : undefined}
+            className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#20b7ff] to-[#b026ff] px-4 py-2 text-sm font-semibold text-white shadow-[0_4px_14px_rgba(32,183,255,0.25)] transition-all hover:brightness-110 hover:shadow-[0_6px_20px_rgba(32,183,255,0.35)] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Plus className="h-4 w-4" />
+            Record Payment
+          </button>
         </div>
       </div>
 
-      {/* Table */}
-      <div className="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
+      {/* Table with cheque badge */}
+      <div className="overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-[0_2px_12px_rgba(15,23,42,0.06)]">
         <div className="overflow-x-auto">
           {loading ? (
-            <div className="p-8 text-center text-gray-500">
-              Loading payments…
+            <div className="flex flex-col items-center justify-center gap-3 py-16 text-slate-400">
+              <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-200 border-t-cyan-500" />
+              <span className="text-sm">Loading payments…</span>
             </div>
           ) : rows.length === 0 ? (
-            <div className="p-8 text-center text-gray-500">
-              {selected
-                ? "No payments for this supplier."
-                : "No payments recorded yet."}
+            <div className="flex flex-col items-center justify-center gap-2 py-16 text-slate-400">
+              <Wallet className="h-10 w-10 opacity-30" />
+              <p className="text-sm">
+                {selected
+                  ? "No payments for this supplier."
+                  : "No payments recorded yet."}
+              </p>
             </div>
           ) : (
             <table className="w-full">
               <thead>
-                <tr className="bg-gradient-to-r from-averix-red-dark to-averix-red-accent">
+                <tr className="bg-[linear-gradient(90deg,#0a1324_0%,#16213d_100%)]">
                   {[
-                    { key: "date", label: "Date", width: "w-40" },
-                    { key: "supplier", label: "Supplier", width: "w-48" },
-                    { key: "mode", label: "Mode", width: "w-24" },
-                    { key: "amount", label: "Amount", width: "w-32" },
-                    { key: "type", label: "Type", width: "w-40" },
-                    { key: "notes", label: "Notes", width: "w-48" },
+                    { key: "date", label: "Date" },
+                    { key: "supplier", label: "Supplier" },
+                    { key: "mode", label: "Mode" },
+                    { key: "amount", label: "Amount" },
+                    { key: "type", label: "Type" },
+                    { key: "notes", label: "Notes" },
                   ].map((col) => (
                     <th
                       key={col.key}
-                      className={`${col.width} px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wide`}
+                      className="px-5 py-3.5 text-left text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400"
                     >
                       {col.label}
                     </th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
-                {rows.map((r, idx) => {
-                  return (
-                    <tr
-                      key={r.id}
-                      className={`transition-all duration-200 hover:bg-blue-50/30 ${
-                        idx % 2 === 0 ? "bg-white" : "bg-gray-50/30"
-                      }`}
-                    >
-                      <td className="px-6 py-4">
-                        <div className="text-sm text-gray-900 font-medium">
-                          {new Date(r.date).toLocaleDateString()}
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          {new Date(r.date).toLocaleTimeString()}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="font-medium text-gray-900 text-sm">
-                          {r.supplierName || r.supplierId}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="inline-flex items-center px-2 py-1 rounded-md bg-blue-100 text-blue-800 text-xs font-medium">
+              <tbody className="divide-y divide-slate-100">
+                {rows.map((r, idx) => (
+                  <tr
+                    key={r.id}
+                    className={`transition-colors duration-150 hover:bg-cyan-50/30 ${
+                      idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"
+                    }`}
+                  >
+                    <td className="px-5 py-3.5">
+                      <div className="text-sm font-medium text-slate-800">
+                        {new Date(r.date).toLocaleDateString()}
+                      </div>
+                      <div className="text-[11px] text-slate-400">
+                        {new Date(r.date).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </div>
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <span className="text-sm font-semibold text-slate-800">
+                        {r.supplierName || r.supplierId}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <div className="flex flex-wrap items-center gap-1">
+                        <span
+                          className={`inline-flex items-center rounded-lg px-2.5 py-1 text-[11px] font-semibold ${getModeClasses(r.mode)}`}
+                        >
                           {r.mode}
                         </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="text-gray-900 font-medium text-sm">
-                          ₹{Number(r.amount || 0).toFixed(2)}
-                        </span>
-                      </td>
-
-                      <td className="px-6 py-4">
-                        {(r.bills?.length || 0) > 0 ||
-                        Number(r.allocated || 0) > 0 ? (
-                          <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium border bg-green-50 text-green-700 border-green-200">
-                            Bill-wise
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium border bg-blue-50 text-blue-700 border-blue-200">
-                            Whole payment
+                        {r.mode === "CHEQUE" && (
+                          <span
+                            className={`inline-flex items-center rounded-lg px-2 py-0.5 text-[10px] font-semibold ${
+                              r.paymentStatus === "PENDING_CHEQUE"
+                                ? "bg-amber-50 text-amber-600 ring-1 ring-amber-200"
+                                : "bg-emerald-50 text-emerald-600 ring-1 ring-emerald-200"
+                            }`}
+                          >
+                            {r.paymentStatus === "PENDING_CHEQUE"
+                              ? "⏳ Pending"
+                              : "✓ Cleared"}
                           </span>
                         )}
-                      </td>
-
-                      <td className="px-6 py-4">
-                        <span className="text-gray-600 text-sm">
-                          {r.notes || "—"}
+                      </div>
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <span className="text-sm font-semibold text-slate-900">
+                        ₹
+                        {Number(r.amount || 0).toLocaleString("en-IN", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3.5">
+                      {(r.bills?.length || 0) > 0 ||
+                      Number(r.allocated || 0) > 0 ? (
+                        <span className="inline-flex items-center rounded-lg bg-violet-50 px-2.5 py-1 text-[11px] font-semibold text-violet-600 ring-1 ring-violet-200">
+                          Bill-wise
                         </span>
-                      </td>
-                    </tr>
-                  );
-                })}
+                      ) : (
+                        <span className="inline-flex items-center rounded-lg bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-600 ring-1 ring-sky-200">
+                          Whole payment
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <span className="text-sm text-slate-400">
+                        {r.notes || "—"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           )}
         </div>
-
-        <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between bg-gray-50/50">
-          <div className="text-sm text-gray-600 font-medium">
-            Page {page} of {pages}
-          </div>
+        {/* Pagination */}
+        <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50/60 px-5 py-3">
+          <span className="text-xs text-slate-500">
+            Page <span className="font-semibold text-slate-700">{page}</span> of{" "}
+            <span className="font-semibold text-slate-700">{pages}</span>
+            {total > 0 && (
+              <span className="ml-2 text-slate-400">({total} total)</span>
+            )}
+          </span>
           <div className="flex gap-2">
             <button
-              className="px-4 py-2 border border-gray-200 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               disabled={page <= 1}
               onClick={() => setPage((p) => Math.max(1, p - 1))}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Prev
             </button>
             <button
-              className="px-4 py-2 border border-gray-200 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               disabled={page >= pages}
               onClick={() => setPage((p) => Math.min(pages, p + 1))}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Next
             </button>

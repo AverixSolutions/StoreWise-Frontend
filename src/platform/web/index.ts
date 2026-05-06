@@ -1,4 +1,3 @@
-// src/platform/web/index.ts
 import type {
   PlatformAPI,
   Pagination,
@@ -78,6 +77,14 @@ import {
   webSeedIndiaGST,
   webListDefaultableAccounts,
 } from "./tax";
+import {
+  webListTransactionTypes,
+  webListAllTransactionTypes,
+  webSaveTransactionType,
+  webDeleteTransactionType,
+  webSetDefaultTransactionType,
+  webGetDefaultTransactionType,
+} from "./transactionTypes";
 // ── purchase imports ──────────────────────────────────────────────────────────
 import {
   webListPurchases,
@@ -95,6 +102,16 @@ import {
   webBulkUpdateProductPrices,
 } from "./purchases";
 
+import { webDeleteSupplier } from "./suppliers";
+
+import {
+  webGetSupplierLedger,
+  webGetSupplierOutstandingBills,
+  webCreateSupplierPayment,
+  webListPayments,
+  webMarkChequeReceived,
+} from "./supplierLedger";
+
 import {
   webListSales,
   webGetSaleFull,
@@ -106,8 +123,39 @@ import {
   webListSaleHolds,
   webGetSaleHold,
   webDeleteSaleHold,
-  webListCustomers,
 } from "./sales";
+
+import {
+  webGetCustomerLedger,
+  webGetCustomerOutstandingSales,
+  webCreateCustomerReceipt,
+  webListReceipts,
+  webMarkCustomerChequeReceived,
+} from "./customerLedger";
+
+import {
+  webListCustomers as webListCustomersFromModule,
+  webGetCustomer,
+  webSaveCustomer,
+  webDeleteCustomer,
+  webPeekNextCustomerCode,
+  webGetCustomerCount,
+  webGetCustomerDistincts,
+} from "./customers";
+
+// ── sale return imports ───────────────────────────────────────────────────────
+import {
+  webCreateSaleReturn,
+  webUpdateSaleReturn,
+  webDeleteSaleReturn,
+  webListSaleReturns,
+  webGetSaleReturnFull,
+  webPeekNextSaleReturnSlNo,
+  webSaveSaleReturnHold,
+  webListSaleReturnHolds,
+  webGetSaleReturnHold,
+  webDeleteSaleReturnHold,
+} from "./saleReturns";
 
 let onlineHookRegistered = false;
 function ensureOnlineSyncHook() {
@@ -233,6 +281,16 @@ export const webPlatform: PlatformAPI = {
     return syncShopSettingsForLicense(licenseId);
   },
 
+  listTransactionTypes: (licenseId, category) =>
+    webListTransactionTypes(licenseId, category),
+  listAllTransactionTypes: (licenseId) => webListAllTransactionTypes(licenseId),
+  saveTransactionType: (payload) => webSaveTransactionType(payload),
+  deleteTransactionType: (id, licenseId) => webDeleteTransactionType(id),
+  setDefaultTransactionType: (id, licenseId, category) =>
+    webSetDefaultTransactionType(id, licenseId, category),
+  getDefaultTransactionType: (licenseId, category) =>
+    webGetDefaultTransactionType(licenseId, category),
+
   // ── Purchases ─────────────────────────────────────────────────────────────
   createPurchase: (
     purchase: PurchaseCreatePayload,
@@ -281,6 +339,29 @@ export const webPlatform: PlatformAPI = {
     filters?: SupplierListFilters,
   ): Promise<SupplierListResult> => webListSuppliers(licenseId, filters),
 
+  deleteSupplier: (id: string): Promise<MutationResult> =>
+    webDeleteSupplier(id),
+
+  getSupplierLedger: webGetSupplierLedger,
+  getSupplierOutstandingBills: webGetSupplierOutstandingBills,
+  createSupplierPayment: webCreateSupplierPayment,
+  listPayments: webListPayments,
+  markChequeReceived: webMarkChequeReceived,
+
+  getCustomerLedger: webGetCustomerLedger,
+  getCustomerOutstandingSales: webGetCustomerOutstandingSales,
+  createCustomerReceipt: webCreateCustomerReceipt,
+  listReceipts: webListReceipts,
+  markCustomerChequeReceived: webMarkCustomerChequeReceived,
+
+  listCustomers: webListCustomersFromModule,
+  getCustomer: webGetCustomer,
+  saveCustomer: webSaveCustomer,
+  deleteCustomer: webDeleteCustomer,
+  peekNextCustomerCode: webPeekNextCustomerCode,
+  getCustomerCount: webGetCustomerCount,
+  getCustomerDistincts: webGetCustomerDistincts,
+
   bulkUpdateProductPrices: (
     updates: BulkPriceUpdate[],
   ): Promise<MutationResult> => webBulkUpdateProductPrices(updates),
@@ -297,5 +378,17 @@ export const webPlatform: PlatformAPI = {
     webListSaleHolds(licenseId, pagination),
   getSaleHold: (id) => webGetSaleHold(id),
   deleteSaleHold: (id) => webDeleteSaleHold(id),
-  listCustomers: (licenseId, filters) => webListCustomers(licenseId, filters),
+
+  // ── Sale Returns ──────────────────────────────────────────────────────────
+  createSaleReturn: (payload) => webCreateSaleReturn(payload),
+  updateSaleReturn: (payload) => webUpdateSaleReturn(payload),
+  deleteSaleReturn: (id) => webDeleteSaleReturn(id),
+  listSaleReturns: (licenseId, filters) => webListSaleReturns(licenseId, filters),
+  getSaleReturnFull: (id) => webGetSaleReturnFull(id),
+  peekNextSaleReturnSlNo: (licenseId) => webPeekNextSaleReturnSlNo(licenseId),
+  saveSaleReturnHold: (payload) => webSaveSaleReturnHold(payload),
+  listSaleReturnHolds: (licenseId, pagination) =>
+    webListSaleReturnHolds(licenseId, pagination),
+  getSaleReturnHold: (id) => webGetSaleReturnHold(id),
+  deleteSaleReturnHold: (id) => webDeleteSaleReturnHold(id),
 };

@@ -14,17 +14,19 @@ import {
   ArrowRight,
   ChevronLeft,
   Ruler,
+  FileText,
 } from "lucide-react";
 import { platform } from "@/platform";
 import { getActiveLicenseId } from "@/lib/session/runtimeSession";
 import SuppliersTable from "@/components/suppliers/SuppliersTable";
 import CustomersTable from "@/components/customers/CustomersTable";
 import AccountMaster from "@/components/accounts/AccountMaster";
-import TaxSettings from "@/components/tax/TaxSettings";
+import TaxSettings from "@/components/master/TaxSettings";
 import ShopSettingsPanel from "@/components/master/ShopSettingsPanel";
 import LabelPrintSettings from "@/components/master/LabelPrintSettings";
 import BrandsCategoriesManager from "@/components/master/BrandsCategoriesManager";
 import UnitsManager from "@/components/master/UnitsManager";
+import TransactionTypesManager from "@/components/master/TransactionTypesManager";
 
 type MasterSection =
   | "dashboard"
@@ -35,7 +37,8 @@ type MasterSection =
   | "accounts"
   | "tax"
   | "labelPrint"
-  | "units";
+  | "units"
+  | "transactionTypes";
 
 type SectionDef = {
   id: MasterSection;
@@ -118,6 +121,19 @@ const masterSections: SectionDef[] = [
     countText: "text-teal-700",
   },
   {
+    id: "transactionTypes",
+    title: "Transaction Types",
+    shortName: "Types",
+    description: "Define B2B, B2C, etc.",
+    icon: FileText,
+    iconBg: "bg-violet-100",
+    iconText: "text-violet-600",
+    border: "border-violet-200",
+    hoverBg: "hover:bg-violet-50/60",
+    countBg: "bg-violet-100",
+    countText: "text-violet-700",
+  },
+  {
     id: "accounts",
     title: "Account Master",
     shortName: "Accounts",
@@ -164,6 +180,8 @@ const webSafeSections: MasterSection[] = [
   "units",
   "tax",
   "suppliers",
+  "customers",
+  "transactionTypes",
 ];
 
 const sectionTitles: Record<MasterSection, string> = {
@@ -176,6 +194,7 @@ const sectionTitles: Record<MasterSection, string> = {
   tax: "Tax Settings",
   labelPrint: "Label Print Settings",
   units: "Units of Measure",
+  transactionTypes: "Transaction Types",
 };
 
 function MasterTile({
@@ -350,9 +369,9 @@ export default function MasterPage() {
   const renderSectionContent = () => {
     switch (currentSection) {
       case "suppliers":
-        return <SuppliersTable />;
+        return <SuppliersTable onBack={() => setCurrentSection("dashboard")} />;
       case "customers":
-        return <CustomersTable />;
+        return <CustomersTable onBack={() => setCurrentSection("dashboard")} />;
       case "accounts":
         return <AccountMaster />;
       case "tax":
@@ -371,6 +390,12 @@ export default function MasterPage() {
         );
       case "units":
         return <UnitsManager />;
+      case "transactionTypes":
+        return (
+          <TransactionTypesManager
+            onBack={() => setCurrentSection("dashboard")}
+          />
+        );
       default:
         return renderDashboard();
     }
@@ -381,7 +406,10 @@ export default function MasterPage() {
       {currentSection !== "dashboard" &&
         currentSection !== "brandCategory" &&
         currentSection !== "shopSettings" &&
-        currentSection !== "tax" && (
+        currentSection !== "tax" &&
+        currentSection !== "transactionTypes" &&
+        currentSection !== "customers" &&
+        currentSection !== "suppliers" && (
           <div className="mb-4">
             <button
               type="button"

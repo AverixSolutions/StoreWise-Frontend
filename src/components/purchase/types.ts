@@ -64,6 +64,7 @@ export interface HeaderForm {
   entryTime: string;
   discount: number;
   purchaseType: PurchaseType;
+  typeId?: string | null;
 }
 
 export interface BatchInfo {

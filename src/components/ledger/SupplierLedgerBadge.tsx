@@ -1,6 +1,7 @@
 // src/components/ledger/SupplierLedgerBadge.tsx
 "use client";
 import { useEffect, useState } from "react";
+import { ReceiptIndianRupee } from "lucide-react";
 
 export default function LedgerBadge({
   licenseId,
@@ -29,22 +30,26 @@ export default function LedgerBadge({
     })();
   }, [licenseId, supplierId]);
 
+  const isLoading = balance === null;
+  const isPositive = !isLoading && balance! > 0;
+
   return (
     <button
       onClick={onClick}
-      className="inline-flex items-center gap-2 px-2 py-1 rounded-md bg-gray-100 hover:bg-gray-200 text-xs"
       title="Open ledger"
+      className="inline-flex items-center gap-1.5 rounded-xl border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/20 cursor-pointer"
     >
+      <ReceiptIndianRupee className="h-3.5 w-3.5 shrink-0" />
       <span
-        className={`font-medium ${
-          balance! > 0 ? "text-red-600" : "text-green-600"
-        }`}
+        className={
+          isLoading
+            ? "text-white/50"
+            : isPositive
+              ? "text-rose-300"
+              : "text-emerald-300"
+        }
       >
-        {balance === null
-          ? "…"
-          : balance > 0
-          ? `₹${balance.toFixed(2)}`
-          : `₹${Math.abs(balance).toFixed(2)}`}
+        {isLoading ? "…" : `₹${Math.abs(balance!).toFixed(2)}`}
       </span>
     </button>
   );

@@ -307,6 +307,122 @@ function registerCustomerHandlers() {
 
     return { names, categories, cities, states };
   });
+
+  // ── Sync: dirty fetch ────────────────────────────────────────────────────
+  ipcMain.handle("customer:get-dirty", (evt, licenseId, limit = 200) => {
+    const rows = db
+      .prepare(
+        `
+      SELECT id, licenseId, code, codeNumber, name, phone, email, gstin,
+             category, addressLine1, addressLine2, city, state, pincode,
+             openingBalance, notes, createdAt, updatedAt, deletedAt, isSynced
+      FROM customers
+      WHERE licenseId = ?
+        AND (isSynced = 0 OR isSynced IS NULL)
+      ORDER BY updatedAt ASC
+      LIMIT ?
+    `,
+      )
+      .all(licenseId, limit);
+    return { success: true, records: rows };
+  });
+
+  // ── Sync: mark synced ────────────────────────────────────────────────────
+  ipcMain.handle("customer:mark-synced", (evt, ids, serverSyncedAt) => {
+    if (!Array.isArray(ids) || ids.length === 0) return { success: true };
+    const ts = serverSyncedAt || new Date().toISOString();
+    db.transaction((ids) => {
+      const stmt = db.prepare(
+        `UPDATE customers SET isSynced = 1, syncedAt = ? WHERE id = ?`,
+      );
+      ids.forEach((id) => stmt.run(ts, id));
+    })(ids);
+    return { success: true, syncedAt: ts };
+  });
+
+  // ── Sync: bulk upsert from server ────────────────────────────────────────
+  ipcMain.handle("customer:bulk-upsert", (evt, records) => {
+    if (!Array.isArray(records) || records.length === 0)
+      return { success: true, upserted: 0 };
+
+    const now = new Date().toISOString();
+    const upsert = db.prepare(`
+      INSERT INTO customers (
+        id, licenseId, code, codeNumber, name, phone, email, gstin,
+        category, addressLine1, addressLine2, city, state, pincode,
+        openingBalance, notes, createdAt, updatedAt, deletedAt, isSynced, syncedAt
+      ) VALUES (
+        @id, @licenseId, @code, @codeNumber, @name, @phone, @email, @gstin,
+        @category, @addressLine1, @addressLine2, @city, @state, @pincode,
+        @openingBalance, @notes, @createdAt, @updatedAt, @deletedAt, 1, @syncedAt
+      )
+      ON CONFLICT(id) DO UPDATE SET
+        code          = excluded.code,
+        codeNumber    = excluded.codeNumber,
+        name          = excluded.name,
+        phone         = excluded.phone,
+        email         = excluded.email,
+        gstin         = excluded.gstin,
+        category      = excluded.category,
+        addressLine1  = excluded.addressLine1,
+        addressLine2  = excluded.addressLine2,
+        city          = excluded.city,
+        state         = excluded.state,
+        pincode       = excluded.pincode,
+        openingBalance= excluded.openingBalance,
+        notes         = excluded.notes,
+        updatedAt     = excluded.updatedAt,
+        deletedAt     = excluded.deletedAt,
+        isSynced      = 1,
+        syncedAt      = excluded.syncedAt
+      WHERE excluded.updatedAt > customers.updatedAt
+         OR customers.updatedAt IS NULL
+    `);
+
+    db.transaction((records) => {
+      for (const r of records) {
+        upsert.run({
+          id: r.id,
+          licenseId: r.licenseId,
+          code: r.code ?? null,
+          codeNumber: r.codeNumber ?? null,
+          name: r.name,
+          phone: r.phone ?? null,
+          email: r.email ?? null,
+          gstin: r.gstin ?? null,
+          category: r.category ?? null,
+          addressLine1: r.addressLine1 ?? null,
+          addressLine2: r.addressLine2 ?? null,
+          city: r.city ?? null,
+          state: r.state ?? null,
+          pincode: r.pincode ?? null,
+          openingBalance: Number(r.openingBalance ?? 0),
+          notes: r.notes ?? null,
+          createdAt: r.createdAt ?? now,
+          updatedAt: r.updatedAt ?? now,
+          deletedAt: r.deletedAt ?? null,
+          syncedAt: r.syncedAt ?? now,
+        });
+      }
+    })(records);
+
+    // Keep sequence in sync
+    const maxRow = db
+      .prepare(
+        `SELECT MAX(codeNumber) AS maxNo FROM customers WHERE licenseId = ?`,
+      )
+      .get(records[0]?.licenseId);
+    if (maxRow?.maxNo) {
+      db.prepare(
+        `INSERT INTO customer_sequence (licenseId, lastCodeNumber)
+         VALUES (?, ?)
+         ON CONFLICT(licenseId) DO UPDATE SET
+           lastCodeNumber = MAX(excluded.lastCodeNumber, customer_sequence.lastCodeNumber)`,
+      ).run(records[0].licenseId, maxRow.maxNo);
+    }
+
+    return { success: true, upserted: records.length };
+  });
 }
 
 module.exports = { registerCustomerHandlers };

@@ -1,4 +1,4 @@
-//src/components/purchase-return/PurchaseReturnReportsModal.tsx
+// src/components/purchase-return/PurchaseReturnReportsModal.tsx
 "use client";
 import { useEffect, useState } from "react";
 import {
@@ -8,7 +8,9 @@ import {
   RotateCcw,
   Trash2,
   ExternalLink,
+  RotateCcwSquare,
 } from "lucide-react";
+import { platform } from "@/platform";
 
 type Row = {
   id: string;
@@ -45,10 +47,8 @@ export default function PurchaseReturnReportsModal({
   const [supplierId, setSupplierId] = useState<string | "">("");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
-
   const [page, setPage] = useState(1);
   const [pageSize] = useState(50);
-
   const [rows, setRows] = useState<Row[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -65,11 +65,8 @@ export default function PurchaseReturnReportsModal({
         pageSize,
       };
 
-      const res = await (window as any).electronAPI.listPurchaseReturns(
-        licenseId,
-        filters
-      );
-      const mapped: Row[] = (res.rows || res.returns || []).map((r: any) => ({
+      const res = await platform.listPurchaseReturns?.(licenseId, filters);
+      const mapped: Row[] = (res?.returns || []).map((r: any) => ({
         id: r.id,
         slNo: r.slNo ?? null,
         billNo: r.billNo,
@@ -83,7 +80,7 @@ export default function PurchaseReturnReportsModal({
         isDeleted: !!r.deletedAt,
       }));
       setRows(mapped);
-      setTotal(res.total || 0);
+      setTotal(res?.total || 0);
     } finally {
       setLoading(false);
     }
@@ -101,7 +98,7 @@ export default function PurchaseReturnReportsModal({
   async function handleDelete(id: string) {
     const ok = confirm("Soft delete this purchase return?");
     if (!ok) return;
-    await (window as any).electronAPI.deletePurchaseReturn(id);
+    await platform.deletePurchaseReturn?.(id);
     refresh();
   }
 
@@ -114,97 +111,196 @@ export default function PurchaseReturnReportsModal({
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
 
   return (
-    <div className="fixed inset-0 z-[1000] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden border border-gray-200">
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gradient-to-r from-gray-50 to-white">
-          <div className="text-base font-semibold">Purchase Return Reports</div>
+    <div
+      className="fixed inset-0 z-[1000] flex items-center justify-center p-4"
+      style={{ background: "rgba(4,8,20,0.72)", backdropFilter: "blur(8px)" }}
+    >
+      <div
+        className="w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col rounded-2xl"
+        style={{
+          background: "#fff",
+          border: "1px solid rgba(93,135,201,0.22)",
+          boxShadow:
+            "0 0 0 1px rgba(32,183,255,0.08), 0 32px 64px rgba(4,8,20,0.5), 0 8px 24px rgba(32,183,255,0.1)",
+        }}
+      >
+        {/* ── Dark header ── */}
+        <div
+          className="flex items-center justify-between px-6 py-4 shrink-0"
+          style={{
+            background: "linear-gradient(135deg, #0e172a 0%, #13203a 100%)",
+            borderBottom: "1px solid rgba(93,135,201,0.18)",
+          }}
+        >
+          <div className="flex items-center gap-3">
+            <div
+              className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+              style={{
+                background:
+                  "linear-gradient(135deg, rgba(32,183,255,0.18), rgba(176,38,255,0.14))",
+                border: "1px solid rgba(93,135,201,0.28)",
+              }}
+            >
+              <RotateCcwSquare
+                className="w-4 h-4"
+                style={{ color: "#20b7ff" }}
+              />
+            </div>
+            <div>
+              <div
+                className="text-sm font-semibold tracking-wide"
+                style={{ color: "#f8fafc" }}
+              >
+                Purchase Return Reports
+              </div>
+              <div className="text-xs" style={{ color: "#8ea3c7" }}>
+                {total > 0
+                  ? `${total} record${total === 1 ? "" : "s"} found`
+                  : "All purchase returns"}
+              </div>
+            </div>
+          </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-lg hover:bg-gray-100 flex items-center justify-center"
+            className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
+            style={{ color: "#8ea3c7" }}
+            onMouseEnter={(e) =>
+              (e.currentTarget.style.background = "rgba(255,255,255,0.08)")
+            }
+            onMouseLeave={(e) =>
+              (e.currentTarget.style.background = "transparent")
+            }
           >
-            <X className="w-5 h-5 text-gray-600" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Opening Banner */}
+        {/* ── Opening banner ── */}
         {openingId && (
-          <div className="px-6 py-2 text-sm bg-amber-50 text-amber-800 border-b border-amber-200">
+          <div
+            className="px-6 py-2 text-xs flex items-center gap-2 shrink-0"
+            style={{
+              background: "rgba(32,183,255,0.08)",
+              borderBottom: "1px solid rgba(32,183,255,0.18)",
+              color: "#20b7ff",
+            }}
+          >
+            <span
+              className="inline-block w-1.5 h-1.5 rounded-full animate-pulse"
+              style={{ background: "#20b7ff" }}
+            />
             Opening purchase return{" "}
-            <span className="font-medium">{openingId}</span>…
+            <span className="font-medium font-mono">{openingId}</span>…
           </div>
         )}
 
-        {/* Filters */}
-        <div className="px-6 py-3 border-b border-gray-100 bg-white">
+        {/* ── Filters ── */}
+        <div
+          className="px-6 py-4 shrink-0"
+          style={{ background: "#f8fafc", borderBottom: "1px solid #e8edf5" }}
+        >
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             <div className="relative">
-              <div className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500">
-                <Search className="w-4 h-4" />
-              </div>
+              <Search
+                className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none"
+                style={{ color: "#8ea3c7" }}
+              />
               <input
-                className="w-full h-9 pl-8 pr-2 border border-gray-300 rounded-md text-sm"
-                placeholder="Search bill no / supplier"
+                className="w-full h-9 pl-9 pr-3 text-sm rounded-lg outline-none transition-all"
+                style={{
+                  background: "#fff",
+                  border: "1px solid #dbe7ff",
+                  color: "#1e2d4a",
+                }}
+                placeholder="Bill no / supplier…"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && resetAndRefresh()}
+                onFocus={(e) => (e.currentTarget.style.borderColor = "#20b7ff")}
+                onBlur={(e) => (e.currentTarget.style.borderColor = "#dbe7ff")}
               />
             </div>
-
-            <div>
-              <select
-                className="w-full h-9 px-2 border border-gray-300 rounded-md text-sm"
-                value={supplierId}
-                onChange={(e) => setSupplierId(e.target.value)}
-              >
-                <option value="">All suppliers</option>
-                {suppliers.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
+            <select
+              className="w-full h-9 px-3 text-sm rounded-lg outline-none transition-all"
+              style={{
+                background: "#fff",
+                border: "1px solid #dbe7ff",
+                color: "#1e2d4a",
+              }}
+              value={supplierId}
+              onChange={(e) => setSupplierId(e.target.value)}
+              onFocus={(e) => (e.currentTarget.style.borderColor = "#20b7ff")}
+              onBlur={(e) => (e.currentTarget.style.borderColor = "#dbe7ff")}
+            >
+              <option value="">All suppliers</option>
+              {suppliers.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
             <div className="relative">
-              <div className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500">
-                <Calendar className="w-4 h-4" />
-              </div>
+              <Calendar
+                className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none"
+                style={{ color: "#8ea3c7" }}
+              />
               <input
                 type="date"
-                className="w-full h-9 pl-8 pr-2 border border-gray-300 rounded-md text-sm"
+                className="w-full h-9 pl-9 pr-3 text-sm rounded-lg outline-none transition-all"
+                style={{
+                  background: "#fff",
+                  border: "1px solid #dbe7ff",
+                  color: "#1e2d4a",
+                }}
                 value={dateFrom}
                 onChange={(e) => setDateFrom(e.target.value)}
+                onFocus={(e) => (e.currentTarget.style.borderColor = "#20b7ff")}
+                onBlur={(e) => (e.currentTarget.style.borderColor = "#dbe7ff")}
               />
             </div>
-
             <div className="relative">
-              <div className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500">
-                <Calendar className="w-4 h-4" />
-              </div>
+              <Calendar
+                className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none"
+                style={{ color: "#8ea3c7" }}
+              />
               <input
                 type="date"
-                className="w-full h-9 pl-8 pr-2 border border-gray-300 rounded-md text-sm"
+                className="w-full h-9 pl-9 pr-3 text-sm rounded-lg outline-none transition-all"
+                style={{
+                  background: "#fff",
+                  border: "1px solid #dbe7ff",
+                  color: "#1e2d4a",
+                }}
                 value={dateTo}
                 onChange={(e) => setDateTo(e.target.value)}
+                onFocus={(e) => (e.currentTarget.style.borderColor = "#20b7ff")}
+                onBlur={(e) => (e.currentTarget.style.borderColor = "#dbe7ff")}
               />
             </div>
           </div>
-
-          <div className="mt-3 flex justify-between items-center">
-            <div className="text-xs text-gray-500">
+          <div className="mt-3 flex items-center justify-between">
+            <div className="text-xs" style={{ color: "#8ea3c7" }}>
               {supplierId
-                ? `Filtering by: ${
-                    suppliers.find((s) => s.id === supplierId)?.name || ""
-                  }`
-                : "All suppliers"}
+                ? `Supplier: ${suppliers.find((s) => s.id === supplierId)?.name ?? ""}`
+                : "Showing all suppliers"}
             </div>
             <div className="flex gap-2">
               <button
                 onClick={resetAndRefresh}
-                className="px-3 h-9 rounded-md border border-gray-300 text-sm hover:bg-gray-50 inline-flex items-center gap-2"
+                className="h-8 px-3 rounded-lg text-xs font-medium inline-flex items-center gap-1.5 transition-colors"
+                style={{
+                  background: "#fff",
+                  border: "1px solid #dbe7ff",
+                  color: "#1e2d4a",
+                }}
+                onMouseEnter={(e) =>
+                  (e.currentTarget.style.borderColor = "#20b7ff")
+                }
+                onMouseLeave={(e) =>
+                  (e.currentTarget.style.borderColor = "#dbe7ff")
+                }
               >
-                <RotateCcw className="w-4 h-4" /> Refresh
+                <RotateCcw className="w-3.5 h-3.5" /> Refresh
               </button>
               <button
                 onClick={() => {
@@ -213,9 +309,23 @@ export default function PurchaseReturnReportsModal({
                   setDateFrom("");
                   setDateTo("");
                   setPage(1);
-                  refresh();
+                  setTimeout(() => refresh(), 0);
                 }}
-                className="px-3 h-9 rounded-md bg-gray-800 text-white text-sm hover:bg-black"
+                className="h-8 px-3 rounded-lg text-xs font-medium transition-all"
+                style={{
+                  background:
+                    "linear-gradient(135deg, #0e172a 0%, #182745 100%)",
+                  color: "#dbe7ff",
+                  border: "1px solid rgba(93,135,201,0.28)",
+                }}
+                onMouseEnter={(e) =>
+                  (e.currentTarget.style.background =
+                    "linear-gradient(135deg, #13203a 0%, #1e3055 100%)")
+                }
+                onMouseLeave={(e) =>
+                  (e.currentTarget.style.background =
+                    "linear-gradient(135deg, #0e172a 0%, #182745 100%)")
+                }
               >
                 Clear
               </button>
@@ -223,71 +333,174 @@ export default function PurchaseReturnReportsModal({
           </div>
         </div>
 
-        {/* Table */}
-        <div className="px-6 py-4 overflow-auto max-h-[55vh]">
+        {/* ── Table ── */}
+        <div
+          className="overflow-auto flex-1 px-6 py-4"
+          style={{ minHeight: 0 }}
+        >
           {loading ? (
-            <div className="py-12 text-center text-gray-500">Loading…</div>
+            <div className="flex flex-col items-center justify-center py-16 gap-3">
+              <svg
+                className="animate-spin w-7 h-7"
+                viewBox="0 0 24 24"
+                style={{ color: "#20b7ff" }}
+              >
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                  fill="none"
+                />
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+                />
+              </svg>
+              <span className="text-sm" style={{ color: "#8ea3c7" }}>
+                Loading purchase returns…
+              </span>
+            </div>
           ) : rows.length === 0 ? (
-            <div className="py-12 text-center text-gray-500">No records</div>
+            <div className="flex flex-col items-center justify-center py-16 gap-2">
+              <RotateCcwSquare
+                className="w-10 h-10 opacity-30"
+                style={{ color: "#8ea3c7" }}
+              />
+              <span className="text-sm" style={{ color: "#8ea3c7" }}>
+                No records found
+              </span>
+            </div>
           ) : (
             <table className="w-full text-sm border-collapse">
               <thead>
-                <tr className="text-left bg-gray-50">
-                  <th className="px-3 py-2">#</th>
-                  <th className="px-3 py-2">Bill No</th>
-                  <th className="px-3 py-2">Supplier</th>
-                  <th className="px-3 py-2">Date</th>
-                  <th className="px-3 py-2 text-right">Total</th>
-                  <th className="px-3 py-2 text-center">Type</th>
-                  <th className="px-3 py-2 text-right">Action</th>
+                <tr
+                  style={{
+                    background:
+                      "linear-gradient(135deg, #0e172a 0%, #13203a 100%)",
+                  }}
+                >
+                  {[
+                    "#",
+                    "Bill No",
+                    "Supplier",
+                    "Date",
+                    "Total",
+                    "Type",
+                    "Actions",
+                  ].map((h, i) => (
+                    <th
+                      key={h}
+                      className={`px-4 py-2.5 text-xs font-semibold tracking-wider first:rounded-tl-lg last:rounded-tr-lg ${
+                        i >= 4 ? "text-right" : "text-left"
+                      } ${i === 5 ? "text-center" : ""}`}
+                      style={{ color: "#8ea3c7" }}
+                    >
+                      {h}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => (
+                {rows.map((r, idx) => (
                   <tr
                     key={r.id}
-                    className="border-b border-gray-100 hover:bg-gray-50"
+                    className="transition-colors"
+                    style={{
+                      borderBottom: "1px solid #e8edf5",
+                      background: idx % 2 === 0 ? "#fff" : "#f8fafc",
+                    }}
+                    onMouseEnter={(e) =>
+                      (e.currentTarget.style.background =
+                        "rgba(32,183,255,0.04)")
+                    }
+                    onMouseLeave={(e) =>
+                      (e.currentTarget.style.background =
+                        idx % 2 === 0 ? "#fff" : "#f8fafc")
+                    }
                   >
-                    <td className="px-3 py-2">{r.slNo ?? "—"}</td>
-                    <td className="px-3 py-2">{r.billNo || "—"}</td>
-                    <td className="px-3 py-2">{r.supplierName || "—"}</td>
-                    <td className="px-3 py-2">
+                    <td
+                      className="px-4 py-2.5 text-xs font-mono"
+                      style={{ color: "#8ea3c7" }}
+                    >
+                      {r.slNo ?? "—"}
+                    </td>
+                    <td
+                      className="px-4 py-2.5 font-medium text-xs font-mono"
+                      style={{ color: "#1e2d4a" }}
+                    >
+                      {r.billNo || "—"}
+                    </td>
+                    <td
+                      className="px-4 py-2.5 text-xs"
+                      style={{ color: "#3d5a80" }}
+                    >
+                      {r.supplierName || "—"}
+                    </td>
+                    <td
+                      className="px-4 py-2.5 text-xs"
+                      style={{ color: "#3d5a80" }}
+                    >
                       {new Date(r.dateIso).toLocaleString([], {
                         dateStyle: "medium",
                         timeStyle: "short",
                       })}
                     </td>
-                    <td className="px-3 py-2 text-right">
+                    <td
+                      className="px-4 py-2.5 text-right text-xs font-semibold font-mono"
+                      style={{ color: "#0e172a" }}
+                    >
                       ₹ {Number(r.totalAmount).toFixed(2)}
                     </td>
-                    <td className="px-3 py-2 text-center">
+                    <td className="px-4 py-2.5 text-center">
                       <span
-                        className={`px-2 py-0.5 text-xs rounded-full border ${
+                        className="px-2 py-0.5 text-xs rounded-full font-medium"
+                        style={
                           r.purchaseType === "CASH"
-                            ? "border-emerald-300 text-emerald-700 bg-emerald-50"
-                            : "border-blue-300 text-blue-700 bg-blue-50"
-                        }`}
+                            ? {
+                                background: "rgba(34,197,94,0.1)",
+                                color: "#15803d",
+                                border: "1px solid rgba(34,197,94,0.25)",
+                              }
+                            : {
+                                background: "rgba(32,183,255,0.1)",
+                                color: "#0369a1",
+                                border: "1px solid rgba(32,183,255,0.25)",
+                              }
+                        }
                       >
                         {r.purchaseType}
                       </span>
                     </td>
-                    <td className="px-3 py-2 text-right">
-                      <div className="inline-flex gap-2">
-                        {/* Open Button */}
+                    <td className="px-4 py-2.5 text-right">
+                      <div className="inline-flex gap-1.5">
                         <button
-                          className={`px-2.5 py-1.5 rounded-md text-xs inline-flex items-center gap-1 ${
-                            openingId === r.id
-                              ? "bg-gray-200 text-gray-600 cursor-wait"
-                              : "bg-averix-red-dark text-white hover:bg-averix-red-accent"
-                          }`}
-                          onClick={() => (openingId ? null : openRow(r))}
-                          title="Open in editor"
                           disabled={Boolean(openingId)}
+                          onClick={() => (openingId ? null : openRow(r))}
+                          className="h-7 px-3 rounded-md text-xs font-medium inline-flex items-center gap-1.5 transition-all"
+                          style={
+                            openingId === r.id
+                              ? {
+                                  background: "#e8edf5",
+                                  color: "#8ea3c7",
+                                  cursor: "wait",
+                                  border: "1px solid #dbe7ff",
+                                }
+                              : {
+                                  background:
+                                    "linear-gradient(135deg, #0e172a, #182745)",
+                                  color: "#20b7ff",
+                                  border: "1px solid rgba(32,183,255,0.28)",
+                                }
+                          }
                         >
                           {openingId === r.id ? (
                             <>
                               <svg
-                                className="animate-spin h-3.5 w-3.5"
+                                className="animate-spin h-3 w-3"
                                 viewBox="0 0 24 24"
                               >
                                 <circle
@@ -298,28 +511,40 @@ export default function PurchaseReturnReportsModal({
                                   stroke="currentColor"
                                   strokeWidth="4"
                                   fill="none"
-                                ></circle>
+                                />
                                 <path
                                   className="opacity-75"
                                   fill="currentColor"
                                   d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
-                                ></path>
+                                />
                               </svg>
                               Opening…
                             </>
                           ) : (
                             <>
-                              <ExternalLink className="w-3.5 h-3.5" /> Open
+                              <ExternalLink className="w-3 h-3" /> Open
                             </>
                           )}
                         </button>
                         <button
-                          className="px-2.5 py-1.5 rounded-md bg-red-50 text-red-700 border border-red-200 text-xs hover:bg-red-100 inline-flex items-center gap-1"
-                          onClick={() => handleDelete(r.id)}
-                          title="Soft delete"
                           disabled={Boolean(openingId)}
+                          onClick={() => handleDelete(r.id)}
+                          className="h-7 px-2.5 rounded-md text-xs font-medium inline-flex items-center gap-1 transition-all"
+                          style={{
+                            background: "rgba(239,68,68,0.06)",
+                            color: "#dc2626",
+                            border: "1px solid rgba(239,68,68,0.2)",
+                          }}
+                          onMouseEnter={(e) =>
+                            (e.currentTarget.style.background =
+                              "rgba(239,68,68,0.12)")
+                          }
+                          onMouseLeave={(e) =>
+                            (e.currentTarget.style.background =
+                              "rgba(239,68,68,0.06)")
+                          }
                         >
-                          <Trash2 className="w-3.5 h-3.5" /> Delete
+                          <Trash2 className="w-3 h-3" /> Delete
                         </button>
                       </div>
                     </td>
@@ -330,26 +555,49 @@ export default function PurchaseReturnReportsModal({
           )}
         </div>
 
-        {/* Footer / Pagination */}
-        <div className="px-6 py-3 border-t border-gray-100 bg-gray-50 flex items-center justify-between">
-          <span className="text-xs text-gray-600">
+        {/* ── Dark footer / Pagination ── */}
+        <div
+          className="px-6 py-3 shrink-0 flex items-center justify-between"
+          style={{
+            background: "linear-gradient(135deg, #0e172a 0%, #13203a 100%)",
+            borderTop: "1px solid rgba(93,135,201,0.18)",
+          }}
+        >
+          <span className="text-xs" style={{ color: "#8ea3c7" }}>
             {total} record{total === 1 ? "" : "s"}
           </span>
-          <div className="inline-flex gap-2">
+          <div className="inline-flex items-center gap-2">
             <button
               disabled={page <= 1}
               onClick={() => setPage((p) => Math.max(1, p - 1))}
-              className="px-3 h-8 rounded-md border border-gray-300 text-sm disabled:opacity-50"
+              className="h-7 px-3 rounded-md text-xs font-medium transition-all disabled:opacity-40"
+              style={{
+                background: "rgba(255,255,255,0.06)",
+                border: "1px solid rgba(93,135,201,0.28)",
+                color: "#dbe7ff",
+              }}
             >
               Prev
             </button>
-            <span className="text-sm px-2 py-1 rounded bg-white border border-gray-200">
+            <span
+              className="text-xs px-3 h-7 flex items-center rounded-md font-mono"
+              style={{
+                background: "rgba(32,183,255,0.1)",
+                border: "1px solid rgba(32,183,255,0.22)",
+                color: "#20b7ff",
+              }}
+            >
               {page} / {pageCount}
             </span>
             <button
               disabled={page >= pageCount}
               onClick={() => setPage((p) => p + 1)}
-              className="px-3 h-8 rounded-md border border-gray-300 text-sm disabled:opacity-50"
+              className="h-7 px-3 rounded-md text-xs font-medium transition-all disabled:opacity-40"
+              style={{
+                background: "rgba(255,255,255,0.06)",
+                border: "1px solid rgba(93,135,201,0.28)",
+                color: "#dbe7ff",
+              }}
             >
               Next
             </button>

@@ -95,6 +95,10 @@ export default function SalesPage() {
   const [editingSlNo, setEditingSlNo] = useState<number | null>(null);
   const [billDetailsOpen, setBillDetailsOpen] = useState(true);
 
+  const [transactionTypes, setTransactionTypes] = useState<
+    Array<{ id: string; name: string; isDefault: number }>
+  >([]);
+
   const [header, setHeader] = useState<HeaderForm>({
     billNo: "",
     customer: null,
@@ -105,6 +109,7 @@ export default function SalesPage() {
     entryTime: new Date().toISOString(),
     discount: 0,
     saleType: "CASH",
+    typeId: null,
   });
 
   const [rows, setRows] = useState<ItemRow[]>([createEmptyRow(1)]);
@@ -172,6 +177,27 @@ export default function SalesPage() {
   useEffect(() => {
     loadCustomers();
   }, [showCustomerModal]);
+
+  useEffect(() => {
+    if (!isClient) return;
+    platform.listTransactionTypes?.(licenseId, "sale").then((res) => {
+      if (!res?.success) return;
+      const types = (res.rows ?? []).map((t: any) => ({
+        id: t.id,
+        name: t.name,
+        isDefault: t.isDefault,
+      }));
+      setTransactionTypes(types);
+      setHeader((prev) => {
+        if (prev.typeId) return prev;
+        const def = types.find(
+          (t: { id: string; name: string; isDefault: number }) =>
+            t.isDefault === 1,
+        );
+        return def ? { ...prev, typeId: def.id } : prev;
+      });
+    });
+  }, [licenseId, isClient]);
 
   const loadCustomers = async () => {
     const res = await platform.listCustomers?.(licenseId, {
@@ -675,7 +701,12 @@ export default function SalesPage() {
       entryTime: new Date().toISOString(),
       discount: 0,
       saleType: "CASH",
+      typeId: null,
     };
+    const defType = transactionTypes.find(
+      (t: { id: string; name: string; isDefault: number }) => t.isDefault === 1,
+    );
+    if (defType) freshHeader.typeId = defType.id;
     const freshRows = [createEmptyRow(1)];
 
     setHeader(freshHeader);
@@ -802,6 +833,7 @@ export default function SalesPage() {
             isEditing={Boolean(editingSaleId)}
             isOpen={billDetailsOpen}
             onToggle={() => setBillDetailsOpen((v) => !v)}
+            transactionTypes={transactionTypes}
           />
           <ItemsTableSection
             rows={rows}

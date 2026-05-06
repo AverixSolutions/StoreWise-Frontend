@@ -53,8 +53,43 @@ import {
   desktopListSaleHolds,
   desktopGetSaleHold,
   desktopDeleteSaleHold,
-  desktopListCustomers,
 } from "./sales";
+
+import {
+  desktopListCustomers,
+  desktopGetCustomer,
+  desktopSaveCustomer,
+  desktopDeleteCustomer,
+  desktopPeekNextCustomerCode,
+  desktopGetCustomerCount,
+  desktopGetCustomerDistincts,
+} from "./customers";
+
+import {
+  desktopCreatePurchaseReturn,
+  desktopUpdatePurchaseReturn,
+  desktopDeletePurchaseReturn,
+  desktopListPurchaseReturns,
+  desktopGetPurchaseReturnFull,
+  desktopPeekNextPurchaseReturnSlNo,
+  desktopSavePurchaseReturnHold,
+  desktopListPurchaseReturnHolds,
+  desktopGetPurchaseReturnHold,
+  desktopDeletePurchaseReturnHold,
+} from "./purchaseReturns";
+
+import {
+  desktopCreateSaleReturn,
+  desktopUpdateSaleReturn,
+  desktopDeleteSaleReturn,
+  desktopListSaleReturns,
+  desktopGetSaleReturnFull,
+  desktopPeekNextSaleReturnSlNo,
+  desktopSaveSaleReturnHold,
+  desktopListSaleReturnHolds,
+  desktopGetSaleReturnHold,
+  desktopDeleteSaleReturnHold,
+} from "./saleReturns";
 
 function requireElectronAPI() {
   if (typeof window === "undefined" || !window.electronAPI) {
@@ -434,6 +469,53 @@ export const desktopPlatform: PlatformAPI = {
     return result;
   },
 
+  // ── Transaction Types ─────────────────────────────────────────────────────
+  listTransactionTypes: async (licenseId, category) => {
+    const res = await requireElectronAPI().listTransactionTypes(
+      licenseId,
+      category,
+    );
+    return res ?? { success: false, rows: [] };
+  },
+
+  listAllTransactionTypes: async (licenseId) => {
+    const res = await requireElectronAPI().listAllTransactionTypes(licenseId);
+    return res ?? { success: false, rows: [] };
+  },
+
+  saveTransactionType: async (payload) => {
+    const result = await requireElectronAPI().saveTransactionType(payload);
+    if (result?.success) triggerDesktopSync("transactionType");
+    return result;
+  },
+
+  deleteTransactionType: async (id, licenseId) => {
+    const result = await requireElectronAPI().deleteTransactionType(
+      id,
+      licenseId,
+    );
+    if (result?.success) triggerDesktopSync("transactionType");
+    return result;
+  },
+
+  setDefaultTransactionType: async (id, licenseId, category) => {
+    const result = await requireElectronAPI().setDefaultTransactionType(
+      id,
+      licenseId,
+      category,
+    );
+    if (result?.success) triggerDesktopSync("transactionType");
+    return result;
+  },
+
+  getDefaultTransactionType: async (licenseId, category) => {
+    const res = await requireElectronAPI().getDefaultTransactionType(
+      licenseId,
+      category,
+    );
+    return res ?? { success: false, row: null };
+  },
+
   // ── Purchases ─────────────────────────────────────────────────────────────
   createPurchase: (purchase, items) => desktopCreatePurchase(purchase, items),
 
@@ -464,6 +546,71 @@ export const desktopPlatform: PlatformAPI = {
 
   bulkUpdateProductPrices: (updates) => desktopBulkUpdateProductPrices(updates),
 
+  // ── Purchase Returns ──────────────────────────────────────────────────────
+  createPurchaseReturn: desktopCreatePurchaseReturn,
+  updatePurchaseReturn: desktopUpdatePurchaseReturn,
+  deletePurchaseReturn: desktopDeletePurchaseReturn,
+  listPurchaseReturns: desktopListPurchaseReturns,
+  getPurchaseReturnFull: desktopGetPurchaseReturnFull,
+  peekNextPurchaseReturnSlNo: desktopPeekNextPurchaseReturnSlNo,
+  savePurchaseReturnHold: desktopSavePurchaseReturnHold,
+  listPurchaseReturnHolds: desktopListPurchaseReturnHolds,
+  getPurchaseReturnHold: desktopGetPurchaseReturnHold,
+  deletePurchaseReturnHold: desktopDeletePurchaseReturnHold,
+
+  // ── Sale Returns ──────────────────────────────────────────────────────────
+  createSaleReturn: desktopCreateSaleReturn,
+  updateSaleReturn: desktopUpdateSaleReturn,
+  deleteSaleReturn: desktopDeleteSaleReturn,
+  listSaleReturns: desktopListSaleReturns,
+  getSaleReturnFull: desktopGetSaleReturnFull,
+  peekNextSaleReturnSlNo: desktopPeekNextSaleReturnSlNo,
+  saveSaleReturnHold: desktopSaveSaleReturnHold,
+  listSaleReturnHolds: desktopListSaleReturnHolds,
+  getSaleReturnHold: desktopGetSaleReturnHold,
+  deleteSaleReturnHold: desktopDeleteSaleReturnHold,
+
+  // ── Supplier Ledger & Payments ────────────────────────────────────────────
+  getSupplierLedger: (params) => requireElectronAPI().getSupplierLedger(params),
+
+  getSupplierOutstandingBills: (params) =>
+    requireElectronAPI().getSupplierOutstandingBills(params),
+
+  createSupplierPayment: async (payload) => {
+    const result = await requireElectronAPI().createSupplierPayment(payload);
+    if (result?.success) triggerDesktopSync("supplierTransaction");
+    return result;
+  },
+
+  listPayments: (params) => requireElectronAPI().listPayments(params),
+
+  markChequeReceived: async (licenseId, txId) => {
+    const result = await requireElectronAPI().markChequeReceived({
+      licenseId,
+      txId,
+    });
+    if (result?.success) triggerDesktopSync("supplierTransaction");
+    return result;
+  },
+
+  getCustomerLedger: (params) => requireElectronAPI().getCustomerLedger(params),
+  getCustomerOutstandingSales: (params) =>
+    requireElectronAPI().getCustomerOutstandingSales(params),
+  createCustomerReceipt: async (payload) => {
+    const result = await requireElectronAPI().createCustomerReceipt(payload);
+    if (result?.success) triggerDesktopSync("customerTransaction");
+    return result;
+  },
+  listReceipts: (params) => requireElectronAPI().listReceipts(params),
+  markCustomerChequeReceived: async (licenseId, txId) => {
+    const result = await requireElectronAPI().markCustomerChequeReceived({
+      licenseId,
+      txId,
+    });
+    if (result?.success) triggerDesktopSync("customerTransaction");
+    return result;
+  },
+
   // ── Sales ─────────────────────────────────────────────────────────────────
   createSale: (sale, items) => desktopCreateSale(sale, items),
   updateSale: (payload) => desktopUpdateSale(payload),
@@ -476,6 +623,27 @@ export const desktopPlatform: PlatformAPI = {
     desktopListSaleHolds(licenseId, pagination),
   getSaleHold: (id) => desktopGetSaleHold(id),
   deleteSaleHold: (id) => desktopDeleteSaleHold(id),
+
   listCustomers: (licenseId, filters) =>
     desktopListCustomers(licenseId, filters),
+
+  saveCustomer: async (payload: any) => {
+    const result = await desktopSaveCustomer(payload);
+    if (result?.success) triggerDesktopSync("customer");
+    return result;
+  },
+
+  deleteCustomer: async (id: string, licenseId: string) => {
+    const result = await desktopDeleteCustomer(id, licenseId);
+    if (result?.success) triggerDesktopSync("customer");
+    return result;
+  },
+
+  getCustomer: (id: string) => desktopGetCustomer(id),
+  peekNextCustomerCode: (licenseId: string) =>
+    desktopPeekNextCustomerCode(licenseId),
+  getCustomerCount: (licenseId: string, params?: { q?: string }) =>
+    desktopGetCustomerCount(licenseId, params),
+  getCustomerDistincts: (licenseId: string) =>
+    desktopGetCustomerDistincts(licenseId),
 };

@@ -1,6 +1,6 @@
 // src/platform/web/idb.ts
 const DB_NAME = "kynflow-web";
-const DB_VERSION = 10; // bumped from 9
+const DB_VERSION = 11; // bumped from 10
 
 export const STORES = {
   SHOP_SETTINGS: "shop_settings",
@@ -18,9 +18,12 @@ export const STORES = {
   PURCHASES: "purchases",
   PURCHASE_ITEMS: "purchase_items",
   PURCHASE_HOLDS: "purchase_holds",
+  // ── v10: sales stores ────────────────────────────────────────────────────
   SALES: "sales",
   SALE_ITEMS: "sale_items",
   SALE_HOLDS: "sale_holds",
+  // ── v11: transaction types ───────────────────────────────────────────────
+  TRANSACTION_TYPES: "transaction_types",
 } as const;
 
 export type SyncJob = {
@@ -241,6 +244,17 @@ function openDb(): Promise<IDBDatabase> {
             keyPath: "id",
           });
           holdStore.createIndex("licenseId", "licenseId", { unique: false });
+        }
+      }
+
+      // v11 stores — transaction_types
+      if (oldVersion < 11) {
+        if (!db.objectStoreNames.contains(STORES.TRANSACTION_TYPES)) {
+          const txTypeStore = db.createObjectStore(STORES.TRANSACTION_TYPES, {
+            keyPath: "id",
+          });
+          txTypeStore.createIndex("licenseId", "licenseId", { unique: false });
+          txTypeStore.createIndex("category", "category", { unique: false });
         }
       }
     };

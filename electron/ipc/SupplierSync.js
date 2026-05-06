@@ -1,13 +1,9 @@
-// electron/ipc/SupplierSync.js (Fixed)
+// electron/ipc/SupplierSync.js
 const { ipcMain } = require("electron");
 const db = require("../db");
 
 function registerSupplierSyncHandlers() {
   ipcMain.handle("get-dirty-suppliers", (event, licenseId, limit = 200) => {
-    // console.log(
-    //   `Getting dirty suppliers for license: ${licenseId}, limit: ${limit}`
-    // );
-
     const result = db
       .prepare(
         `
@@ -21,18 +17,14 @@ function registerSupplierSyncHandlers() {
           )
         ORDER BY updatedAt ASC, id ASC
         LIMIT ?
-      `
+      `,
       )
       .all(licenseId, limit);
-
-    // console.log(`Found ${result.length} dirty suppliers`);
     return result;
   });
 
   ipcMain.handle("mark-suppliers-synced", (event, ids, serverSyncedAt) => {
-    console.log(`Marking ${ids.length} suppliers as synced`);
     const ts = serverSyncedAt || new Date().toISOString();
-
     const trx = db.transaction((ids) => {
       const stmt = db.prepare(`
         UPDATE suppliers
@@ -40,23 +32,19 @@ function registerSupplierSyncHandlers() {
             syncedAt = ?
         WHERE id = ?
       `);
-      ids.forEach((id) => {
-        const result = stmt.run(ts, id);
-        console.log(`Updated supplier ${id}, changes: ${result.changes}`);
-      });
+      ids.forEach((id) => stmt.run(ts, id));
     });
-
     trx(ids);
-    console.log(`Successfully marked ${ids.length} suppliers as synced`);
     return { success: true, syncedAt: ts };
   });
 
-  // Upsert-in-bulk from server
+  // Bulk upsert from server – resolve conflicts on (licenseId, codeNumber)
   ipcMain.handle("bulk-upsert-suppliers", (event, items = []) => {
     console.log(`Bulk upserting ${items.length} suppliers`);
 
     const trx = db.transaction((rows) => {
-      const insertOrReplace = db.prepare(`
+      // Use composite unique key (licenseId, codeNumber) for conflict resolution
+      const upsert = db.prepare(`
         INSERT INTO suppliers (
           id, licenseId, code, codeNumber, name, phone, email, gstin, department,
           addressLine1, addressLine2, city, state, pincode,
@@ -64,35 +52,35 @@ function registerSupplierSyncHandlers() {
           settlementDays, creditLimit, openingBalance, notes,
           createdAt, updatedAt, deletedAt, isSynced, syncedAt
         )
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, ?, 1, COALESCE(?, datetime('now')))
-        ON CONFLICT(id) DO UPDATE SET
-          code=excluded.code,
-          codeNumber=excluded.codeNumber,
-          name=excluded.name,
-          phone=excluded.phone,
-          email=excluded.email,
-          gstin=excluded.gstin,
-          department=excluded.department,
-          addressLine1=excluded.addressLine1,
-          addressLine2=excluded.addressLine2,
-          city=excluded.city,
-          state=excluded.state,
-          pincode=excluded.pincode,
-          category=excluded.category,
-          native=excluded.native,
-          language=excluded.language,
-          aadhaar=excluded.aadhaar,
-          pan=excluded.pan,
-          license1=excluded.license1,
-          license2=excluded.license2,
-          settlementDays=excluded.settlementDays,
-          creditLimit=excluded.creditLimit,
-          openingBalance=excluded.openingBalance,
-          notes=excluded.notes,
-          updatedAt=excluded.updatedAt,
-          deletedAt=excluded.deletedAt,
-          isSynced=1,
-          syncedAt=excluded.syncedAt
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,COALESCE(?,datetime('now')))
+        ON CONFLICT(licenseId, codeNumber) DO UPDATE SET
+          -- id = excluded.id,  ← intentionally removed to preserve local primary key
+          code = excluded.code,
+          name = excluded.name,
+          phone = excluded.phone,
+          email = excluded.email,
+          gstin = excluded.gstin,
+          department = excluded.department,
+          addressLine1 = excluded.addressLine1,
+          addressLine2 = excluded.addressLine2,
+          city = excluded.city,
+          state = excluded.state,
+          pincode = excluded.pincode,
+          category = excluded.category,
+          native = excluded.native,
+          language = excluded.language,
+          aadhaar = excluded.aadhaar,
+          pan = excluded.pan,
+          license1 = excluded.license1,
+          license2 = excluded.license2,
+          settlementDays = excluded.settlementDays,
+          creditLimit = excluded.creditLimit,
+          openingBalance = excluded.openingBalance,
+          notes = excluded.notes,
+          updatedAt = excluded.updatedAt,
+          deletedAt = excluded.deletedAt,
+          isSynced = 1,
+          syncedAt = excluded.syncedAt
       `);
 
       const upsertSeq = db.prepare(`
@@ -105,7 +93,7 @@ function registerSupplierSyncHandlers() {
       let processed = 0;
       for (const r of rows) {
         try {
-          insertOrReplace.run(
+          upsert.run(
             r.id,
             r.licenseId,
             r.code ?? null,
@@ -134,7 +122,7 @@ function registerSupplierSyncHandlers() {
             r.createdAt,
             r.updatedAt,
             r.deletedAt ?? null,
-            r.syncedAt
+            r.syncedAt,
           );
 
           if (r.codeNumber != null) {

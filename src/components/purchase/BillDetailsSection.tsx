@@ -12,6 +12,7 @@ import {
   Wallet,
   ChevronLeft,
   ChevronRight,
+  Layers,
 } from "lucide-react";
 import { HeaderForm } from "./types";
 import SearchableDropdown from "@/components/ui/SearchableDropdown";
@@ -29,9 +30,10 @@ interface BillDetailsSectionProps {
   entryNo?: number;
   requireSupplier?: boolean;
   isEditing?: boolean;
-  // ← new
   isOpen: boolean;
   onToggle: () => void;
+  // new
+  transactionTypes: Array<{ id: string; name: string; isDefault: number }>;
 }
 
 const labelCls =
@@ -58,6 +60,7 @@ export default function BillDetailsSection({
   requireSupplier,
   isOpen,
   onToggle,
+  transactionTypes,
 }: BillDetailsSectionProps) {
   // ── COLLAPSED STRIP ──────────────────────────────────────────
   if (!isOpen) {
@@ -173,6 +176,33 @@ export default function BillDetailsSection({
             </div>
           </div>
         </div>
+
+        {/* Transaction Type */}
+        {transactionTypes.length > 0 && (
+          <div>
+            <label className={labelCls}>
+              <Layers className="w-3.5 h-3.5" />
+              Transaction Type
+            </label>
+            <select
+              className={inputBase}
+              value={header.typeId || ""}
+              onChange={(e) =>
+                setHeader((s) => ({
+                  ...s,
+                  typeId: e.target.value || null,
+                }))
+              }
+            >
+              <option value="">-- None --</option>
+              {transactionTypes.map((type) => (
+                <option key={type.id} value={type.id}>
+                  {type.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Bill No */}
         <div>

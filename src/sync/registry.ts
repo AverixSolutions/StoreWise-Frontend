@@ -13,10 +13,25 @@ import {
   createPurchaseHoldsAdapter,
 } from "./adapters/purchases";
 import {
+  createPurchaseReturnsAdapter,
+  createPurchaseReturnItemsAdapter,
+  createPurchaseReturnHoldsAdapter,
+} from "./adapters/purchaseReturns";
+import {
   createSalesAdapter,
   createSaleItemsAdapter,
   createSaleHoldsAdapter,
 } from "./adapters/sales";
+import {
+  createSaleReturnsAdapter,
+  createSaleReturnItemsAdapter,
+} from "./adapters/saleReturns";
+import { createTransactionTypesAdapter } from "./adapters/transactionTypes";
+
+import { createSupplierTransactionsAdapter } from "./adapters/supplierTransactions";
+import { createCustomerTransactionsAdapter } from "./adapters/customerTransactions";
+
+import { createCustomersAdapter } from "./adapters/customers";
 
 export function buildAdapters(isDesktop: boolean): SyncAdapter[] {
   return [
@@ -25,13 +40,22 @@ export function buildAdapters(isDesktop: boolean): SyncAdapter[] {
     createCategoriesAdapter(isDesktop),
     createBrandsAdapter(isDesktop),
     createUnitsAdapter(isDesktop),
+    createTransactionTypesAdapter(isDesktop),
     createProductsAdapter(isDesktop),
     createSuppliersAdapter(isDesktop),
+    createCustomersAdapter(isDesktop),
     createPurchasesAdapter(isDesktop),
     createPurchaseItemsAdapter(isDesktop),
     createPurchaseHoldsAdapter(isDesktop),
+    createPurchaseReturnsAdapter(isDesktop),
+    createPurchaseReturnItemsAdapter(isDesktop),
+    createPurchaseReturnHoldsAdapter(isDesktop),
     createSalesAdapter(isDesktop),
     createSaleItemsAdapter(isDesktop),
     createSaleHoldsAdapter(isDesktop),
+    createSaleReturnsAdapter(isDesktop),
+    createSaleReturnItemsAdapter(isDesktop),
+    createSupplierTransactionsAdapter(isDesktop),
+    createCustomerTransactionsAdapter(isDesktop),
   ];
 }
