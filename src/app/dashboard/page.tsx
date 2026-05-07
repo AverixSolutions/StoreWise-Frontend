@@ -72,7 +72,7 @@ function buildLinePath(
   values: number[],
   width: number,
   height: number,
-  padding = 16,
+  padding = 20,
 ) {
   if (!values.length) return "";
   const max = Math.max(...values, 1);
@@ -92,14 +92,45 @@ function buildLinePath(
     .join(" ");
 }
 
-function buildAreaPath(
+function buildSmoothLinePath(
   values: number[],
   width: number,
   height: number,
-  padding = 16,
+  padding = 20,
 ) {
   if (!values.length) return "";
+  const max = Math.max(...values, 1);
+  const innerWidth = width - padding * 2;
+  const innerHeight = height - padding * 2;
 
+  const points = values.map((value, index) => ({
+    x:
+      padding +
+      (values.length === 1
+        ? innerWidth / 2
+        : (index * innerWidth) / (values.length - 1)),
+    y: padding + innerHeight - (value / max) * innerHeight,
+  }));
+
+  if (points.length < 2) return `M ${points[0].x} ${points[0].y}`;
+
+  let d = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 1; i < points.length; i++) {
+    const prev = points[i - 1];
+    const curr = points[i];
+    const cpx = (prev.x + curr.x) / 2;
+    d += ` C ${cpx} ${prev.y}, ${cpx} ${curr.y}, ${curr.x} ${curr.y}`;
+  }
+  return d;
+}
+
+function buildSmoothAreaPath(
+  values: number[],
+  width: number,
+  height: number,
+  padding = 20,
+) {
+  if (!values.length) return "";
   const max = Math.max(...values, 1);
   const innerWidth = width - padding * 2;
   const innerHeight = height - padding * 2;
@@ -117,24 +148,34 @@ function buildAreaPath(
   const last = points[points.length - 1];
   const baseY = height - padding;
 
-  return [
-    `M ${first.x} ${baseY}`,
-    ...points.map((p) => `L ${p.x} ${p.y}`),
-    `L ${last.x} ${baseY}`,
-    "Z",
-  ].join(" ");
+  if (points.length < 2) {
+    return `M ${first.x} ${baseY} L ${first.x} ${first.y} L ${last.x} ${baseY} Z`;
+  }
+
+  let d = `M ${first.x} ${baseY} L ${first.x} ${first.y}`;
+  for (let i = 1; i < points.length; i++) {
+    const prev = points[i - 1];
+    const curr = points[i];
+    const cpx = (prev.x + curr.x) / 2;
+    d += ` C ${cpx} ${prev.y}, ${cpx} ${curr.y}, ${curr.x} ${curr.y}`;
+  }
+  d += ` L ${last.x} ${baseY} Z`;
+  return d;
 }
 
 function Surface({
   children,
   className = "",
+  style,
 }: {
   children: React.ReactNode;
   className?: string;
+  style?: React.CSSProperties;
 }) {
   return (
     <div
       className={`rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.86),rgba(248,250,252,0.78))] shadow-[0_18px_45px_rgba(3,10,24,0.08)] backdrop-blur ${className}`}
+      style={style}
     >
       {children}
     </div>
@@ -175,60 +216,250 @@ function MetricCard({
 
 function OverviewChart({ series }: { series: DashboardOverview["series"] }) {
   const width = 720;
-  const height = 240;
+  const height = 220;
+  const padding = 20;
 
   const sales = series.map((s) => Number(s.sales || 0));
   const purchases = series.map((s) => Number(s.purchases || 0));
 
-  const salesLine = buildLinePath(sales, width, height);
-  const salesArea = buildAreaPath(sales, width, height);
-  const purchasesLine = buildLinePath(purchases, width, height);
+  const allValues = [...sales, ...purchases];
+  const dataMax = Math.max(...allValues, 1);
+
+  // Compute y-axis grid lines (4 lines, nice rounded values)
+  const rawStep = dataMax / 4;
+  const magnitude = Math.pow(10, Math.floor(Math.log10(rawStep)));
+  const niceStep = Math.ceil(rawStep / magnitude) * magnitude;
+  const gridLines = [1, 2, 3, 4].map((i) => i * niceStep);
+  const gridMax = gridLines[gridLines.length - 1];
+
+  const innerWidth = width - padding * 2;
+  const innerHeight = height - padding * 2;
+
+  // Recompute paths using gridMax so values are anchored correctly
+  function toY(val: number) {
+    return padding + innerHeight - (val / gridMax) * innerHeight;
+  }
+
+  function toX(index: number) {
+    return (
+      padding +
+      (series.length === 1
+        ? innerWidth / 2
+        : (index * innerWidth) / (series.length - 1))
+    );
+  }
+
+  function smoothLine(values: number[]) {
+    if (!values.length) return "";
+    const pts = values.map((v, i) => ({ x: toX(i), y: toY(v) }));
+    if (pts.length < 2) return `M ${pts[0].x} ${pts[0].y}`;
+    let d = `M ${pts[0].x} ${pts[0].y}`;
+    for (let i = 1; i < pts.length; i++) {
+      const prev = pts[i - 1];
+      const curr = pts[i];
+      const cpx = (prev.x + curr.x) / 2;
+      d += ` C ${cpx} ${prev.y}, ${cpx} ${curr.y}, ${curr.x} ${curr.y}`;
+    }
+    return d;
+  }
+
+  function smoothArea(values: number[]) {
+    if (!values.length) return "";
+    const pts = values.map((v, i) => ({ x: toX(i), y: toY(v) }));
+    const baseY = toY(0);
+    if (pts.length < 2)
+      return `M ${pts[0].x} ${baseY} L ${pts[0].x} ${pts[0].y} L ${pts[0].x} ${baseY} Z`;
+    let d = `M ${pts[0].x} ${baseY} L ${pts[0].x} ${pts[0].y}`;
+    for (let i = 1; i < pts.length; i++) {
+      const prev = pts[i - 1];
+      const curr = pts[i];
+      const cpx = (prev.x + curr.x) / 2;
+      d += ` C ${cpx} ${prev.y}, ${cpx} ${curr.y}, ${curr.x} ${curr.y}`;
+    }
+    d += ` L ${pts[pts.length - 1].x} ${baseY} Z`;
+    return d;
+  }
+
+  const salesLinePath = smoothLine(sales);
+  const salesAreaPath = smoothArea(sales);
+  const purchasesLinePath = smoothLine(purchases);
+
+  // Dot positions for last data points
+  const lastSalesDot =
+    sales.length > 0
+      ? { x: toX(sales.length - 1), y: toY(sales[sales.length - 1]) }
+      : null;
+  const lastPurchasesDot =
+    purchases.length > 0
+      ? {
+          x: toX(purchases.length - 1),
+          y: toY(purchases[purchases.length - 1]),
+        }
+      : null;
 
   return (
-    <div className="overflow-hidden rounded-[22px] border border-slate-200/80 bg-white/90 p-3">
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-[210px] w-full">
-        {[0.25, 0.5, 0.75].map((step) => (
-          <line
-            key={step}
-            x1="0"
-            y1={height * step}
-            x2={width}
-            y2={height * step}
-            stroke="rgba(148,163,184,0.18)"
-            strokeDasharray="5 7"
-          />
-        ))}
+    <div className="overflow-hidden rounded-[18px] border border-slate-100 bg-white">
+      {/* Y-axis labels + chart */}
+      <div className="flex">
+        {/* Y labels */}
+        <div
+          className="flex flex-col justify-between py-[20px] pr-2 pl-3"
+          style={{ minWidth: 52 }}
+        >
+          {[...gridLines].reverse().map((val) => (
+            <span
+              key={val}
+              className="text-[10px] tabular-nums text-slate-400 leading-none"
+            >
+              {compactNumber(val)}
+            </span>
+          ))}
+        </div>
 
-        <path d={salesArea} fill="rgba(32,183,255,0.10)" />
+        {/* SVG chart */}
+        <div className="flex-1 min-w-0">
+          <svg
+            viewBox={`0 0 ${width} ${height}`}
+            className="h-[200px] w-full"
+            preserveAspectRatio="none"
+          >
+            <defs>
+              <linearGradient id="salesGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#06b6d4" stopOpacity="0.18" />
+                <stop offset="100%" stopColor="#06b6d4" stopOpacity="0.01" />
+              </linearGradient>
+              <filter id="lineShadowCyan">
+                <feDropShadow
+                  dx="0"
+                  dy="3"
+                  stdDeviation="4"
+                  floodColor="#06b6d4"
+                  floodOpacity="0.22"
+                />
+              </filter>
+              <filter id="lineShadowFuchsia">
+                <feDropShadow
+                  dx="0"
+                  dy="3"
+                  stdDeviation="4"
+                  floodColor="#d946ef"
+                  floodOpacity="0.18"
+                />
+              </filter>
+            </defs>
 
-        <path
-          d={salesLine}
-          fill="none"
-          stroke="#20b7ff"
-          strokeWidth="4"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
+            {/* Horizontal grid lines */}
+            {gridLines.map((val) => {
+              const y = toY(val);
+              return (
+                <line
+                  key={val}
+                  x1={padding}
+                  y1={y}
+                  x2={width - padding}
+                  y2={y}
+                  stroke="rgba(148,163,184,0.15)"
+                  strokeWidth="1"
+                  strokeDasharray="4 6"
+                />
+              );
+            })}
 
-        <path
-          d={purchasesLine}
-          fill="none"
-          stroke="#b026ff"
-          strokeWidth="3"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          opacity="0.9"
-        />
-      </svg>
+            {/* Baseline */}
+            <line
+              x1={padding}
+              y1={toY(0)}
+              x2={width - padding}
+              y2={toY(0)}
+              stroke="rgba(148,163,184,0.3)"
+              strokeWidth="1"
+            />
 
+            {/* Sales area fill */}
+            <path d={salesAreaPath} fill="url(#salesGradient)" />
+
+            {/* Sales line */}
+            <path
+              d={salesLinePath}
+              fill="none"
+              stroke="#06b6d4"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              filter="url(#lineShadowCyan)"
+            />
+
+            {/* Purchases line */}
+            <path
+              d={purchasesLinePath}
+              fill="none"
+              stroke="#d946ef"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeDasharray="6 3"
+              filter="url(#lineShadowFuchsia)"
+              opacity="0.85"
+            />
+
+            {/* Sales endpoint dot */}
+            {lastSalesDot && (
+              <>
+                <circle
+                  cx={lastSalesDot.x}
+                  cy={lastSalesDot.y}
+                  r="5"
+                  fill="white"
+                  stroke="#06b6d4"
+                  strokeWidth="2.5"
+                />
+              </>
+            )}
+
+            {/* Purchases endpoint dot */}
+            {lastPurchasesDot && (
+              <>
+                <circle
+                  cx={lastPurchasesDot.x}
+                  cy={lastPurchasesDot.y}
+                  r="4"
+                  fill="white"
+                  stroke="#d946ef"
+                  strokeWidth="2"
+                />
+              </>
+            )}
+
+            {/* Vertical tick marks at each data point */}
+            {series.map((_, i) => {
+              const x = toX(i);
+              return (
+                <line
+                  key={i}
+                  x1={x}
+                  y1={toY(0)}
+                  x2={x}
+                  y2={toY(0) + 4}
+                  stroke="rgba(148,163,184,0.35)"
+                  strokeWidth="1"
+                />
+              );
+            })}
+          </svg>
+        </div>
+      </div>
+
+      {/* X-axis date labels */}
       <div
-        className="mt-2 grid gap-2 text-center text-[11px] text-slate-400"
+        className="grid gap-0 text-center text-[10px] text-slate-400 border-t border-slate-100 py-2 px-[72px]"
         style={{
           gridTemplateColumns: `repeat(${series.length}, minmax(0, 1fr))`,
         }}
       >
         {series.map((item) => (
-          <div key={item.day}>{shortDate(item.day)}</div>
+          <div key={item.day} className="leading-none">
+            {shortDate(item.day)}
+          </div>
         ))}
       </div>
     </div>
@@ -257,13 +488,13 @@ function DashboardSkeleton() {
 
 export default function DashboardPage() {
   const router = useRouter();
+  const isWeb = platform.getRuntimeInfo().runtime === "web";
   const [licenseName, setLicenseName] = useState<string>("");
   const [overview, setOverview] = useState<DashboardOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [now, setNow] = useState<Date>(new Date());
   const [error, setError] = useState("");
-  const [webMode, setWebMode] = useState(false);
 
   const loadOverview = async (showRefreshState = true) => {
     const startedAt = Date.now();
@@ -287,12 +518,10 @@ export default function DashboardPage() {
 
       const result = await platform.getDashboardOverview?.(licenseId, 7);
       if (!result || !result.success) {
-        setWebMode(true);
         setOverview(null);
-        setError("");
+        setError(result?.error || "Failed to load dashboard overview.");
         return;
       }
-      setWebMode(false);
       setOverview(result.overview);
     } catch (err: any) {
       setError(err?.message || "Failed to load dashboard overview.");
@@ -308,6 +537,7 @@ export default function DashboardPage() {
       setRefreshing(false);
     }
   };
+
   useEffect(() => {
     loadOverview(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -366,81 +596,6 @@ export default function DashboardPage() {
 
   if (loading) return <DashboardSkeleton />;
 
-  if (webMode) {
-    return (
-      <div className="space-y-4 pb-10 md:pb-0">
-        <section className="rounded-[28px] border border-white/10 bg-[linear-gradient(135deg,#091120_0%,#0f1a31_58%,#16213d_100%)] px-5 py-5 text-white shadow-[0_22px_50px_rgba(5,10,20,0.18)] md:px-6 md:py-6">
-          <div className="max-w-3xl">
-            <div className="kyn-brand-pill mb-3 inline-flex items-center rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/80">
-              KYNFLOW • WEB MODE
-            </div>
-            <h1 className="text-[28px] font-semibold tracking-[-0.05em] text-white md:text-[34px]">
-              Browser mode is active.
-            </h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
-              Login is working and your browser session is active. Desktop-only
-              dashboard analytics are not available here yet.
-            </p>
-            <div className="mt-4 text-sm text-slate-300">
-              <span className="text-white/60">Workspace:</span>{" "}
-              <span className="font-medium text-white">
-                {licenseName || "KYNFLOW Web"}
-              </span>
-            </div>
-          </div>
-        </section>
-        <section className="grid gap-4 md:grid-cols-2">
-          <div className="rounded-[24px] border border-slate-200/80 bg-white p-5 shadow-[0_18px_45px_rgba(3,10,24,0.08)]">
-            <h2 className="text-lg font-semibold text-slate-900">
-              What works now
-            </h2>
-            <ul className="mt-3 space-y-2 text-sm text-slate-600">
-              <li>• Browser login and token session</li>
-              <li>• Routing into dashboard shell</li>
-              <li>• Shop Settings via platform layer</li>
-              <li>• Local-first browser runtime path</li>
-            </ul>
-          </div>
-          <div className="rounded-[24px] border border-slate-200/80 bg-white p-5 shadow-[0_18px_45px_rgba(3,10,24,0.08)]">
-            <h2 className="text-lg font-semibold text-slate-900">
-              What is not wired yet
-            </h2>
-            <ul className="mt-3 space-y-2 text-sm text-slate-600">
-              <li>• Dashboard analytics aggregation</li>
-              <li>• Product list browser data</li>
-              <li>• Purchase and sales browser data</li>
-              <li>• Full online sync backend</li>
-            </ul>
-          </div>
-        </section>
-        <section className="rounded-[24px] border border-slate-200/80 bg-white p-5 shadow-[0_18px_45px_rgba(3,10,24,0.08)]">
-          <h2 className="text-lg font-semibold text-slate-900">
-            Next browser step
-          </h2>
-          <p className="mt-2 text-sm text-slate-600">
-            Start with Master → Shop Settings in browser mode.
-          </p>
-          <div className="mt-4 flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={() => router.push("/dashboard/master")}
-              className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
-            >
-              Open Master Settings
-            </button>
-            <button
-              type="button"
-              onClick={() => router.push("/login")}
-              className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              Back to Login
-            </button>
-          </div>
-        </section>
-      </div>
-    );
-  }
-
   if (error || !overview) {
     return (
       <div className="rounded-[26px] border border-rose-200 bg-rose-50 p-6">
@@ -472,6 +627,7 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-4">
+      {/* Hero header */}
       <section className="relative overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(135deg,#091120_0%,#0f1a31_58%,#16213d_100%)] px-5 py-5 text-white shadow-[0_22px_50px_rgba(5,10,20,0.18)] md:px-6 md:py-6">
         <div className="pointer-events-none absolute -left-12 top-0 h-32 w-32 rounded-full bg-cyan-400/12 blur-3xl" />
         <div className="pointer-events-none absolute right-0 top-0 h-36 w-36 rounded-full bg-fuchsia-500/12 blur-3xl" />
@@ -530,13 +686,16 @@ export default function DashboardPage() {
         </div>
       </section>
 
+      {/* KPI metric cards */}
       <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {metrics.map((metric) => (
           <MetricCard key={metric.title} {...metric} />
         ))}
       </section>
 
+      {/* Chart + Right panels */}
       <section className="grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
+        {/* Chart card — fixed height, no internal scroll */}
         <Surface className="p-5">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -551,13 +710,13 @@ export default function DashboardPage() {
               </p>
             </div>
 
-            <div className="hidden items-center gap-3 text-xs font-medium sm:flex">
+            <div className="hidden items-center gap-4 text-xs font-medium sm:flex">
               <div className="flex items-center gap-1.5 text-slate-600">
                 <span className="h-2.5 w-2.5 rounded-full bg-cyan-500" />
                 Sales
               </div>
               <div className="flex items-center gap-1.5 text-slate-600">
-                <span className="h-2.5 w-2.5 rounded-full bg-fuchsia-500" />
+                <span className="block h-0 w-5 border-t-2 border-dashed border-fuchsia-400" />
                 Purchases
               </div>
             </div>
@@ -581,8 +740,10 @@ export default function DashboardPage() {
               },
               {
                 label: "Live Batches",
-                value: compactNumber(overview.kpis.liveBatchCount),
-                sub: "Current batch layer",
+                value: isWeb
+                  ? "—"
+                  : compactNumber(overview.kpis.liveBatchCount),
+                sub: isWeb ? "Desktop only" : "Current batch layer",
               },
               {
                 label: "Items",
@@ -606,8 +767,10 @@ export default function DashboardPage() {
           </div>
         </Surface>
 
-        <div className="space-y-4">
-          <Surface className="p-5">
+        {/* Right column — stock health + low stock watch, scrollable to match chart height */}
+        <div className="flex flex-col gap-4 xl:max-h-[560px]">
+          {/* Stock health */}
+          <Surface className="p-5 shrink-0">
             <div className="mb-2 inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
               Stock Health
             </div>
@@ -687,16 +850,21 @@ export default function DashboardPage() {
             </div>
           </Surface>
 
-          <Surface className="p-5">
-            <div className="mb-2 inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+          {/* Low stock watch — scrollable, fills remaining space */}
+          <Surface className="p-5 flex flex-col min-h-0 flex-1">
+            <div className="mb-2 inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 shrink-0">
               Attention
             </div>
 
-            <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-900">
+            <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-900 shrink-0">
               Low stock watch
             </h2>
 
-            <div className="mt-4 space-y-3">
+            <div
+              className="mt-4 space-y-3 overflow-y-auto flex-1"
+              style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+            >
+              <style>{`.no-scroll::-webkit-scrollbar { display: none; }`}</style>
               {lowStockPreview.length === 0 ? (
                 <div className="rounded-[18px] border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-700">
                   No immediate stock risk.
@@ -733,17 +901,22 @@ export default function DashboardPage() {
         </div>
       </section>
 
+      {/* Recent activity + Top products */}
       <section className="grid gap-4 xl:grid-cols-2">
-        <Surface className="p-5">
-          <div className="mb-2 inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+        {/* Latest transactions — fixed height, scrollable list */}
+        <Surface className="p-5 flex flex-col" style={{ maxHeight: 420 }}>
+          <div className="mb-2 inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 shrink-0">
             Recent Activity
           </div>
 
-          <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-900">
+          <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-900 shrink-0">
             Latest transactions
           </h2>
 
-          <div className="mt-4 space-y-3">
+          <div
+            className="mt-4 space-y-3 overflow-y-auto flex-1"
+            style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+          >
             {recentActivityPreview.length === 0 ? (
               <div className="rounded-[18px] border border-slate-200/80 bg-white/90 p-4 text-sm text-slate-500">
                 No recent activity yet.
@@ -789,16 +962,20 @@ export default function DashboardPage() {
           </div>
         </Surface>
 
-        <Surface className="p-5">
-          <div className="mb-2 inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+        {/* Best selling products — fixed height, scrollable list */}
+        <Surface className="p-5 flex flex-col" style={{ maxHeight: 420 }}>
+          <div className="mb-2 inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 shrink-0">
             Product Performance
           </div>
 
-          <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-900">
+          <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-900 shrink-0">
             Best selling products
           </h2>
 
-          <div className="mt-4 space-y-3">
+          <div
+            className="mt-4 space-y-3 overflow-y-auto flex-1"
+            style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+          >
             {topProductsPreview.length === 0 ? (
               <div className="rounded-[18px] border border-slate-200/80 bg-white/90 p-4 text-sm text-slate-500">
                 No sales data yet.

@@ -1,6 +1,6 @@
 // src/platform/web/idb.ts
 const DB_NAME = "kynflow-web";
-const DB_VERSION = 11; // bumped from 10
+const DB_VERSION = 13; // bumped from 12
 
 export const STORES = {
   SHOP_SETTINGS: "shop_settings",
@@ -14,6 +14,7 @@ export const STORES = {
   UNITS: "units",
   TAX_CATEGORIES: "tax_categories",
   SUPPLIERS: "suppliers",
+  CUSTOMERS: "customers",
   // ── v9: purchase stores ──────────────────────────────────────────────────
   PURCHASES: "purchases",
   PURCHASE_ITEMS: "purchase_items",
@@ -24,6 +25,9 @@ export const STORES = {
   SALE_HOLDS: "sale_holds",
   // ── v11: transaction types ───────────────────────────────────────────────
   TRANSACTION_TYPES: "transaction_types",
+  // ── v13: quotations ──────────────────────────────────────────────────────
+  QUOTATIONS: "quotations",
+  QUOTATION_ITEMS: "quotation_items",
 } as const;
 
 export type SyncJob = {
@@ -255,6 +259,42 @@ function openDb(): Promise<IDBDatabase> {
           });
           txTypeStore.createIndex("licenseId", "licenseId", { unique: false });
           txTypeStore.createIndex("category", "category", { unique: false });
+        }
+      }
+
+      // v12 stores — customers cache
+      if (oldVersion < 12) {
+        if (!db.objectStoreNames.contains(STORES.CUSTOMERS)) {
+          const custStore = db.createObjectStore(STORES.CUSTOMERS, {
+            keyPath: "id",
+          });
+          custStore.createIndex("licenseId", "licenseId", { unique: false });
+        }
+      }
+
+      // v13 stores — quotations
+      if (oldVersion < 13) {
+        if (!db.objectStoreNames.contains(STORES.QUOTATIONS)) {
+          const qtStore = db.createObjectStore(STORES.QUOTATIONS, {
+            keyPath: "id",
+          });
+          qtStore.createIndex("licenseId", "licenseId", { unique: false });
+          qtStore.createIndex(
+            "licenseId_quotationDate",
+            ["licenseId", "quotationDate"],
+            { unique: false },
+          );
+          qtStore.createIndex("licenseId_status", ["licenseId", "status"], {
+            unique: false,
+          });
+        }
+        if (!db.objectStoreNames.contains(STORES.QUOTATION_ITEMS)) {
+          const itemStore = db.createObjectStore(STORES.QUOTATION_ITEMS, {
+            keyPath: "id",
+          });
+          itemStore.createIndex("quotationId", "quotationId", {
+            unique: false,
+          });
         }
       }
     };

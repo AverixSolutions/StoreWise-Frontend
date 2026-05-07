@@ -43,7 +43,7 @@ export default function PurchaseNavigation({
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
         e.preventDefault();
-        onNavigate("/dashboard");
+        onNavigate("/dashboard/entries");
       }
     };
     window.addEventListener("keydown", onKey);
@@ -55,12 +55,12 @@ export default function PurchaseNavigation({
       <div className="px-3 sm:px-4 py-2.5 flex items-center justify-between">
         {/* Back */}
         <button
-          onClick={() => onNavigate("/dashboard")}
+          onClick={() => onNavigate("/dashboard/entries")}
           className="flex items-center gap-2 text-white/70 hover:text-white transition-colors cursor-pointer"
-          title="Back to Dashboard (Ctrl/Cmd+B)"
+          title="Back to Entries (Ctrl/Cmd+B)"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span className="text-sm font-medium">Dashboard</span>
+          <span className="text-sm font-medium">Entries</span>
         </button>
 
         {/* Title */}

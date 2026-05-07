@@ -79,6 +79,16 @@ import {
 } from "./purchaseReturns";
 
 import {
+  desktopCreateQuotation,
+  desktopUpdateQuotation,
+  desktopDeleteQuotation,
+  desktopListQuotations,
+  desktopGetQuotationFull,
+  desktopPeekNextQuotationSlNo,
+  desktopConvertQuotationToSale,
+} from "./quotations";
+
+import {
   desktopCreateSaleReturn,
   desktopUpdateSaleReturn,
   desktopDeleteSaleReturn,
@@ -646,4 +656,26 @@ export const desktopPlatform: PlatformAPI = {
     desktopGetCustomerCount(licenseId, params),
   getCustomerDistincts: (licenseId: string) =>
     desktopGetCustomerDistincts(licenseId),
+
+  // ── Quotations ────────────────────────────────────────────────────────────
+  createQuotation: (header, items) => desktopCreateQuotation(header, items),
+  updateQuotation: (payload) => desktopUpdateQuotation(payload),
+  deleteQuotation: (id) => desktopDeleteQuotation(id),
+  listQuotations: (licenseId, filters) => desktopListQuotations(licenseId, filters),
+  getQuotationFull: (id) => desktopGetQuotationFull(id),
+  peekNextQuotationSlNo: (licenseId) => desktopPeekNextQuotationSlNo(licenseId),
+  convertQuotationToSale: (quotationId, overrides) =>
+    desktopConvertQuotationToSale(quotationId, overrides),
+
+  // ── Print ─────────────────────────────────────────────────────────────────
+  getPrinters: async () => {
+    const api = requireElectronAPI() as any;
+    if (!api.getPrinters) return [];
+    const result = await api.getPrinters();
+    return (result || []).map((p: any) => ({
+      name: p.name,
+      displayName: p.displayName || p.name,
+      isDefault: p.isDefault ?? false,
+    }));
+  },
 };

@@ -393,34 +393,6 @@ export default function ItemTableRow({
         </div>
       </td>
 
-      {/* MFG Date */}
-      <td className="px-2.5 py-2 min-w-[120px] hidden md:table-cell">
-        <input
-          type="date"
-          className={cellInput}
-          value={toDateInput(r.mfgDate)}
-          onChange={(e) =>
-            onUpdateRow(idx, { mfgDate: fromDateInput(e.target.value) })
-          }
-          data-cell={`${idx}:mfgDate`}
-          onKeyDown={(e) => onGridKey(e, idx, "mfgDate")}
-        />
-      </td>
-
-      {/* Expiry Date */}
-      <td className="px-2.5 py-2 min-w-[120px] hidden md:table-cell">
-        <input
-          type="date"
-          className={cellInput}
-          value={toDateInput(r.expiryDate)}
-          onChange={(e) =>
-            onUpdateRow(idx, { expiryDate: fromDateInput(e.target.value) })
-          }
-          data-cell={`${idx}:expiryDate`}
-          onKeyDown={(e) => onGridKey(e, idx, "expiryDate")}
-        />
-      </td>
-
       {/* Sale Price + Profit % */}
       <td className="px-2.5 py-2 min-w-[200px]">
         <div className="grid grid-cols-[1fr_96px] gap-2 items-center">
@@ -544,6 +516,34 @@ export default function ItemTableRow({
             "data-cell": `${idx}:lineType`,
             onKeyDown: (e: any) => onGridKey(e, idx, "lineType"),
           }}
+        />
+      </td>
+
+      {/* MFG Date */}
+      <td className="px-2.5 py-2 min-w-[120px] hidden md:table-cell">
+        <input
+          type="date"
+          className={cellInput}
+          value={toDateInput(r.mfgDate)}
+          onChange={(e) =>
+            onUpdateRow(idx, { mfgDate: fromDateInput(e.target.value) })
+          }
+          data-cell={`${idx}:mfgDate`}
+          onKeyDown={(e) => onGridKey(e, idx, "mfgDate")}
+        />
+      </td>
+
+      {/* Expiry Date */}
+      <td className="px-2.5 py-2 min-w-[120px] hidden md:table-cell">
+        <input
+          type="date"
+          className={cellInput}
+          value={toDateInput(r.expiryDate)}
+          onChange={(e) =>
+            onUpdateRow(idx, { expiryDate: fromDateInput(e.target.value) })
+          }
+          data-cell={`${idx}:expiryDate`}
+          onKeyDown={(e) => onGridKey(e, idx, "expiryDate")}
         />
       </td>
 

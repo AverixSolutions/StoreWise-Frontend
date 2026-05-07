@@ -17,9 +17,7 @@ export type ShopProfile = {
 };
 
 export async function getShopProfile(): Promise<ShopProfile> {
-  if (typeof window === "undefined") {
-    return { name: "My Shop" };
-  }
+  if (typeof window === "undefined") return { name: "My Shop" };
 
   const licenseId = localStorage.getItem("licenseId") || "demo-license";
   const isDesktop = !!(window as any).electronAPI;
@@ -36,7 +34,7 @@ export async function getShopProfile(): Promise<ShopProfile> {
 
   return {
     name: s.shopName || "My Shop",
-    logoUrl: isDesktop ? s.logoDataUrl || null : s.logoUrl || null,
+    logoUrl: s.logoUrl || null,
     addressLine1: s.addressLine1 || null,
     addressLine2: s.addressLine2 || null,
     city: s.city || null,
@@ -46,6 +44,6 @@ export async function getShopProfile(): Promise<ShopProfile> {
     email: s.email || null,
     gstin: s.gstin || null,
     footerNote: s.footerNote || null,
-    authorizedSignatory: s.authorizedSignatory || "Authorized Signature",
+    authorizedSignatory: s.authorizedSignatory || "Authorized Signatory",
   };
 }

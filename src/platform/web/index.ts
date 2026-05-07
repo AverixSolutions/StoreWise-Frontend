@@ -157,6 +157,19 @@ import {
   webDeleteSaleReturnHold,
 } from "./saleReturns";
 
+import { webGetDashboardOverview } from "./dashboard";
+import {
+  webListQuotations,
+  webGetQuotationFull,
+  webCreateQuotation,
+  webUpdateQuotation,
+  webDeleteQuotation,
+  webConvertQuotationToSale,
+  webPeekNextQuotationSlNo,
+} from "./quotations";
+
+import { idbGetAllByIndex, STORES } from "./idb";
+
 let onlineHookRegistered = false;
 function ensureOnlineSyncHook() {
   if (typeof window === "undefined" || onlineHookRegistered) return;
@@ -172,16 +185,28 @@ export const webPlatform: PlatformAPI = {
     online: typeof navigator !== "undefined" ? navigator.onLine : true,
   }),
 
-  getMasterCounts: async (_licenseId: string) => ({
-    supplierCount: 0,
-    customerCount: 0,
-    accountCount: 0,
-  }),
+  getMasterCounts: async (licenseId: string) => {
+    type CountRecord = {
+      licenseId: string;
+      deletedAt?: string | null;
+    };
 
-  getDashboardOverview: async (_licenseId: string, _days = 7) => ({
-    success: false,
-    unsupported: true,
-  }),
+    const [suppliers, customers] = await Promise.all([
+      idbGetAllByIndex<CountRecord>(STORES.SUPPLIERS, "licenseId", licenseId),
+      idbGetAllByIndex<CountRecord>(STORES.CUSTOMERS, "licenseId", licenseId),
+    ]);
+
+    return {
+      supplierCount: suppliers.filter((r: CountRecord) => !r.deletedAt).length,
+
+      customerCount: customers.filter((r: CountRecord) => !r.deletedAt).length,
+
+      accountCount: 0,
+    };
+  },
+
+  getDashboardOverview: (licenseId: string, days = 7) =>
+    webGetDashboardOverview(licenseId, days),
 
   // ── Products ──────────────────────────────────────────────────────────────
 
@@ -383,7 +408,8 @@ export const webPlatform: PlatformAPI = {
   createSaleReturn: (payload) => webCreateSaleReturn(payload),
   updateSaleReturn: (payload) => webUpdateSaleReturn(payload),
   deleteSaleReturn: (id) => webDeleteSaleReturn(id),
-  listSaleReturns: (licenseId, filters) => webListSaleReturns(licenseId, filters),
+  listSaleReturns: (licenseId, filters) =>
+    webListSaleReturns(licenseId, filters),
   getSaleReturnFull: (id) => webGetSaleReturnFull(id),
   peekNextSaleReturnSlNo: (licenseId) => webPeekNextSaleReturnSlNo(licenseId),
   saveSaleReturnHold: (payload) => webSaveSaleReturnHold(payload),
@@ -391,4 +417,17 @@ export const webPlatform: PlatformAPI = {
     webListSaleReturnHolds(licenseId, pagination),
   getSaleReturnHold: (id) => webGetSaleReturnHold(id),
   deleteSaleReturnHold: (id) => webDeleteSaleReturnHold(id),
+
+  // ── Quotations ────────────────────────────────────────────────────────────
+  createQuotation: (header, items) => webCreateQuotation(header, items),
+  updateQuotation: (payload) => webUpdateQuotation(payload),
+  deleteQuotation: (id) => webDeleteQuotation(id),
+  listQuotations: (licenseId, filters) => webListQuotations(licenseId, filters ?? {}),
+  getQuotationFull: (id) => webGetQuotationFull(id),
+  peekNextQuotationSlNo: (licenseId) => webPeekNextQuotationSlNo(licenseId),
+  convertQuotationToSale: (quotationId, overrides) =>
+    webConvertQuotationToSale(quotationId, overrides),
+
+  // ── Print ─────────────────────────────────────────────────────────────────
+  getPrinters: async () => [],
 };

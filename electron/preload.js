@@ -391,6 +391,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   // print
   printHtml: (html, options) => ipcRenderer.invoke("print:html", html, options),
+  getPrinters: () => ipcRenderer.invoke("print:get-printers"),
 
   // SHOP SETTINGS
   getShopSettings: (licenseId) =>
@@ -434,6 +435,20 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("unit:getDirty", licenseId, limit),
   markUnitsSynced: (ids, ts) => ipcRenderer.invoke("unit:markSynced", ids, ts),
   bulkUpsertUnits: (items) => ipcRenderer.invoke("unit:bulkUpsert", items),
+
+  // QUOTATIONS
+  listQuotations: (licenseId, filters) =>
+    ipcRenderer.invoke("quotation:list", licenseId, filters),
+  getQuotation: (id) => ipcRenderer.invoke("quotation:get", id),
+  createQuotation: (header, items) =>
+    ipcRenderer.invoke("quotation:create", header, items),
+  updateQuotation: (payload) =>
+    ipcRenderer.invoke("quotation:update", payload),
+  deleteQuotation: (id) => ipcRenderer.invoke("quotation:delete", id),
+  convertQuotationToSale: (quotationId, overrides) =>
+    ipcRenderer.invoke("quotation:convert-to-sale", quotationId, overrides),
+  peekNextQuotationSlNo: (licenseId) =>
+    ipcRenderer.invoke("quotation:peek-next-slno", licenseId),
 
   // Label printing
   listLabelPrinters: (licenseId) =>

@@ -282,22 +282,46 @@ export default function MasterPage() {
     (async () => {
       setCountsLoading(true);
       try {
+        // Base counts from platform (suppliers/customers from IDB or API)
         const result = await platform.getMasterCounts(licenseId);
         const next: Record<string, number> = {
           suppliers: result.supplierCount ?? 0,
           customers: result.customerCount ?? 0,
         };
 
-        if (typeof (platform as any).getBrandsCategoriesCount === "function") {
-          try {
-            const bc = await (platform as any).getBrandsCategoriesCount(
-              licenseId,
-            );
-            next.brandCategory =
-              (bc?.brandCount ?? 0) + (bc?.categoryCount ?? 0);
-          } catch {
-            // not fatal
-          }
+        // Brands + Categories + Units + Tax + Transaction Types
+        try {
+          const [brands, cats, units, taxCats, txTypes] = await Promise.all([
+            platform.listBrands(licenseId),
+            platform.listCategories(licenseId),
+            platform.listUnits(licenseId),
+            platform.listTaxCategories(licenseId),
+            platform.listAllTransactionTypes?.(licenseId),
+          ]);
+
+          next.brandCategory =
+            (brands.rows?.filter((r) => !r.deletedAt).length ?? 0) +
+            (cats.rows?.filter((r) => !r.deletedAt).length ?? 0);
+
+          next.units = units.rows?.filter((r) => !r.deletedAt).length ?? 0;
+
+          next.tax = taxCats.rows?.filter((r) => !r.deletedAt).length ?? 0;
+
+          next.transactionTypes =
+            txTypes?.rows?.filter((r) => !r.deletedAt).length ?? 0;
+        } catch {
+          // not fatal
+        }
+
+        try {
+          const [suppResult, custResult] = await Promise.all([
+            platform.listSuppliers?.(licenseId, { page: 1, pageSize: 1 }),
+            platform.listCustomers?.(licenseId, { page: 1, pageSize: 1 }),
+          ]);
+          if (suppResult?.total != null) next.suppliers = suppResult.total;
+          if (custResult?.total != null) next.customers = custResult.total;
+        } catch {
+          // offline or API down — keep the IDB counts from getMasterCounts above
         }
 
         setCounts(next);

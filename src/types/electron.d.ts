@@ -109,11 +109,22 @@ declare global {
           preview?: boolean;
           pageSize?: string;
           deviceName?: string;
+          printerName?: string;
         },
       ) => Promise<{
         success: boolean;
         error?: string;
       }>;
+
+      getPrinters: () => Promise<
+        Array<{
+          name: string;
+          displayName: string;
+          description: string;
+          isDefault: boolean;
+          status: number;
+        }>
+      >;
 
       listLabelPrinters: (licenseId: string) => Promise<{
         success: boolean;

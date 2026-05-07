@@ -156,9 +156,9 @@ export async function runPull(
       if (data.records && data.records.length > 0) {
         await adapter.upsertFromServer(data.records);
         result.pulled += data.records.length;
+        await adapter.setSyncState({ lastPulledAt: data.pulledAt });
       }
 
-      await adapter.setSyncState({ lastPulledAt: data.pulledAt });
       since = data.pulledAt;
       hasMore = data.hasMore === true;
     }

@@ -13,7 +13,6 @@ import {
   CheckCircle2,
   AlertCircle,
   Sparkles,
-  FolderTree,
 } from "lucide-react";
 import Dropdown from "@/components/ui/Dropdown";
 import SearchableDropdown from "@/components/ui/SearchableDropdown";
@@ -942,7 +941,6 @@ export default function ProductFormModal({
       const trimmedSubcategory = subcategory.trim();
       const trimmedShortCode = shortCode.trim().toUpperCase();
 
-      if (!trimmedProductName) throw new Error("Product name is required");
       if (!trimmedName) throw new Error("Item name is required");
 
       if (!trimmedCategory) {
@@ -1164,10 +1162,6 @@ export default function ProductFormModal({
         );
         const fallbackName = r.name?.trim() ?? "";
         const finalName = fallbackName || generatedName || trimmedProductName;
-
-        if (!trimmedProductName) {
-          throw new Error(`Row ${i + 1}: Product name is required`);
-        }
 
         if (!finalName) {
           throw new Error(`Row ${i + 1}: Item name could not be generated`);
@@ -1510,9 +1504,7 @@ export default function ProductFormModal({
               </div>
 
               <div>
-                <label className={labelClass}>
-                  Product Name <span className="text-rose-400">*</span>
-                </label>
+                <label className={labelClass}>Product Name</label>
                 <input
                   ref={productNameRef}
                   type="text"
@@ -1722,9 +1714,7 @@ export default function ProductFormModal({
             {/* ── Row 8: Pricing ── */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className={labelClass}>
-                  Cost Price <span className="text-rose-400">*</span>
-                </label>
+                <label className={labelClass}>Cost Price</label>
                 <div className="relative">
                   <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-slate-400">
                     ₹
@@ -1735,7 +1725,6 @@ export default function ProductFormModal({
                     value={costPrice}
                     onChange={(e) => setCostPrice(e.target.value)}
                     onKeyDown={(e) => handleKeyDown(e, IDX.COST)}
-                    required
                     min="0"
                     step="1"
                     placeholder="0.00"

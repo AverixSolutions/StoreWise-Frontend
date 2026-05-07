@@ -24,7 +24,6 @@ export default function SalesNavigation({
     return "Sales";
   }, [pathname, title]);
 
-  // Online/offline indicator
   const [online, setOnline] = useState(
     typeof navigator !== "undefined" ? navigator.onLine : true,
   );
@@ -39,29 +38,17 @@ export default function SalesNavigation({
     };
   }, []);
 
-  // Keyboard: Ctrl/Cmd + B to go back to dashboard
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
-        e.preventDefault();
-        onNavigate("/dashboard");
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onNavigate]);
-
   return (
     <div className="sticky top-0 z-40 bg-[#1e3a5f] border-b border-[#1e3a5f]">
       <div className="px-3 sm:px-4 py-2.5 flex items-center justify-between">
-        {/* Back to Dashboard */}
+        {/* Back to Entries */}
         <button
-          onClick={() => onNavigate("/dashboard")}
+          onClick={() => onNavigate("/dashboard/entries")}
           className="flex items-center gap-2 text-white/70 hover:text-white transition-colors cursor-pointer"
-          title="Back to Dashboard (Ctrl/Cmd+B)"
+          title="Back to Entries"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span className="text-sm font-medium">Dashboard</span>
+          <span className="text-sm font-medium">Entries</span>
         </button>
 
         {/* Page Title */}

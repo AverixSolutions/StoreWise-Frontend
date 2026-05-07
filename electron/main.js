@@ -7,6 +7,8 @@ const http = require("http");
 
 const isDev = process.env.NODE_ENV === "development";
 
+if (!isDev) app.setLoginItemSettings({ openAsHidden: false });
+
 app.setName("KYNFLOW");
 
 let localServer = null;

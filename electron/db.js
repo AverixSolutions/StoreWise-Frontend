@@ -2191,6 +2191,104 @@ if (!removeUnitCheckRan) {
   }
 }
 
+// ── QUOTATIONS ──────────────────────────────────────────────────────────────
+
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS quotations (
+    id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    slNo INTEGER,
+    quotationNo TEXT,
+    userId TEXT,
+    licenseId TEXT NOT NULL,
+    customerId TEXT,
+    customerName TEXT,
+    department TEXT,
+    debitAccount TEXT,
+    natureOfEntry TEXT,
+    quotationDate TEXT DEFAULT (datetime('now')),
+    entryTime TEXT,
+    totalAmount REAL NOT NULL DEFAULT 0,
+    discount REAL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'DRAFT' CHECK(status IN ('DRAFT','SENT','CONVERTED','EXPIRED')),
+    notes TEXT,
+    convertedSaleId TEXT,
+    createdAt TEXT,
+    updatedAt TEXT,
+    isSynced INTEGER DEFAULT 0,
+    syncedAt TEXT,
+    deletedAt TEXT
+  )
+`,
+).run();
+
+db.prepare(
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_quotations_slno
+   ON quotations(licenseId, slNo)`,
+).run();
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_quotations_license_date
+   ON quotations(licenseId, quotationDate)`,
+).run();
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_quotations_customer
+   ON quotations(licenseId, customerId)`,
+).run();
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_quotations_status
+   ON quotations(licenseId, status)`,
+).run();
+
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS quotation_items (
+    id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    quotationId TEXT NOT NULL,
+    productId TEXT NOT NULL,
+    barcode TEXT,
+    quantity INTEGER NOT NULL,
+    unit TEXT NOT NULL,
+    rate REAL NOT NULL,
+    mrp REAL,
+    taxPercent TEXT NOT NULL CHECK (taxPercent IN ('NT','P5','P12','P18','P28')),
+    taxAmount REAL NOT NULL,
+    discount REAL DEFAULT 0,
+    discountType TEXT,
+    salePrice REAL,
+    profit REAL,
+    totalCost REAL NOT NULL,
+    billedValue REAL,
+    batchNo TEXT,
+    batchId TEXT,
+    mfgDate TEXT,
+    expiryDate TEXT,
+    lineNo INTEGER,
+    isFree INTEGER DEFAULT 0,
+    effectiveUnitValue REAL,
+    createdAt TEXT,
+    updatedAt TEXT,
+    isSynced INTEGER DEFAULT 0,
+    syncedAt TEXT,
+    deletedAt TEXT,
+    FOREIGN KEY (quotationId) REFERENCES quotations(id) ON DELETE CASCADE
+  )
+`,
+).run();
+
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_quotation_items_quotation
+   ON quotation_items(quotationId, lineNo)`,
+).run();
+
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS quotation_sequence (
+    licenseId TEXT PRIMARY KEY,
+    lastSlNo INTEGER DEFAULT 0
+  )
+`,
+).run();
+
 // 1. Ensure the migrations table exists first!
 db.prepare(
   `

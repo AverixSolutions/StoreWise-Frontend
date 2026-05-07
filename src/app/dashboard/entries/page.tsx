@@ -27,7 +27,7 @@ type NavItem = {
   featured?: boolean;
   iconBg: string;
   iconText: string;
-  hoverBorder: string;
+  border: string;
   hoverBg: string;
 };
 
@@ -41,7 +41,7 @@ const actions: NavItem[] = [
     featured: true,
     iconBg: "bg-blue-100",
     iconText: "text-blue-600",
-    hoverBorder: "hover:border-blue-300",
+    border: "border-blue-300",
     hoverBg: "hover:bg-blue-50/50",
   },
   {
@@ -53,7 +53,7 @@ const actions: NavItem[] = [
     featured: true,
     iconBg: "bg-emerald-100",
     iconText: "text-emerald-600",
-    hoverBorder: "hover:border-emerald-300",
+    border: "border-emerald-300",
     hoverBg: "hover:bg-emerald-50/50",
   },
   {
@@ -65,7 +65,7 @@ const actions: NavItem[] = [
     featured: true,
     iconBg: "bg-fuchsia-100",
     iconText: "text-fuchsia-600",
-    hoverBorder: "hover:border-fuchsia-300",
+    border: "border-fuchsia-300",
     hoverBg: "hover:bg-fuchsia-50/50",
   },
   {
@@ -77,7 +77,7 @@ const actions: NavItem[] = [
     featured: true,
     iconBg: "bg-orange-100",
     iconText: "text-orange-600",
-    hoverBorder: "hover:border-orange-300",
+    border: "border-orange-300",
     hoverBg: "hover:bg-orange-50/50",
   },
   {
@@ -88,7 +88,7 @@ const actions: NavItem[] = [
     path: "/dashboard/sales-return",
     iconBg: "bg-rose-100",
     iconText: "text-rose-600",
-    hoverBorder: "hover:border-rose-300",
+    border: "border-rose-300",
     hoverBg: "hover:bg-rose-50/50",
   },
   {
@@ -99,7 +99,7 @@ const actions: NavItem[] = [
     path: "/dashboard/purchase-return",
     iconBg: "bg-amber-100",
     iconText: "text-amber-600",
-    hoverBorder: "hover:border-amber-300",
+    border: "border-amber-300",
     hoverBg: "hover:bg-amber-50/50",
   },
   {
@@ -110,7 +110,7 @@ const actions: NavItem[] = [
     path: "/dashboard/payment",
     iconBg: "bg-indigo-100",
     iconText: "text-indigo-600",
-    hoverBorder: "hover:border-indigo-300",
+    border: "border-indigo-300",
     hoverBg: "hover:bg-indigo-50/50",
   },
   {
@@ -121,7 +121,7 @@ const actions: NavItem[] = [
     path: "/dashboard/collection",
     iconBg: "bg-teal-100",
     iconText: "text-teal-600",
-    hoverBorder: "hover:border-teal-300",
+    border: "border-teal-300",
     hoverBg: "hover:bg-teal-50/50",
   },
   {
@@ -132,7 +132,7 @@ const actions: NavItem[] = [
     path: "/dashboard/quotation",
     iconBg: "bg-cyan-100",
     iconText: "text-cyan-600",
-    hoverBorder: "hover:border-cyan-300",
+    border: "border-cyan-300",
     hoverBg: "hover:bg-cyan-50/50",
   },
 ];
@@ -152,7 +152,7 @@ function EntryTile({
       whileHover={{ y: -2 }}
       whileTap={{ scale: 0.985 }}
       onClick={() => onOpen(item.path)}
-      className={`group w-full rounded-[22px] border bg-white text-left shadow-[0_4px_14px_rgba(15,23,42,0.06)] transition-all duration-200 cursor-pointer border-slate-200/80 ${item.hoverBorder} ${item.hoverBg} hover:shadow-[0_10px_28px_rgba(15,23,42,0.10)] ${
+      className={`group w-full rounded-[22px] border bg-white text-left shadow-[0_4px_14px_rgba(15,23,42,0.06)] transition-all duration-200 cursor-pointer ${item.border} ${item.hoverBg} hover:shadow-[0_10px_28px_rgba(15,23,42,0.10)] ${
         compact ? "p-4" : "p-5"
       }`}
     >

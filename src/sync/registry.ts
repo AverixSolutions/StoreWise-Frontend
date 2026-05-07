@@ -32,6 +32,10 @@ import { createSupplierTransactionsAdapter } from "./adapters/supplierTransactio
 import { createCustomerTransactionsAdapter } from "./adapters/customerTransactions";
 
 import { createCustomersAdapter } from "./adapters/customers";
+import {
+  createQuotationsAdapter,
+  createQuotationItemsAdapter,
+} from "./adapters/quotations";
 
 export function buildAdapters(isDesktop: boolean): SyncAdapter[] {
   return [
@@ -55,6 +59,8 @@ export function buildAdapters(isDesktop: boolean): SyncAdapter[] {
     createSaleHoldsAdapter(isDesktop),
     createSaleReturnsAdapter(isDesktop),
     createSaleReturnItemsAdapter(isDesktop),
+    createQuotationsAdapter(isDesktop),
+    createQuotationItemsAdapter(isDesktop),
     createSupplierTransactionsAdapter(isDesktop),
     createCustomerTransactionsAdapter(isDesktop),
   ];

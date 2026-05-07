@@ -1650,4 +1650,178 @@ export type PlatformAPI = {
     cities: string[];
     states: string[];
   }>;
+
+  // ── Print ────────────────────────────────────────────────────────────────
+  getPrinters?: () => Promise<
+    Array<{ name: string; displayName: string; isDefault: boolean }>
+  >;
+
+  // ── Quotations ────────────────────────────────────────────────────────────
+  createQuotation?: (
+    header: QuotationCreatePayload,
+    items: QuotationItemInput[],
+  ) => Promise<CreateQuotationResult>;
+
+  updateQuotation?: (payload: QuotationUpdatePayload) => Promise<MutationResult>;
+
+  deleteQuotation?: (
+    id: string,
+  ) => Promise<MutationResult & { deletedAt?: string }>;
+
+  listQuotations?: (
+    licenseId: string,
+    filters?: QuotationListFilters,
+  ) => Promise<QuotationListResult>;
+
+  getQuotationFull?: (id: string) => Promise<QuotationFullResult>;
+
+  peekNextQuotationSlNo?: (
+    licenseId: string,
+  ) => Promise<{ nextSlNo: number; nextQuotationNo: string }>;
+
+  convertQuotationToSale?: (
+    quotationId: string,
+    overrides?: { billNo?: string | null; saleType?: "CASH" | "CREDIT"; saleDate?: string },
+  ) => Promise<ConvertQuotationResult>;
+};
+
+// ── Quotation types ───────────────────────────────────────────────────────────
+
+export type QuotationStatus = "DRAFT" | "SENT" | "CONVERTED" | "EXPIRED";
+
+export type QuotationItemInput = {
+  productId: string;
+  barcode?: string | null;
+  quantity: number;
+  unit: string;
+  rate: number;
+  mrp?: number | null;
+  taxPercent: string;
+  taxAmount?: number;
+  discount?: number;
+  discountType?: "ABS" | "PCT";
+  salePrice?: number | null;
+  profit?: number | null;
+  totalCost?: number;
+  billedValue?: number;
+  batchNo?: string | null;
+  mfgDate?: string | null;
+  expiryDate?: string | null;
+  lineNo?: number;
+  isFree?: boolean;
+  batchId?: string | null;
+};
+
+export type QuotationCreatePayload = {
+  licenseId: string;
+  userId?: string;
+  customerId?: string | null;
+  customerName?: string | null;
+  department?: string | null;
+  debitAccount?: string | null;
+  natureOfEntry?: string | null;
+  quotationDate: string;
+  entryTime?: string;
+  discount?: number;
+  status?: QuotationStatus;
+  notes?: string | null;
+};
+
+export type QuotationUpdatePayload = {
+  id: string;
+  header: QuotationCreatePayload;
+  items: QuotationItemInput[];
+};
+
+export type CreateQuotationResult = {
+  success: boolean;
+  quotationId?: string;
+  slNo?: number;
+  quotationNo?: string;
+  totalAmount?: number;
+  error?: string;
+};
+
+export type ConvertQuotationResult = {
+  success: boolean;
+  saleId?: string;
+  saleSlNo?: number;
+  totalAmount?: number;
+  error?: string;
+};
+
+export type QuotationListFilters = {
+  q?: string;
+  customerId?: string | null;
+  status?: QuotationStatus | null;
+  dateFrom?: string | null;
+  dateTo?: string | null;
+  page?: number;
+  pageSize?: number;
+};
+
+export type QuotationRow = {
+  id: string;
+  slNo?: number;
+  quotationNo?: string;
+  customerId?: string | null;
+  customerName?: string | null;
+  quotationDate: string;
+  entryTime?: string;
+  totalAmount: number;
+  discount?: number;
+  status: QuotationStatus;
+  notes?: string | null;
+  convertedSaleId?: string | null;
+  itemCount?: number;
+  isSynced?: number;
+  deletedAt?: string | null;
+};
+
+export type QuotationItemRow = {
+  id: string;
+  quotationId: string;
+  productId: string;
+  productName?: string | null;
+  productCode?: string | null;
+  barcode?: string | null;
+  quantity: number;
+  unit: string;
+  rate: number;
+  mrp?: number | null;
+  taxPercent: string;
+  taxAmount: number;
+  discount?: number;
+  discountType?: string;
+  salePrice?: number | null;
+  profit?: number | null;
+  totalCost: number;
+  billedValue?: number;
+  batchNo?: string | null;
+  mfgDate?: string | null;
+  expiryDate?: string | null;
+  lineNo?: number;
+  isFree?: number;
+  batchId?: string | null;
+};
+
+export type QuotationListResult = {
+  success: boolean;
+  total: number;
+  page: number;
+  pageSize: number;
+  rows: QuotationRow[];
+  error?: string;
+};
+
+export type QuotationFullResult = {
+  success: boolean;
+  quotation?: QuotationRow & {
+    licenseId?: string;
+    userId?: string;
+    createdAt?: string;
+    updatedAt?: string;
+  };
+  items?: QuotationItemRow[];
+  error?: string;
 };

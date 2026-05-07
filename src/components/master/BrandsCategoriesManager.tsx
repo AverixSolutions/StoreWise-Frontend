@@ -1,7 +1,7 @@
 // src/components/master/BrandsCategoriesManager.tsx
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Plus,
   Trash2,
@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { platform } from "@/platform";
 import { getActiveLicenseId } from "@/lib/session/runtimeSession";
+import { useSyncStatus } from "@/sync/SyncProvider";
 import { useRouter } from "next/navigation";
 import type { CategoryRecord, BrandRecord } from "@/platform/types";
 
@@ -1613,6 +1614,7 @@ export default function BrandsCategoriesManager({
   onBackToMaster?: () => void;
 }) {
   const router = useRouter();
+  const { pullNow } = useSyncStatus();
   const [activeTab, setActiveTab] = useState<ActiveTab>("categories");
   const [categoryRecords, setCategoryRecords] = useState<CategoryRecord[]>([]);
   const [brandRecords, setBrandRecords] = useState<BrandRecord[]>([]);
@@ -1624,6 +1626,7 @@ export default function BrandsCategoriesManager({
   const [subcategoryCounts, setSubcategoryCounts] = useState<
     Map<string, number>
   >(new Map());
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   const licenseId = getActiveLicenseId();
 
@@ -1633,8 +1636,12 @@ export default function BrandsCategoriesManager({
 
   // ── Load ────────────────────────────────────────────────────────────────────
 
-  async function load() {
-    setLoading(true);
+  const isFirstLoad = useRef(true);
+
+  const load = useCallback(async () => {
+    if (isFirstLoad.current) {
+      setLoading(true);
+    }
     try {
       const [productsResult, categoriesResult, brandsResult] =
         await Promise.all([
@@ -1712,13 +1719,31 @@ export default function BrandsCategoriesManager({
       setBrandRecords([]);
       setBrands([]);
     } finally {
+      isFirstLoad.current = false;
       setLoading(false);
     }
-  }
+  }, [licenseId]);
 
   useEffect(() => {
     load();
-  }, [licenseId]);
+  }, [load, refreshTrigger]);
+
+  // Pull fresh data from server on mount and listen for background sync updates
+  useEffect(() => {
+    pullNow("brand");
+    pullNow("category");
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { entity } = (e as CustomEvent<{ entity: string }>).detail ?? {};
+      if (entity === "brand" || entity === "category") {
+        setRefreshTrigger((t) => t + 1);
+      }
+    };
+    window.addEventListener("kynflow:sync:updated", handler);
+    return () => window.removeEventListener("kynflow:sync:updated", handler);
+  }, []);
 
   // ── Bulk product field updater ───────────────────────────────────────────────
 

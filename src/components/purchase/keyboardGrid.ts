@@ -7,12 +7,12 @@ export const COLS = [
   "rate",
   "tax",
   "discount",
-  "mfgDate",
-  "expiryDate",
   "profitPercent",
   "salePrice",
   "mrp",
   "lineType",
+  "mfgDate",
+  "expiryDate",
 ] as const;
 
 export type ColKey = (typeof COLS)[number];
@@ -62,12 +62,11 @@ export function focusCell(rowIndex: number, col: ColKey) {
 
   // ---------- HORIZONTAL SNAP ZONES (left block / right block) ----------
   const colIndex = COLS.indexOf(col);
-  const pivotIndex = COLS.indexOf("mfgDate"); // from here we show the "right side" fully
+  const pivotIndex = COLS.indexOf("profitPercent");
 
   if (colIndex === -1) return;
 
   if (pivotIndex === -1) {
-    // Fallback: no pivot defined, just ensure cell is roughly in view horizontally
     const paddingX = 48;
     const viewLeft = container.scrollLeft;
     const viewRight = viewLeft + container.clientWidth;
@@ -86,13 +85,11 @@ export function focusCell(rowIndex: number, col: ColKey) {
     return;
   }
 
-  // LEFT ZONE: before MFG → snap fully to start
   if (colIndex < pivotIndex) {
     container.scrollLeft = 0;
     return;
   }
 
-  // RIGHT ZONE: from MFG onwards → snap fully to end
   const maxScrollLeft = container.scrollWidth - container.clientWidth;
   container.scrollLeft = maxScrollLeft > 0 ? maxScrollLeft : 0;
 }

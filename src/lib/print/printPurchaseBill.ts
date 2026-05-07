@@ -2,38 +2,34 @@
 import { getShopProfile } from "./getShopProfile";
 import { buildInvoiceHtml } from "./buildInvoiceHtml";
 import { platform } from "@/platform";
+import { getTaskPref } from "./printPreferences";
+
+type ShowToast = (type: "success" | "error" | "info", message: string) => void;
 
 export async function printPurchaseBill(
   purchaseId: string,
-  options?: {
-    preview?: boolean;
-    silent?: boolean;
-  },
+  overrides?: { preview?: boolean; silent?: boolean },
+  showToast?: ShowToast,
 ) {
   const isDesktop = !!(window as any).electronAPI;
+  const pref = getTaskPref("purchase");
+  const usePreview = overrides?.preview ?? pref.preview;
 
-  // ── Fetch purchase data ───────────────────────────────────────────────────
   let res: any;
-
   if (isDesktop) {
     const api = (window as any).electronAPI;
     if (!api?.getPurchaseFull)
       throw new Error("Purchase print API not available");
     res = await api.getPurchaseFull(purchaseId);
   } else {
-    // Use your existing platform abstraction
     res = await platform.getPurchaseFull?.(purchaseId);
   }
-
-  if (!res?.success) {
-    throw new Error(res?.error || "Failed to load purchase");
-  }
+  if (!res?.success) throw new Error(res?.error || "Failed to load purchase");
 
   const { purchase, items } = res;
   const shop = await getShopProfile();
-
   const subTotal = items.reduce(
-    (sum: number, it: any) => sum + Number(it.billedValue || 0),
+    (s: number, it: any) => s + Number(it.billedValue || 0),
     0,
   );
   const discount = Number(purchase.discount || 0);
@@ -52,12 +48,9 @@ export async function printPurchaseBill(
       natureOfEntry: purchase.natureOfEntry,
       typeLabel: purchase.purchaseType,
     },
-    party: {
-      label: "Supplier",
-      name: purchase.supplierName,
-    },
-    items: items.map((it: any, index: number) => ({
-      lineNo: it.lineNo ?? index + 1,
+    party: { label: "Supplier", name: purchase.supplierName },
+    items: items.map((it: any, i: number) => ({
+      lineNo: it.lineNo ?? i + 1,
       name: it.productName || "",
       barcode: it.barcode,
       batchNo: it.batchNo,
@@ -75,38 +68,46 @@ export async function printPurchaseBill(
     grandTotal,
   });
 
-  // ── Render / print ────────────────────────────────────────────────────────
   if (isDesktop) {
-    return (window as any).electronAPI.printHtml(html, {
-      preview: options?.preview ?? true,
-      silent: options?.silent ?? false,
-      pageSize: "A4",
+    const pageSize =
+      pref.paperSize === "thermal" ? { width: 80000, height: 200000 } : "A4";
+
+    const result = await (window as any).electronAPI.printHtml(html, {
+      preview: usePreview,
+      pageSize,
+      title: `Purchase Bill — ${purchase.billNo ?? purchase.slNo ?? ""}`,
+      printerName: pref.printer || "",
     });
+
+    if (!usePreview) {
+      if (result?.success) {
+        showToast?.("success", "Purchase bill printed successfully");
+      } else {
+        showToast?.(
+          "error",
+          `Print failed: ${result?.error || "Unknown error"}`,
+        );
+      }
+    }
+
+    return result;
   }
 
-  // Web: open a print-preview popup
-  return webPrint(html, options?.preview ?? true);
+  return webPrint(html, usePreview);
 }
 
 function webPrint(html: string, preview: boolean) {
   const win = window.open("", "_blank", "width=900,height=700");
-  if (!win) {
-    // Popup blocked — fallback: inject into hidden iframe
-    return iframePrint(html);
-  }
-
+  if (!win) return iframePrint(html);
   win.document.write(html);
   win.document.close();
-
   if (!preview) {
-    // Small delay so styles/images load before print dialog fires
     win.onload = () => {
       win.focus();
       win.print();
       win.close();
     };
   }
-
   return { success: true };
 }
 
@@ -115,18 +116,14 @@ function iframePrint(html: string) {
   iframe.style.cssText =
     "position:fixed;width:0;height:0;border:none;left:-9999px";
   document.body.appendChild(iframe);
-
   const doc = iframe.contentDocument || iframe.contentWindow?.document;
   if (!doc) return { success: false, error: "Cannot create print frame" };
-
   doc.write(html);
   doc.close();
-
   iframe.onload = () => {
     iframe.contentWindow?.focus();
     iframe.contentWindow?.print();
     setTimeout(() => document.body.removeChild(iframe), 1000);
   };
-
   return { success: true };
 }

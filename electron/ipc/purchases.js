@@ -1963,6 +1963,36 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
 
     const now = new Date().toISOString();
 
+    // Filter out records whose parent purchase or product doesn't exist locally yet.
+    // They will be retried on the next sync cycle once the parents arrive.
+    function getExistingIds(table, ids) {
+      const BATCH = 900;
+      const existing = new Set();
+      for (let i = 0; i < ids.length; i += BATCH) {
+        const batch = ids.slice(i, i + BATCH);
+        const placeholders = batch.map(() => "?").join(",");
+        db.prepare(`SELECT id FROM ${table} WHERE id IN (${placeholders})`)
+          .all(...batch)
+          .forEach((r) => existing.add(r.id));
+      }
+      return existing;
+    }
+
+    const uniquePurchaseIds = [...new Set(records.map((r) => r.purchaseId))];
+    const uniqueProductIds = [...new Set(records.map((r) => r.productId))];
+    const existingPurchaseIds = getExistingIds("purchases", uniquePurchaseIds);
+    const existingProductIds = getExistingIds("products", uniqueProductIds);
+
+    const validRecords = records.filter(
+      (r) =>
+        existingPurchaseIds.has(r.purchaseId) &&
+        existingProductIds.has(r.productId),
+    );
+
+    const skipped = records.length - validRecords.length;
+    if (validRecords.length === 0)
+      return { success: true, upserted: 0, skipped };
+
     const upsert = db.prepare(`
       INSERT INTO purchase_items (
         id, purchaseId, productId, barcode,
@@ -2058,8 +2088,8 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
       }
     });
 
-    trx(records);
-    return { success: true, upserted: records.length };
+    trx(validRecords);
+    return { success: true, upserted: validRecords.length, skipped };
   });
 }
 

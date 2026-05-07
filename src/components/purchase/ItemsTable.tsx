@@ -106,14 +106,6 @@ export default function ItemsTable({
               Discount
             </th>
 
-            {/* Hidden on mobile — show from md breakpoint */}
-            <th className="px-2.5 py-2 text-center text-[10px] font-semibold text-white/80 uppercase tracking-[0.14em] min-w-[120px] hidden md:table-cell">
-              MFG
-            </th>
-            <th className="px-2.5 py-2 text-center text-[10px] font-semibold text-white/80 uppercase tracking-[0.14em] min-w-[120px] hidden md:table-cell">
-              Expiry
-            </th>
-
             <th className="px-2.5 py-2 text-center text-[10px] font-semibold text-white/80 uppercase tracking-[0.14em] min-w-[200px]">
               Sale Price
             </th>
@@ -124,6 +116,13 @@ export default function ItemsTable({
             {/* Hidden on mobile/tablet — show from lg breakpoint */}
             <th className="px-2.5 py-2 text-center text-[10px] font-semibold text-white/80 uppercase tracking-[0.14em] min-w-[80px] hidden lg:table-cell">
               Type
+            </th>
+            {/* Hidden on mobile — show from md breakpoint */}
+            <th className="px-2.5 py-2 text-center text-[10px] font-semibold text-white/80 uppercase tracking-[0.14em] min-w-[120px] hidden md:table-cell">
+              MFG
+            </th>
+            <th className="px-2.5 py-2 text-center text-[10px] font-semibold text-white/80 uppercase tracking-[0.14em] min-w-[120px] hidden md:table-cell">
+              Expiry
             </th>
             <th className="px-2.5 py-2 text-center text-[10px] font-semibold text-white/80 uppercase tracking-[0.14em] min-w-[110px] hidden lg:table-cell">
               Unit Billed
