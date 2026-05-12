@@ -6,6 +6,9 @@ export type LineType = "VALUED" | "FREE";
 export interface Customer {
   id: string;
   name: string;
+  mobile?: string | null;
+  gstin?: string | null;
+  address?: string | null;
 }
 
 export interface BatchInfo {

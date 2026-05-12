@@ -206,7 +206,16 @@ export default function SalesPage() {
       pageSize: 100,
     });
     setCustomers(
-      (res?.customers ?? []).map((c) => ({ id: c.id, name: c.name })),
+      (res?.customers ?? []).map((c) => ({
+        id: c.id,
+        name: c.name,
+        mobile: c.phone ?? null,
+        gstin: c.gstin ?? null,
+        address:
+          [c.addressLine1, c.addressLine2, c.city, c.state]
+            .filter(Boolean)
+            .join(", ") || null,
+      })),
     );
   };
 
@@ -617,6 +626,9 @@ export default function SalesPage() {
       billNo: header.billNo || null,
       customerId: header.customer?.id || null,
       customerName: header.customer?.name || null,
+      customerMobile: header.customer?.mobile || null,
+      customerGstin: header.customer?.gstin || null,
+      customerAddress: header.customer?.address || null,
       department: header.department || null,
       debitAccount: header.debitAccount || null,
       natureOfEntry: header.natureOfEntry || null,

@@ -79,6 +79,7 @@ export async function printSaleBill(
           name: sale.customerName,
           mobile: sale.customerMobile || sale.customerPhone,
           gstin: sale.customerGstin,
+          address: sale.customerAddress || null,
         },
         items: items.map((it: any, i: number) => ({
           lineNo: it.lineNo ?? i + 1,
