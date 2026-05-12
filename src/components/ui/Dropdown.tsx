@@ -41,28 +41,39 @@ const Dropdown = forwardRef<HTMLButtonElement, DropdownProps>(
       left: 0,
       width: 0,
     });
+
     const dropdownRef = useRef<HTMLDivElement>(null);
     const menuRef = useRef<HTMLDivElement>(null);
     const triggerRef = useRef<HTMLButtonElement | null>(null);
 
-    // Recalculate menu position whenever it opens or on scroll/resize
     useEffect(() => {
       if (!isOpen) return;
 
       const updatePosition = () => {
         const trigger = triggerRef.current;
         if (!trigger) return;
+
         const rect = trigger.getBoundingClientRect();
+        const viewportPadding = 8;
+        const maxWidth = window.innerWidth - viewportPadding * 2;
+
         setMenuPosition({
-          top: rect.bottom + window.scrollY + 6, // 6px gap (mt-1.5)
-          left: rect.left + window.scrollX,
-          width: rect.width,
+          top: rect.bottom + 6,
+          left: Math.max(
+            viewportPadding,
+            Math.min(
+              rect.left,
+              window.innerWidth - rect.width - viewportPadding,
+            ),
+          ),
+          width: Math.min(rect.width, maxWidth),
         });
       };
 
       updatePosition();
       window.addEventListener("scroll", updatePosition, true);
       window.addEventListener("resize", updatePosition);
+
       return () => {
         window.removeEventListener("scroll", updatePosition, true);
         window.removeEventListener("resize", updatePosition);
@@ -71,32 +82,44 @@ const Dropdown = forwardRef<HTMLButtonElement, DropdownProps>(
 
     useEffect(() => {
       const handleClickOutside = (event: MouseEvent) => {
+        const target = event.target as Node;
+
         if (
           dropdownRef.current &&
-          !dropdownRef.current.contains(event.target as Node) &&
+          !dropdownRef.current.contains(target) &&
           menuRef.current &&
-          !menuRef.current.contains(event.target as Node)
+          !menuRef.current.contains(target)
         ) {
           setIsOpen(false);
           setHighlightIndex(-1);
         }
       };
+
       document.addEventListener("mousedown", handleClickOutside);
       return () =>
         document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
+    useEffect(() => {
+      if (!isOpen) return;
+
+      const selectedIndex = options.findIndex(
+        (option) => option.value === value,
+      );
+      setHighlightIndex(selectedIndex >= 0 ? selectedIndex : 0);
+    }, [isOpen, options, value]);
+
     const selectedOption = options.find((option) => option.value === value);
 
-    const handleKeyDown = (e: React.KeyboardEvent) => {
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
       if (!isOpen) {
-        if (e.key === "Enter") {
+        if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") {
           e.preventDefault();
           setIsOpen(true);
-          setHighlightIndex(0);
         }
         return;
       }
+
       if (e.key === "ArrowDown") {
         e.preventDefault();
         setHighlightIndex((prev) =>
@@ -114,6 +137,10 @@ const Dropdown = forwardRef<HTMLButtonElement, DropdownProps>(
         setHighlightIndex(-1);
         onEnter?.();
       } else if (e.key === "Escape") {
+        e.preventDefault();
+        setIsOpen(false);
+        setHighlightIndex(-1);
+      } else if (e.key === "Tab") {
         setIsOpen(false);
         setHighlightIndex(-1);
       }
@@ -124,11 +151,11 @@ const Dropdown = forwardRef<HTMLButtonElement, DropdownProps>(
           <div
             ref={menuRef}
             style={{
-              position: "absolute",
+              position: "fixed",
               top: menuPosition.top,
               left: menuPosition.left,
               width: menuPosition.width,
-              zIndex: 100,
+              zIndex: 9999,
             }}
             className="overflow-hidden rounded-[14px] border border-slate-200 bg-white shadow-[0_16px_40px_rgba(3,10,24,0.12)]"
           >
@@ -147,7 +174,7 @@ const Dropdown = forwardRef<HTMLButtonElement, DropdownProps>(
                     idx === highlightIndex
                       ? "bg-slate-900 text-white"
                       : value === option.value
-                        ? "bg-cyan-50 text-cyan-800 font-medium"
+                        ? "bg-cyan-50 font-medium text-cyan-800"
                         : "text-slate-700 hover:bg-slate-50"
                   }`}
                 >
@@ -162,7 +189,6 @@ const Dropdown = forwardRef<HTMLButtonElement, DropdownProps>(
 
     return (
       <div className={`relative w-full ${className}`} ref={dropdownRef}>
-        {/* Trigger */}
         <button
           ref={(node) => {
             triggerRef.current = node;
@@ -173,11 +199,11 @@ const Dropdown = forwardRef<HTMLButtonElement, DropdownProps>(
             }
           }}
           type="button"
-          onClick={() => {
-            setIsOpen(!isOpen);
-            setHighlightIndex(0);
-          }}
+          onClick={() => setIsOpen((prev) => !prev)}
           onKeyDown={handleKeyDown}
+          aria-expanded={isOpen}
+          aria-haspopup="listbox"
+          aria-required={required}
           className={`w-full flex items-center justify-between rounded-xl border px-3.5 py-2.5 bg-white/80 text-sm outline-none transition focus:ring-4 ${
             error
               ? "border-rose-300 focus:border-rose-400 focus:ring-rose-400/10"
@@ -190,11 +216,12 @@ const Dropdown = forwardRef<HTMLButtonElement, DropdownProps>(
             {selectedOption ? selectedOption.label : placeholder}
           </span>
           <ChevronDown
-            className={`ml-2 h-4 w-4 text-slate-400 transition-transform duration-200 ${isOpen ? "rotate-180" : "rotate-0"}`}
+            className={`ml-2 h-4 w-4 text-slate-400 transition-transform duration-200 ${
+              isOpen ? "rotate-180" : "rotate-0"
+            }`}
           />
         </button>
 
-        {/* Portal-rendered dropdown menu */}
         {menu}
       </div>
     );

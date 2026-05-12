@@ -17,6 +17,10 @@ export const COLS = [
 
 export type ColKey = (typeof COLS)[number];
 
+function activeCols(barcodeEnabled = true): readonly ColKey[] {
+  return barcodeEnabled ? COLS : COLS.filter((col) => col !== "barcode");
+}
+
 export function focusCell(rowIndex: number, col: ColKey) {
   if (typeof document === "undefined") return;
 
@@ -94,20 +98,26 @@ export function focusCell(rowIndex: number, col: ColKey) {
   container.scrollLeft = maxScrollLeft > 0 ? maxScrollLeft : 0;
 }
 
-export function nextCell(rowIndex: number, col: ColKey, dir: 1 | -1) {
-  const i = COLS.indexOf(col);
+export function nextCell(
+  rowIndex: number,
+  col: ColKey,
+  dir: 1 | -1,
+  barcodeEnabled = true,
+) {
+  const cols = activeCols(barcodeEnabled);
+  const i = cols.indexOf(col);
   if (i < 0) return { rowIndex, col };
 
   let ni = i + dir;
   let nr = rowIndex;
 
-  if (ni >= COLS.length) {
+  if (ni >= cols.length) {
     ni = 0;
     nr = rowIndex + 1;
   } else if (ni < 0) {
-    ni = COLS.length - 1;
+    ni = cols.length - 1;
     nr = rowIndex - 1;
   }
 
-  return { rowIndex: nr, col: COLS[ni] as ColKey };
+  return { rowIndex: nr, col: cols[ni] as ColKey };
 }

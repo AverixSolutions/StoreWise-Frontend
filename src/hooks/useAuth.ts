@@ -10,6 +10,7 @@ const STORAGE_KEYS = {
   userName: "userName",
   licenseId: "licenseId",
   licenseName: "licenseName",
+  barcodeEnabled: "barcodeEnabled",
 };
 
 function hasStorage() {
@@ -34,6 +35,7 @@ export async function login(
 
   const data = await res.json();
   const { token, sessionId, user } = data;
+  const barcodeEnabled = user.barcodeEnabled !== false;
 
   if (hasStorage()) {
     localStorage.setItem(STORAGE_KEYS.token, token);
@@ -42,11 +44,18 @@ export async function login(
     localStorage.setItem(STORAGE_KEYS.userName, user.userId);
     localStorage.setItem(STORAGE_KEYS.licenseId, user.licenseId);
     localStorage.setItem(STORAGE_KEYS.licenseName, user.licenseName || "");
+    localStorage.setItem(STORAGE_KEYS.barcodeEnabled, String(barcodeEnabled));
 
     localStorage.setItem("kynflow_token", token);
     localStorage.setItem("kynflow_licenseId", user.licenseId);
     localStorage.setItem("kynflow_tier", user.tier || "PRO");
+    localStorage.setItem("kynflow_barcodeEnabled", String(barcodeEnabled));
     localStorage.setItem("kynflow_mode", "ONLINE");
+
+    (window as any).electronAPI?.setLicenseFeatures?.({
+      licenseId: user.licenseId,
+      barcodeEnabled,
+    });
   }
 
   if (isSyncEnabled()) {
@@ -89,6 +98,7 @@ export async function logout() {
   localStorage.removeItem("kynflow_token");
   localStorage.removeItem("kynflow_licenseId");
   localStorage.removeItem("kynflow_tier");
+  localStorage.removeItem("kynflow_barcodeEnabled");
   localStorage.removeItem("kynflow_mode");
   localStorage.removeItem("kynflow_sync_products");
   localStorage.removeItem("kynflow_sync_suppliers");
@@ -103,6 +113,7 @@ export function getCurrentUser() {
       licenseName: null,
       userName: null,
       licenseId: null,
+      barcodeEnabled: true,
     };
   }
 
@@ -113,5 +124,7 @@ export function getCurrentUser() {
     licenseName: localStorage.getItem(STORAGE_KEYS.licenseName),
     userName: localStorage.getItem(STORAGE_KEYS.userName),
     licenseId: localStorage.getItem(STORAGE_KEYS.licenseId),
+    barcodeEnabled:
+      localStorage.getItem(STORAGE_KEYS.barcodeEnabled) !== "false",
   };
 }

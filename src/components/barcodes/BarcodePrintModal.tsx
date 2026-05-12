@@ -7,6 +7,7 @@ import {
   BarcodePrintOptions,
 } from "@/lib/barcode/barcodeTemplates";
 import { buildBarcodePrintHtml } from "@/lib/barcode/printBarcodeHtml";
+import { canUseBarcode } from "@/lib/session/runtimeSession";
 
 type Props = {
   isOpen: boolean;
@@ -21,6 +22,7 @@ export default function BarcodePrintModal({
   items,
   defaultShopName = "My Shop",
 }: Props) {
+  const barcodeEnabled = canUseBarcode();
   const [shopName, setShopName] = useState(defaultShopName);
   const [labelWidthMm, setLabelWidthMm] = useState(50);
   const [labelHeightMm, setLabelHeightMm] = useState(30);
@@ -96,7 +98,7 @@ export default function BarcodePrintModal({
     return buildBarcodePrintHtml(validItems, options);
   }, [draftItems, options]);
 
-  if (!isOpen) return null;
+  if (!isOpen || !barcodeEnabled) return null;
 
   async function handlePrint() {
     const validItems = draftItems.filter(

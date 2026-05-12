@@ -4,7 +4,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { X, Package, Layers, Receipt, Boxes, Barcode } from "lucide-react";
 import { platform } from "@/platform";
-import { getActiveLicenseId } from "@/lib/session/runtimeSession";
+import {
+  canUseBarcode,
+  getActiveLicenseId,
+} from "@/lib/session/runtimeSession";
 import type { ProductSummary } from "@/platform/types";
 
 type Product = ProductSummary;
@@ -47,12 +50,13 @@ export default function ProductViewModal({
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
 
   const licenseId = typeof window !== "undefined" ? getActiveLicenseId() : "";
+  const barcodeEnabled = canUseBarcode();
 
   useEffect(() => {
     let alive = true;
 
     async function loadBarcodes() {
-      if (!open || !product?.id || !licenseId) {
+      if (!open || !product?.id || !licenseId || !barcodeEnabled) {
         setBarcodes([]);
         return;
       }
@@ -83,7 +87,7 @@ export default function ProductViewModal({
     return () => {
       alive = false;
     };
-  }, [open, product?.id, licenseId]);
+  }, [open, product?.id, licenseId, barcodeEnabled]);
 
   useEffect(() => {
     let alive = true;
@@ -291,8 +295,8 @@ export default function ProductViewModal({
             />
           </div>
 
-          {/* Barcode section */}
-          <div className="rounded-xl border border-slate-200 bg-white p-2.5">
+          {barcodeEnabled && (
+            <div className="rounded-xl border border-slate-200 bg-white p-2.5">
             <div className="flex items-center gap-2">
               <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
                 <Barcode className="h-3 w-3" />
@@ -320,7 +324,8 @@ export default function ProductViewModal({
                 ))
               )}
             </div>
-          </div>
+            </div>
+          )}
 
           {/* Summary */}
           <div className="rounded-xl border border-slate-200 bg-white p-2.5">

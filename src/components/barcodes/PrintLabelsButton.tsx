@@ -4,6 +4,7 @@
 import { useMemo, useState } from "react";
 import PrintLabelsModal from "./PrintLabelsModal";
 import { buildLabelRowsFromBatches } from "@/lib/barcode/buildLabelRows";
+import { canUseBarcode } from "@/lib/session/runtimeSession";
 
 type BatchLike = {
   id: string;
@@ -30,11 +31,14 @@ export default function PrintLabelsButton({
   className = "",
 }: Props) {
   const [open, setOpen] = useState(false);
+  const barcodeEnabled = canUseBarcode();
 
   const rows = useMemo(
     () => buildLabelRowsFromBatches(selectedBatches, 1),
     [selectedBatches],
   );
+
+  if (!barcodeEnabled) return null;
 
   return (
     <>

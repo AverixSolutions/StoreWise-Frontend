@@ -17,7 +17,10 @@ import {
   FileText,
 } from "lucide-react";
 import { platform } from "@/platform";
-import { getActiveLicenseId } from "@/lib/session/runtimeSession";
+import {
+  canUseBarcode,
+  getActiveLicenseId,
+} from "@/lib/session/runtimeSession";
 import SuppliersTable from "@/components/suppliers/SuppliersTable";
 import CustomersTable from "@/components/customers/CustomersTable";
 import AccountMaster from "@/components/accounts/AccountMaster";
@@ -266,9 +269,20 @@ export default function MasterPage() {
     useState<MasterSection>("dashboard");
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [countsLoading, setCountsLoading] = useState(true);
+  const [barcodeEnabled, setBarcodeEnabled] = useState(true);
 
   const runtime = platform.getRuntimeInfo();
   const isWeb = runtime.runtime === "web";
+
+  useEffect(() => {
+    setBarcodeEnabled(canUseBarcode());
+  }, []);
+
+  useEffect(() => {
+    if (!barcodeEnabled && currentSection === "labelPrint") {
+      setCurrentSection("dashboard");
+    }
+  }, [barcodeEnabled, currentSection]);
 
   useEffect(() => {
     if (currentSection !== "dashboard") return;
@@ -375,15 +389,17 @@ export default function MasterPage() {
           </div>
 
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-4">
-            {masterSections.map((section) => (
-              <MasterTile
-                key={section.id}
-                section={section}
-                count={counts[section.id] ?? null}
-                disabled={isWeb && !webSafeSections.includes(section.id)}
-                onOpen={() => setCurrentSection(section.id)}
-              />
-            ))}
+            {masterSections
+              .filter((section) => section.id !== "labelPrint" || barcodeEnabled)
+              .map((section) => (
+                <MasterTile
+                  key={section.id}
+                  section={section}
+                  count={counts[section.id] ?? null}
+                  disabled={isWeb && !webSafeSections.includes(section.id)}
+                  onOpen={() => setCurrentSection(section.id)}
+                />
+              ))}
           </div>
         </div>
       </section>

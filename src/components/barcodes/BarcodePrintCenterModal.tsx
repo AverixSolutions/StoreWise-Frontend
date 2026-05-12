@@ -16,6 +16,7 @@ import type {
   LabelModeSettings,
 } from "@/lib/barcode/printCenterTypes";
 import SearchableDropdown from "@/components/ui/SearchableDropdown";
+import { canUseBarcode } from "@/lib/session/runtimeSession";
 
 type ProductRow = {
   id: string;
@@ -66,6 +67,7 @@ export default function BarcodePrintCenterModal({
   defaultShopName = "My Shop",
 }: Props) {
   const api = (window as any).electronAPI;
+  const barcodeEnabled = canUseBarcode();
 
   const [mode, setMode] = useState<PrintCenterMode>("LABEL");
 
@@ -108,12 +110,12 @@ export default function BarcodePrintCenterModal({
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || !barcodeEnabled) return;
     setRows(initialRows || []);
     setError("");
     setMessage("");
     loadMeta();
-  }, [open, initialRows]);
+  }, [open, initialRows, barcodeEnabled]);
 
   async function loadMeta() {
     try {
@@ -176,7 +178,7 @@ export default function BarcodePrintCenterModal({
   }
 
   useEffect(() => {
-    if (!selectedProductId) {
+    if (!barcodeEnabled || !selectedProductId) {
       setBatches([]);
       return;
     }
@@ -195,7 +197,7 @@ export default function BarcodePrintCenterModal({
         }));
         setBatches(next);
       });
-  }, [selectedProductId, licenseId]);
+  }, [selectedProductId, licenseId, barcodeEnabled]);
 
   const productOptions = useMemo(
     () =>
@@ -402,7 +404,7 @@ export default function BarcodePrintCenterModal({
     }
   }
 
-  if (!open) return null;
+  if (!open || !barcodeEnabled) return null;
 
   /* ─── shared input/label class helpers ─── */
   const inputCls =

@@ -1,11 +1,16 @@
 // src/app/dashboard/layout.tsx
 "use client";
 
+import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 import Sidebar from "@/components/ui/Sidebar";
 import { SyncProvider, useSyncStatus } from "@/sync/SyncProvider";
 import { isSyncEnabled } from "@/platform/mode";
 import { RefreshCw } from "lucide-react";
+import {
+  getActiveLicenseId,
+  getLicenseFeatures,
+} from "@/lib/session/runtimeSession";
 
 function BootstrapOverlay() {
   const { status } = useSyncStatus();
@@ -21,6 +26,19 @@ function BootstrapOverlay() {
       <p className="mt-1 text-xs text-white/30">Syncing from server</p>
     </div>
   );
+}
+
+function LicenseFeatureBridge() {
+  useEffect(() => {
+    const licenseId = getActiveLicenseId();
+    if (!licenseId) return;
+    (window as any).electronAPI?.setLicenseFeatures?.({
+      licenseId,
+      ...getLicenseFeatures(),
+    });
+  }, []);
+
+  return null;
 }
 
 export default function DashboardLayout({
@@ -43,6 +61,7 @@ export default function DashboardLayout({
   if (hideSidebar) {
     return (
       <SyncProvider>
+        <LicenseFeatureBridge />
         <BootstrapOverlay />
         <div className="min-h-screen kyn-shell">{children}</div>
       </SyncProvider>
@@ -51,6 +70,7 @@ export default function DashboardLayout({
 
   return (
     <SyncProvider>
+      <LicenseFeatureBridge />
       <BootstrapOverlay />
       <div className="kyn-shell h-screen overflow-hidden overscroll-none bg-[#f6f5ef] lg:bg-transparent">
         <div className="flex h-full overflow-hidden">

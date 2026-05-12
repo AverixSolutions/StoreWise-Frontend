@@ -57,6 +57,7 @@ interface ItemTableRowProps {
   onAddRow?: () => void;
   onRequestBatchSelect?: (rowIndex: number) => void;
   onBarcodeCommit?: (rowIndex: number) => void;
+  barcodeEnabled?: boolean;
 }
 
 export default function ItemTableRow({
@@ -72,6 +73,7 @@ export default function ItemTableRow({
   onAddRow,
   onRequestBatchSelect,
   onBarcodeCommit,
+  barcodeEnabled = true,
 }: ItemTableRowProps) {
   const taxOptions = [
     { value: "NT", label: "No Tax" },
@@ -95,7 +97,12 @@ export default function ItemTableRow({
   ];
 
   const goFrom = (col: import("./keyboardGrid").ColKey, dir: 1 | -1 = 1) => {
-    const { rowIndex: nr, col: nc } = nextCell(idx, col, dir);
+    const { rowIndex: nr, col: nc } = nextCell(
+      idx,
+      col,
+      dir,
+      barcodeEnabled,
+    );
     if (nr >= rowsLength && dir === 1 && onAddRow) {
       onAddRow();
       setTimeout(() => focusCell(nr, nc), 0);
@@ -141,53 +148,54 @@ export default function ItemTableRow({
         </div>
       </td>
 
-      {/* Barcode */}
-      <td className="px-2.5 py-2 min-w-[170px]">
-        <div className="flex items-center gap-2">
-          <input
-            className={cellInput + " h-9 flex-1"}
-            value={r.barcode || ""}
-            onChange={(e) =>
-              onUpdateRow(idx, { barcode: e.target.value.trim() })
-            }
-            placeholder="Barcode (optional)"
-            data-cell={`${idx}:barcode`}
-            onFocus={(e) => e.currentTarget.select()}
-            onClick={(e) => e.currentTarget.select()}
-            onBlur={() => {
-              if (onBarcodeCommit) onBarcodeCommit(idx);
-            }}
-            onKeyDown={(e) => {
-              if (
-                (e.key === "F2" ||
-                  (e.ctrlKey && e.key.toLowerCase() === "b")) &&
-                r.productId
-              ) {
-                e.preventDefault();
-                if (onRequestBatchSelect) onRequestBatchSelect(idx);
-                return;
-              }
-              if (e.key === "Enter" || (e as any).key === "NumpadEnter") {
-                e.preventDefault();
-                if (onBarcodeCommit) onBarcodeCommit(idx);
-                onGridKey(e as any, idx, "barcode");
-                return;
-              }
-              onGridKey(e, idx, "barcode");
-            }}
-          />
-          <label className="flex items-center gap-1 text-[11px] whitespace-nowrap text-gray-600">
+      {barcodeEnabled && (
+        <td className="px-2.5 py-2 min-w-[170px]">
+          <div className="flex items-center gap-2">
             <input
-              type="checkbox"
-              checked={r.printBarcode !== false}
+              className={cellInput + " h-9 flex-1"}
+              value={r.barcode || ""}
               onChange={(e) =>
-                onUpdateRow(idx, { printBarcode: e.target.checked })
+                onUpdateRow(idx, { barcode: e.target.value.trim() })
               }
+              placeholder="Barcode (optional)"
+              data-cell={`${idx}:barcode`}
+              onFocus={(e) => e.currentTarget.select()}
+              onClick={(e) => e.currentTarget.select()}
+              onBlur={() => {
+                if (onBarcodeCommit) onBarcodeCommit(idx);
+              }}
+              onKeyDown={(e) => {
+                if (
+                  (e.key === "F2" ||
+                    (e.ctrlKey && e.key.toLowerCase() === "b")) &&
+                  r.productId
+                ) {
+                  e.preventDefault();
+                  if (onRequestBatchSelect) onRequestBatchSelect(idx);
+                  return;
+                }
+                if (e.key === "Enter" || (e as any).key === "NumpadEnter") {
+                  e.preventDefault();
+                  if (onBarcodeCommit) onBarcodeCommit(idx);
+                  onGridKey(e as any, idx, "barcode");
+                  return;
+                }
+                onGridKey(e, idx, "barcode");
+              }}
             />
-            Print
-          </label>
-        </div>
-      </td>
+            <label className="flex items-center gap-1 text-[11px] whitespace-nowrap text-gray-600">
+              <input
+                type="checkbox"
+                checked={r.printBarcode !== false}
+                onChange={(e) =>
+                  onUpdateRow(idx, { printBarcode: e.target.checked })
+                }
+              />
+              Print
+            </label>
+          </div>
+        </td>
+      )}
 
       {/* Quantity */}
       <td className="px-2.5 py-2 min-w-[70px]">

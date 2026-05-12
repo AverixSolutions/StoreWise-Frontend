@@ -57,7 +57,7 @@ export default function LoginPage() {
 
             <p className="mt-5 max-w-lg text-sm xl:text-base leading-7 text-kyn-text-muted">
               KynFlow is your unified desktop workspace for purchases, sales,
-              returns, barcode workflows, stock tracking, reporting and billing.
+              returns, stock tracking, reporting and billing.
             </p>
 
             <div className="mt-8 grid grid-cols-2 gap-4">

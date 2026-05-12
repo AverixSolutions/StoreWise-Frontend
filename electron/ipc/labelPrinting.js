@@ -1,6 +1,7 @@
 // electron/ipc/labelPrinting.js
 const { ipcMain } = require("electron");
 const db = require("../db");
+const { canUseBarcode, barcodeDisabledResult } = require("../licenseFeatures");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
@@ -583,6 +584,11 @@ function upsertTemplate(payload) {
 function registerLabelPrintingHandlers() {
   ipcMain.handle("label:printer:list", (_e, { licenseId }) => {
     try {
+      if (!licenseId) return { success: false, error: "licenseId required" };
+      if (!canUseBarcode(licenseId)) {
+        return { ...barcodeDisabledResult(), rows: [] };
+      }
+
       const rows = db
         .prepare(
           `
@@ -606,6 +612,7 @@ function registerLabelPrintingHandlers() {
       if (!payload?.licenseId) {
         return { success: false, error: "licenseId required" };
       }
+      if (!canUseBarcode(payload.licenseId)) return barcodeDisabledResult();
       const id = upsertPrinter(payload);
       return { success: true, id };
     } catch (err) {
@@ -615,6 +622,11 @@ function registerLabelPrintingHandlers() {
 
   ipcMain.handle("label:template:list", (_e, { licenseId }) => {
     try {
+      if (!licenseId) return { success: false, error: "licenseId required" };
+      if (!canUseBarcode(licenseId)) {
+        return { ...barcodeDisabledResult(), rows: [] };
+      }
+
       const rows = db
         .prepare(
           `
@@ -635,6 +647,8 @@ function registerLabelPrintingHandlers() {
 
   ipcMain.handle("label:template:get", (_e, { licenseId, templateId }) => {
     try {
+      if (!licenseId) return { success: false, error: "licenseId required" };
+      if (!canUseBarcode(licenseId)) return barcodeDisabledResult();
       const row = getTemplate(licenseId, templateId);
       if (!row) return { success: false, error: "Template not found" };
       const mappings = getMappings(templateId);
@@ -649,6 +663,7 @@ function registerLabelPrintingHandlers() {
       if (!payload?.licenseId) {
         return { success: false, error: "licenseId required" };
       }
+      if (!canUseBarcode(payload.licenseId)) return barcodeDisabledResult();
       const id = upsertTemplate(payload);
       return { success: true, id };
     } catch (err) {
@@ -663,6 +678,7 @@ function registerLabelPrintingHandlers() {
       if (!payload?.licenseId) {
         return { success: false, error: "licenseId required" };
       }
+      if (!canUseBarcode(payload.licenseId)) return barcodeDisabledResult();
       if (!Array.isArray(payload?.rows) || payload.rows.length === 0) {
         return { success: false, error: "rows required" };
       }
@@ -763,6 +779,11 @@ function registerLabelPrintingHandlers() {
 
   ipcMain.handle("label:job:list", (_e, { licenseId, limit = 50 }) => {
     try {
+      if (!licenseId) return { success: false, error: "licenseId required" };
+      if (!canUseBarcode(licenseId)) {
+        return { ...barcodeDisabledResult(), rows: [] };
+      }
+
       const rows = db
         .prepare(
           `

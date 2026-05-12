@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { platform } from "@/platform";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import { useToast } from "@/components/ui/ToastProvider";
+import { canUseBarcode } from "@/lib/session/runtimeSession";
 import { X, Boxes, Trash2, Plus, Edit2 } from "lucide-react";
 
 type Batch = {
@@ -50,6 +51,7 @@ export default function ProductBatchesDrawer({
   const [saving, setSaving] = useState(false);
   const [editTarget, setEditTarget] = useState<Batch | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Batch | null>(null);
+  const barcodeEnabled = canUseBarcode();
 
   async function refresh() {
     if (!productId) return;
@@ -93,8 +95,10 @@ export default function ProductBatchesDrawer({
     const form = formRef.current;
     if (!form) return;
 
-    (form.elements.namedItem("barcode") as HTMLInputElement).value =
-      batch.barcode || "";
+    if (barcodeEnabled) {
+      (form.elements.namedItem("barcode") as HTMLInputElement).value =
+        batch.barcode || "";
+    }
     (form.elements.namedItem("batchNo") as HTMLInputElement).value =
       batch.batchNo || "";
     (form.elements.namedItem("mrp") as HTMLInputElement).value =
@@ -129,7 +133,7 @@ export default function ProductBatchesDrawer({
       }
 
       window.setTimeout(() => {
-        barcodeInputRef.current?.focus();
+        if (barcodeEnabled) barcodeInputRef.current?.focus();
       }, 180);
     });
   }
@@ -146,7 +150,9 @@ export default function ProductBatchesDrawer({
       const basePayload = {
         licenseId,
         productId,
-        barcode: form.get("barcode")?.toString() || null,
+        ...(barcodeEnabled
+          ? { barcode: form.get("barcode")?.toString() || null }
+          : {}),
         mrp: form.get("mrp") ? Number(form.get("mrp")) : null,
         salePrice: form.get("salePrice") ? Number(form.get("salePrice")) : null,
         costPrice: form.get("costPrice") ? Number(form.get("costPrice")) : null,
@@ -309,16 +315,17 @@ export default function ProductBatchesDrawer({
               className="space-y-3"
             >
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {/* Barcode */}
-                <div>
-                  <label className={labelClass}>Batch Barcode</label>
-                  <input
-                    ref={barcodeInputRef}
-                    name="barcode"
-                    placeholder="Enter barcode"
-                    className={fieldClass}
-                  />
-                </div>
+                {barcodeEnabled && (
+                  <div>
+                    <label className={labelClass}>Batch Barcode</label>
+                    <input
+                      ref={barcodeInputRef}
+                      name="barcode"
+                      placeholder="Enter barcode"
+                      className={fieldClass}
+                    />
+                  </div>
+                )}
 
                 {/* Batch No */}
                 <div>
@@ -510,9 +517,11 @@ export default function ProductBatchesDrawer({
                           {r.batchNo || "No Batch #"}
                         </span>
 
-                        <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 font-mono text-[11px] text-slate-500">
-                          {r.barcode || "No barcode"}
-                        </span>
+                        {barcodeEnabled && (
+                          <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 font-mono text-[11px] text-slate-500">
+                            {r.barcode || "No barcode"}
+                          </span>
+                        )}
 
                         <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
                           Stock {r.stock}
@@ -594,7 +603,11 @@ export default function ProductBatchesDrawer({
         title="Delete batch?"
         message={
           deleteTarget
-            ? `Are you sure you want to delete batch "${deleteTarget.batchNo || deleteTarget.barcode || deleteTarget.id}"?\n\nIts stock will be removed from this product totals.`
+            ? `Are you sure you want to delete batch "${
+                deleteTarget.batchNo ||
+                (barcodeEnabled ? deleteTarget.barcode : "") ||
+                deleteTarget.id
+              }"?\n\nIts stock will be removed from this product totals.`
             : ""
         }
         confirmText="Delete"

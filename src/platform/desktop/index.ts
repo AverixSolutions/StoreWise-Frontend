@@ -25,6 +25,7 @@ import type {
   UnitSavePayload,
   UnitMutationResult,
 } from "../types";
+import { canUseBarcode } from "@/lib/session/runtimeSession";
 
 import {
   desktopCreatePurchase,
@@ -279,10 +280,13 @@ export const desktopPlatform: PlatformAPI = {
     licenseId: string,
     barcode: string,
   ): Promise<ProductLookupResult | null> => {
+    if (!canUseBarcode()) return null;
+
     const row = await requireElectronAPI().getProductByBarcode(
       licenseId,
       barcode,
     );
+    if ((row as any)?.success === false) return null;
     return row ? mapProductLookup(row) : null;
   },
 
@@ -349,18 +353,45 @@ export const desktopPlatform: PlatformAPI = {
   },
 
   saveBatch: (payload: BatchSavePayload) => {
+    if (payload.barcode && !canUseBarcode()) {
+      return Promise.resolve({
+        success: false,
+        error: "Barcode Support is disabled for this license.",
+      });
+    }
     return requireElectronAPI().saveBatch(payload);
   },
 
   updateBatch: (payload: BatchUpdatePayload): Promise<BatchMutationResult> => {
+    if (payload.barcode && !canUseBarcode()) {
+      return Promise.resolve({
+        success: false,
+        error: "Barcode Support is disabled for this license.",
+      });
+    }
     return requireElectronAPI().updateBatch(payload);
   },
 
   peekNextBarcode: (licenseId: string) => {
+    if (!canUseBarcode()) {
+      return Promise.resolve({
+        success: false,
+        barcode: "",
+        number: 0,
+        error: "Barcode Support is disabled for this license.",
+      });
+    }
     return requireElectronAPI().peekNextBarcode(licenseId);
   },
 
   reserveBarcodes: (licenseId: string, count: number) => {
+    if (!canUseBarcode()) {
+      return Promise.resolve({
+        success: false,
+        barcodes: [],
+        error: "Barcode Support is disabled for this license.",
+      });
+    }
     return requireElectronAPI().reserveBarcodes(licenseId, count);
   },
 
@@ -368,6 +399,14 @@ export const desktopPlatform: PlatformAPI = {
     licenseId: string,
     productId: string,
   ): Promise<BarcodeListResult> => {
+    if (!canUseBarcode()) {
+      return {
+        success: false,
+        rows: [],
+        error: "Barcode Support is disabled for this license.",
+      };
+    }
+
     const result = await requireElectronAPI().listBarcodesForProduct(
       licenseId,
       productId,
@@ -379,10 +418,23 @@ export const desktopPlatform: PlatformAPI = {
   },
 
   createBarcodeForProduct: (payload: any) => {
+    if (!canUseBarcode()) {
+      return Promise.resolve({
+        success: false,
+        code: "BARCODE_DISABLED",
+        error: "Barcode Support is disabled for this license.",
+      });
+    }
     return requireElectronAPI().createBarcodeForProduct(payload);
   },
 
   deleteBarcode: (licenseId: string, batchId: string) => {
+    if (!canUseBarcode()) {
+      return Promise.resolve({
+        success: false,
+        error: "Barcode Support is disabled for this license.",
+      });
+    }
     return requireElectronAPI().deleteBarcode(licenseId, batchId);
   },
 

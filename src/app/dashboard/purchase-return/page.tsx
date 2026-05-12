@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { platform } from "@/platform";
+import { canUseBarcode } from "@/lib/session/runtimeSession";
 import PurchaseNavigation from "@/components/purchase/PurchaseNavigation";
 import BillDetailsSection from "@/components/purchase/BillDetailsSection";
 import ItemsTableSection from "@/components/purchase/ItemsTableSection";
@@ -75,6 +76,7 @@ function getNextPreviewBarcode(
 
 export default function PurchaseReturnPage() {
   const router = useRouter();
+  const barcodeEnabled = canUseBarcode();
 
   const licenseId =
     typeof window !== "undefined" ? localStorage.getItem("licenseId")! : "";
@@ -201,8 +203,12 @@ export default function PurchaseReturnPage() {
     try {
       const [product, peekRes, batchesRes] = await Promise.all([
         platform.getProduct(productId),
-        platform.peekNextBarcode?.(licenseId),
-        platform.listBarcodesForProduct?.(licenseId, productId),
+        barcodeEnabled
+          ? platform.peekNextBarcode?.(licenseId)
+          : Promise.resolve(null),
+        barcodeEnabled
+          ? platform.listBarcodesForProduct?.(licenseId, productId)
+          : platform.listBatchesForProduct(productId, false),
       ]);
 
       if (!product) return;
@@ -215,7 +221,7 @@ export default function PurchaseReturnPage() {
 
       const batches: BatchInfo[] = (batchesRes?.rows || []).map((b: any) => ({
         id: b.id,
-        barcode: b.barcode,
+        barcode: barcodeEnabled ? b.barcode : "",
         batchNo: b.batchNo,
         purchaseBatchNo: b.purchaseBatchNo,
         mfgDate: b.mfgDate,
@@ -255,6 +261,47 @@ export default function PurchaseReturnPage() {
               },
         ),
       );
+
+      if (!barcodeEnabled) {
+        if (batches.length === 1) {
+          const b = batches[0];
+          setRows((prev) =>
+            prev.map((r, i) =>
+              i !== rowIndex
+                ? r
+                : {
+                    ...r,
+                    batchId: b.id,
+                    batchNo: b.batchNo ?? "",
+                    purchaseBatchNo: b.purchaseBatchNo ?? "",
+                    mfgDate: b.mfgDate ?? null,
+                    expiryDate: b.expiryDate ?? null,
+                    forceNewBatch: false,
+                    mrp:
+                      b.mrp != null && !Number.isNaN(Number(b.mrp))
+                        ? Number(b.mrp)
+                        : r.mrp,
+                    salePrice:
+                      b.salePrice != null && !Number.isNaN(Number(b.salePrice))
+                        ? Number(b.salePrice)
+                        : r.salePrice,
+                  },
+            ),
+          );
+          return;
+        }
+
+        if (batches.length > 1) {
+          setBatchPicker({
+            rowIndex,
+            productId,
+            batches,
+            productName: product.name,
+            nextBarcode: "",
+          });
+        }
+        return;
+      }
 
       if (batches.length === 0) {
         setRows((prev) =>
@@ -336,15 +383,14 @@ export default function PurchaseReturnPage() {
     if (!productId) return;
 
     try {
-      const batchesRes = await platform.listBarcodesForProduct?.(
-        licenseId,
-        productId,
-      );
+      const batchesRes = barcodeEnabled
+        ? await platform.listBarcodesForProduct?.(licenseId, productId)
+        : await platform.listBatchesForProduct(productId, false);
       const liveBatches = (batchesRes?.rows || [])
         .filter((b: any) => Number(b.stock || 0) > 0)
         .map((b: any) => ({
           id: b.id,
-          barcode: b.barcode,
+          barcode: barcodeEnabled ? b.barcode : "",
           batchNo: b.batchNo,
           purchaseBatchNo: b.purchaseBatchNo || b.batchNo,
           mfgDate: b.mfgDate,
@@ -686,6 +732,7 @@ export default function PurchaseReturnPage() {
             rows={rows}
             products={products}
             onSelectProduct={handleSelectProduct}
+            barcodeEnabled={barcodeEnabled}
             onUpdateRow={(index, patch) =>
               setRows((prev) =>
                 prev.map((r, i) => (i === index ? { ...r, ...patch } : r)),
@@ -728,6 +775,7 @@ export default function PurchaseReturnPage() {
         productName={batchPicker?.productName}
         nextBarcode=""
         allowCreateNew={false}
+        barcodeEnabled={barcodeEnabled}
         onSelect={(batch) => {
           if (!batchPicker || !batch) {
             setBatchPicker(null);
@@ -741,7 +789,7 @@ export default function PurchaseReturnPage() {
                 : {
                     ...r,
                     batchId: batch.id,
-                    barcode: batch.barcode || "",
+                    barcode: barcodeEnabled ? batch.barcode || "" : "",
                     batchNo: batch.batchNo ?? null,
                     purchaseBatchNo:
                       batch.purchaseBatchNo ?? batch.batchNo ?? null,

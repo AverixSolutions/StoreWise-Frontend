@@ -25,8 +25,10 @@ const {
 } = require("./ipc/supplierLedgerSync");
 const { registerCustomerLedgerHandlers } = require("./ipc/customerLedger");
 const { registerQuotationHandlers } = require("./ipc/quotations");
+const { registerLicenseFeatureHandlers } = require("./licenseFeatures");
 
 function registerAllHandlers() {
+  registerLicenseFeatureHandlers();
   registerProductHandlers();
   registerCategoryHandlers();
   registerBrandHandlers();

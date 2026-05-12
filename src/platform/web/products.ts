@@ -15,6 +15,7 @@ import {
   idbGetAllByIndex,
   newId,
 } from "./idb";
+import { canUseBarcode } from "@/lib/session/runtimeSession";
 
 // ── Internal record shapes ──────────────────────────────────────────────────
 
@@ -396,6 +397,8 @@ export async function webGetProductByBarcode(
   licenseId: string,
   barcode: string,
 ): Promise<(WebProduct & Partial<WebBatch>) | null> {
+  if (!canUseBarcode()) return null;
+
   const batches = await idbGetAllByIndex<WebBatch>(
     STORES.PRODUCT_BATCHES,
     "licenseId_barcode",
@@ -476,6 +479,15 @@ export async function webGetProductImageDataUrl(
 export async function webPeekNextBarcode(
   licenseId: string,
 ): Promise<{ success: boolean; barcode: string; number: number }> {
+  if (!canUseBarcode()) {
+    return {
+      success: false,
+      barcode: "",
+      number: 0,
+      error: "Barcode Support is disabled for this license.",
+    } as any;
+  }
+
   const num = await peekNextBarcodeNumber(licenseId);
   return { success: true, barcode: String(num).padStart(5, "0"), number: num };
 }
@@ -484,6 +496,14 @@ export async function webReserveBarcodes(
   licenseId: string,
   count: number,
 ): Promise<{ success: boolean; barcodes: string[] }> {
+  if (!canUseBarcode()) {
+    return {
+      success: false,
+      barcodes: [],
+      error: "Barcode Support is disabled for this license.",
+    } as any;
+  }
+
   const barcodes = await reserveBarcodeNumbers(licenseId, count);
   return { success: true, barcodes };
 }
@@ -493,6 +513,14 @@ export async function webListBarcodesForProduct(
   productId: string,
 ): Promise<{ success: boolean; rows: WebBatch[]; error?: string }> {
   try {
+    if (!canUseBarcode()) {
+      return {
+        success: false,
+        rows: [],
+        error: "Barcode Support is disabled for this license.",
+      };
+    }
+
     const batches = await idbGetAllByIndex<WebBatch>(
       STORES.PRODUCT_BATCHES,
       "productId",
@@ -538,6 +566,14 @@ export async function webCreateBarcodeForProduct(payload: {
   code?: string;
 }> {
   try {
+    if (!canUseBarcode()) {
+      return {
+        success: false,
+        error: "Barcode Support is disabled for this license.",
+        code: "BARCODE_DISABLED",
+      };
+    }
+
     let barcode = payload.barcode?.trim() || null;
     let isSystemGenerated = 0;
 
@@ -605,6 +641,13 @@ export async function webDeleteBarcode(
   licenseId: string,
   batchId: string,
 ): Promise<{ success: boolean; error?: string }> {
+  if (!canUseBarcode()) {
+    return {
+      success: false,
+      error: "Barcode Support is disabled for this license.",
+    };
+  }
+
   const batch = await idbGetByKey<WebBatch>(STORES.PRODUCT_BATCHES, batchId);
   if (!batch || batch.deletedAt) return { success: false, error: "NOT_FOUND" };
   if (batch.licenseId !== licenseId)
@@ -672,6 +715,13 @@ export async function webSaveBatch(
     }
 
     const normalizedBarcode = payload.barcode?.trim() || null;
+    if (normalizedBarcode && !canUseBarcode()) {
+      return {
+        success: false,
+        error: "Barcode Support is disabled for this license.",
+      };
+    }
+
     const normalizedBatchNo = payload.batchNo?.trim() || null;
     const normalizedMfgDate = payload.mfgDate?.trim() || null;
     const normalizedExpiryDate = payload.expiryDate?.trim() || null;
@@ -806,6 +856,13 @@ export async function webUpdateBatch(payload: {
       payload.barcode === undefined
         ? existing.barcode
         : payload.barcode?.trim() || null;
+    if (payload.barcode !== undefined && normalizedBarcode && !canUseBarcode()) {
+      return {
+        success: false,
+        error: "Barcode Support is disabled for this license.",
+      };
+    }
+
     const normalizedBatchNo =
       payload.batchNo === undefined
         ? existing.batchNo

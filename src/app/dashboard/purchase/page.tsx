@@ -31,6 +31,7 @@ import BarcodePrintCenterButton from "@/components/barcodes/BarcodePrintCenterBu
 import type { PrintCenterItemRow } from "@/lib/barcode/printCenterTypes";
 import { printPurchaseBill } from "@/lib/print/printPurchaseBill";
 import { platform } from "@/platform";
+import { canUseBarcode } from "@/lib/session/runtimeSession";
 import { isSyncEnabled } from "@/platform/mode";
 import { SyncManager } from "@/sync/SyncManager";
 import { useSyncStatus } from "@/sync/SyncProvider";
@@ -220,6 +221,7 @@ export default function PurchasePage() {
   } | null>(null);
 
   const [batchConfirmOpen, setBatchConfirmOpen] = useState(false);
+  const barcodeEnabled = canUseBarcode();
 
   // Initialize from localStorage
   useEffect(() => {
@@ -233,6 +235,8 @@ export default function PurchasePage() {
   }, []);
 
   function getPrintCenterRowsFromPurchaseRows(): PrintCenterItemRow[] {
+    if (!barcodeEnabled) return [];
+
     return rows
       .filter(
         (r: ItemRow) =>
@@ -356,8 +360,12 @@ export default function PurchasePage() {
     try {
       const [product, peekRes, batchesRes] = await Promise.all([
         platform.getProduct(productId),
-        platform.peekNextBarcode?.(licenseId),
-        platform.listBarcodesForProduct?.(licenseId, productId),
+        barcodeEnabled
+          ? platform.peekNextBarcode?.(licenseId)
+          : Promise.resolve(null),
+        barcodeEnabled
+          ? platform.listBarcodesForProduct?.(licenseId, productId)
+          : Promise.resolve({ success: true, rows: [] }),
       ]);
 
       if (!product) return;
@@ -410,6 +418,8 @@ export default function PurchasePage() {
               },
         ),
       );
+
+      if (!barcodeEnabled) return;
 
       // No existing barcodes -> suggest next barcode
       if (batches.length === 0) {
@@ -505,6 +515,8 @@ export default function PurchasePage() {
     rowIndex: number,
     explicitProductId?: string,
   ) => {
+    if (!barcodeEnabled) return;
+
     const row = rows[rowIndex];
     const productId = explicitProductId || row?.productId;
     if (!productId) return;
@@ -548,6 +560,8 @@ export default function PurchasePage() {
   };
 
   async function handleBarcodeCommit(rowIndex: number) {
+    if (!barcodeEnabled) return;
+
     const row = rows[rowIndex];
     if (!row?.productId) return;
 
@@ -1318,6 +1332,7 @@ export default function PurchasePage() {
               showHoldControls={!editingPurchaseId}
               onRequestBatchSelect={handleRequestBatchSelect}
               onBarcodeCommit={handleBarcodeCommit}
+              barcodeEnabled={barcodeEnabled}
               onOpenMobileSheet={() => setIsMobileSheetOpen(true)}
               printBarcodesSlot={
                 <BarcodePrintCenterButton
@@ -1461,7 +1476,7 @@ export default function PurchasePage() {
                           <div className="font-medium text-gray-900">
                             Row #{c.rowIndex + 1} – {c.productName}
                           </div>
-                          {c.barcode && (
+                          {barcodeEnabled && c.barcode && (
                             <div className="text-[11px] text-gray-500">
                               Barcode: {c.barcode}
                             </div>
@@ -1715,6 +1730,7 @@ export default function PurchasePage() {
             }
           }, 0);
         }}
+        barcodeEnabled={barcodeEnabled}
       />
       {/* Confirm discard current bill */}
       <ConfirmModal

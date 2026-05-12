@@ -4,6 +4,7 @@ const { ipcMain, app } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const db = require("../db");
+const { canUseBarcode, barcodeDisabledResult } = require("../licenseFeatures");
 
 // === BATCH HELPERS & UTILS ===
 function nowISO() {
@@ -568,6 +569,7 @@ LIMIT ? OFFSET ?
   // UPGRADED: get-product-by-barcode with batch support
   ipcMain.handle("get-product-by-barcode", (event, licenseId, barcode) => {
     if (!barcode) return null;
+    if (!canUseBarcode(licenseId)) return barcodeDisabledResult();
 
     // 1) real batch barcode first
     const row = db
@@ -734,6 +736,9 @@ LIMIT ? OFFSET ?
     if (!payload?.licenseId || !payload?.productId) {
       return { success: false, error: "licenseId & productId required" };
     }
+    if (payload.barcode && !canUseBarcode(payload.licenseId)) {
+      return barcodeDisabledResult();
+    }
 
     const deltaQty = Number(payload?.deltaQty ?? payload?.stock ?? 0);
 
@@ -799,6 +804,13 @@ LIMIT ? OFFSET ?
 
     if (!existing) {
       return { success: false, error: "NOT_FOUND" };
+    }
+    if (
+      payload.barcode !== undefined &&
+      payload.barcode &&
+      !canUseBarcode(existing.licenseId)
+    ) {
+      return barcodeDisabledResult();
     }
 
     const barcode =

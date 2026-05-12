@@ -13,6 +13,7 @@ interface ItemsTableProps {
   onAddRow?: () => void;
   onRequestBatchSelect?: (rowIndex: number) => void;
   onBarcodeCommit?: (rowIndex: number) => void;
+  barcodeEnabled?: boolean;
 }
 
 export default function ItemsTable({
@@ -24,6 +25,7 @@ export default function ItemsTable({
   onAddRow,
   onRequestBatchSelect,
   onBarcodeCommit,
+  barcodeEnabled = true,
 }: ItemsTableProps) {
   const REQUIRED: Partial<Record<ColKey, (r: ItemRow) => boolean>> = {
     product: (r) => !!r.productId,
@@ -46,7 +48,12 @@ export default function ItemsTable({
     e.preventDefault();
     if (!canLeave(col, rowIndex)) return;
     const dir: 1 | -1 = e.shiftKey ? -1 : 1;
-    const { rowIndex: nr, col: nc } = nextCell(rowIndex, col, dir);
+    const { rowIndex: nr, col: nc } = nextCell(
+      rowIndex,
+      col,
+      dir,
+      barcodeEnabled,
+    );
     if (nr >= rows.length) {
       if (onAddRow && dir === 1) {
         onAddRow();
@@ -87,9 +94,11 @@ export default function ItemsTable({
             >
               Product
             </th>
-            <th className="px-2.5 py-2 text-center text-[10px] font-semibold text-white/80 uppercase tracking-[0.14em] min-w-[110px]">
-              Barcode
-            </th>
+            {barcodeEnabled && (
+              <th className="px-2.5 py-2 text-center text-[10px] font-semibold text-white/80 uppercase tracking-[0.14em] min-w-[110px]">
+                Barcode
+              </th>
+            )}
             <th className="px-2.5 py-2 text-center text-[10px] font-semibold text-white/80 uppercase tracking-[0.14em] min-w-[70px]">
               Qty
             </th>
@@ -158,6 +167,7 @@ export default function ItemsTable({
               onAddRow={onAddRow}
               onRequestBatchSelect={onRequestBatchSelect}
               onBarcodeCommit={onBarcodeCommit}
+              barcodeEnabled={barcodeEnabled}
             />
           ))}
         </tbody>

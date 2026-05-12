@@ -17,7 +17,11 @@ import {
 import Dropdown from "@/components/ui/Dropdown";
 import SearchableDropdown from "@/components/ui/SearchableDropdown";
 import { platform } from "@/platform";
-import { getActiveLicenseId } from "@/lib/session/runtimeSession";
+import {
+  canUseBarcode,
+  getActiveLicenseId,
+  getActiveToken,
+} from "@/lib/session/runtimeSession";
 import type {
   ProductInput,
   ProductSummary,
@@ -28,7 +32,6 @@ import type {
 } from "@/platform/types";
 import { useToast } from "../ui/ToastProvider";
 import { uploadProductImage } from "@/lib/uploadImage";
-import { getActiveToken } from "@/lib/session/runtimeSession";
 
 type Product = ProductSummary;
 
@@ -258,6 +261,7 @@ export default function ProductFormModal({
   const productImageInputRef = useRef<HTMLInputElement>(null);
 
   const licenseId = typeof window !== "undefined" ? getActiveLicenseId() : "";
+  const barcodeEnabled = canUseBarcode();
 
   // ── Refs ──
   const categoryRef = useRef<HTMLButtonElement>(null);
@@ -471,7 +475,14 @@ export default function ProductFormModal({
 
   useEffect(() => {
     if (!isOpen) return;
-    loadNextBarcodePreview();
+    if (barcodeEnabled) {
+      loadNextBarcodePreview();
+    } else {
+      setNextBarcodePreview("00001");
+      setBarcodeEntries([]);
+      setCustomBarcodeInput("");
+      setBarcodeError(null);
+    }
 
     if (editProduct) {
       const initialProductName = editProduct.productName ?? "";
@@ -506,7 +517,7 @@ export default function ProductFormModal({
       setHsn(editProduct.hsn ?? "");
       setCostPrice(editProduct.costPrice.toString());
       setSalePrice(editProduct.salePrice?.toString() ?? "");
-      loadExistingBarcodes(editProduct.id);
+      if (barcodeEnabled) loadExistingBarcodes(editProduct.id);
       loadExistingProductImage(editProduct.id);
     } else {
       resetForm();
@@ -514,7 +525,7 @@ export default function ProductFormModal({
         .getNextCode(licenseId)
         .then((nextCode: string) => setCode(nextCode));
     }
-  }, [isOpen, editProduct]);
+  }, [isOpen, editProduct, barcodeEnabled]);
 
   // When categories load, re-apply picker for edit mode
   useEffect(() => {
@@ -747,14 +758,6 @@ export default function ProductFormModal({
     const rawCategory = row.category?.trim() ?? "";
     const rawSubcategory = row.subcategory?.trim() ?? "";
 
-    if (!rawCategory) {
-      return {
-        category: null,
-        subcategory: null,
-        error: "Category is required",
-      };
-    }
-
     if (!hasCategoryMaster) {
       return {
         category: rawCategory,
@@ -814,6 +817,8 @@ export default function ProductFormModal({
   }
 
   async function loadNextBarcodePreview() {
+    if (!barcodeEnabled) return;
+
     try {
       const res = await platform.peekNextBarcode?.(licenseId);
       setNextBarcodePreview(res?.barcode ?? "00001");
@@ -823,6 +828,11 @@ export default function ProductFormModal({
   }
 
   async function loadExistingBarcodes(productId: string) {
+    if (!barcodeEnabled) {
+      setBarcodeEntries([]);
+      return;
+    }
+
     const res = await platform.listBarcodesForProduct?.(licenseId, productId);
     if (!res?.success) {
       setBarcodeEntries([]);
@@ -868,6 +878,8 @@ export default function ProductFormModal({
 
   async function addGeneratedBarcode() {
     setBarcodeError(null);
+    if (!barcodeEnabled) return;
+
     if (!licenseId) {
       setBarcodeError("No active license found");
       return;
@@ -890,6 +902,8 @@ export default function ProductFormModal({
   }
 
   function addCustomBarcode() {
+    if (!barcodeEnabled) return;
+
     const bc = customBarcodeInput.trim();
     if (!bc) {
       setBarcodeError("Enter a barcode value");
@@ -913,6 +927,8 @@ export default function ProductFormModal({
   }
 
   async function removeBarcode(entry: BarcodeEntry) {
+    if (!barcodeEnabled) return;
+
     if (entry.saved && entry.batchId) {
       const ok = confirm(
         `Remove barcode ${entry.barcode}? This will delete the empty barcode entry if it has no stock.`,
@@ -943,10 +959,6 @@ export default function ProductFormModal({
 
       if (!trimmedName) throw new Error("Item name is required");
 
-      if (!trimmedCategory) {
-        throw new Error("Category is required");
-      }
-
       if (
         hasCategoryMaster &&
         typedCategoryHasChildren &&
@@ -968,7 +980,7 @@ export default function ProductFormModal({
         throw new Error("Invalid sale price");
 
       const seen = new Set<string>();
-      for (const entry of barcodeEntries) {
+      for (const entry of barcodeEnabled ? barcodeEntries : []) {
         const value = entry.barcode.trim();
         if (!value) continue;
         if (seen.has(value))
@@ -1032,7 +1044,7 @@ export default function ProductFormModal({
 
       if (!productId) throw new Error("Product id missing after save");
 
-      for (const entry of barcodeEntries) {
+      for (const entry of barcodeEnabled ? barcodeEntries : []) {
         const value = entry.barcode.trim();
         if (entry.saved || !value) continue;
         const bcResult = await platform.createBarcodeForProduct?.({
@@ -1057,7 +1069,7 @@ export default function ProductFormModal({
         resetForm();
         const nextCode = await platform.getNextCode(licenseId);
         setCode(nextCode);
-        await loadNextBarcodePreview();
+        if (barcodeEnabled) await loadNextBarcodePreview();
         requestAnimationFrame(() => categoryRef.current?.focus());
         return;
       }
@@ -1261,7 +1273,6 @@ export default function ProductFormModal({
   return (
     <div
       className="fixed inset-0 z-[260] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4"
-      onClick={onClose}
       onKeyDown={(e) => {
         e.stopPropagation();
       }}
@@ -1343,9 +1354,7 @@ export default function ProductFormModal({
                 <div className="space-y-1.5">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className={labelClass}>
-                        Category <span className="text-rose-400">*</span>
-                      </label>
+                      <label className={labelClass}>Category</label>
                       <SearchableDropdown
                         ref={categoryRef}
                         value={category}
@@ -1754,108 +1763,110 @@ export default function ProductFormModal({
             </div>
 
             {/* ── Row 8: Barcodes ── */}
-            <div className="rounded-[14px] border border-dashed border-slate-200 bg-slate-50/60 p-3 space-y-2.5">
-              <div className="flex items-center gap-2">
-                <div className="flex h-6 w-6 items-center justify-center rounded-lg kyn-brand-chip">
-                  <Tag className="h-3 w-3 text-slate-700" />
+            {barcodeEnabled && (
+              <div className="rounded-[14px] border border-dashed border-slate-200 bg-slate-50/60 p-3 space-y-2.5">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-6 w-6 items-center justify-center rounded-lg kyn-brand-chip">
+                    <Tag className="h-3 w-3 text-slate-700" />
+                  </div>
+                  <span className="text-xs font-semibold text-slate-800">
+                    Barcodes
+                  </span>
+                  <span className="text-[10px] text-slate-400">
+                    — each = a batch
+                  </span>
                 </div>
-                <span className="text-xs font-semibold text-slate-800">
-                  Barcodes
-                </span>
-                <span className="text-[10px] text-slate-400">
-                  — each = a batch
-                </span>
-              </div>
 
-              {barcodeEntries.length > 0 && (
-                <div className="space-y-1.5">
-                  {barcodeEntries.map((entry) => (
-                    <div
-                      key={entry.id}
-                      className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5"
-                    >
-                      <span
-                        className={`rounded-md px-1.5 py-0.5 font-mono text-[11px] font-semibold ${
-                          entry.isGenerated
-                            ? "bg-cyan-100 text-cyan-800"
-                            : "bg-fuchsia-100 text-fuchsia-800"
-                        }`}
+                {barcodeEntries.length > 0 && (
+                  <div className="space-y-1.5">
+                    {barcodeEntries.map((entry) => (
+                      <div
+                        key={entry.id}
+                        className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5"
                       >
-                        {entry.barcode}
-                      </span>
-                      {entry.isGenerated && (
-                        <span className="flex items-center gap-1 text-[10px] text-slate-400">
-                          <Zap className="h-2.5 w-2.5" /> generated
+                        <span
+                          className={`rounded-md px-1.5 py-0.5 font-mono text-[11px] font-semibold ${
+                            entry.isGenerated
+                              ? "bg-cyan-100 text-cyan-800"
+                              : "bg-fuchsia-100 text-fuchsia-800"
+                          }`}
+                        >
+                          {entry.barcode}
                         </span>
-                      )}
-                      {entry.saved && (
-                        <span className="ml-auto mr-1 text-[10px] text-emerald-600">
-                          saved
-                        </span>
-                      )}
-                      <button
-                        type="button"
-                        tabIndex={-1}
-                        onClick={() => removeBarcode(entry)}
-                        className="ml-auto flex h-5 w-5 items-center justify-center rounded-md text-rose-400 transition hover:bg-rose-50 hover:text-rose-600"
-                      >
-                        <Trash2 className="h-2.5 w-2.5" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
+                        {entry.isGenerated && (
+                          <span className="flex items-center gap-1 text-[10px] text-slate-400">
+                            <Zap className="h-2.5 w-2.5" /> generated
+                          </span>
+                        )}
+                        {entry.saved && (
+                          <span className="ml-auto mr-1 text-[10px] text-emerald-600">
+                            saved
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          onClick={() => removeBarcode(entry)}
+                          className="ml-auto flex h-5 w-5 items-center justify-center rounded-md text-rose-400 transition hover:bg-rose-50 hover:text-rose-600"
+                        >
+                          <Trash2 className="h-2.5 w-2.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
-              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-                <button
-                  type="button"
-                  tabIndex={-1}
-                  onClick={addGeneratedBarcode}
-                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl bg-cyan-600 px-3 py-2 text-[11px] font-semibold text-white transition hover:bg-cyan-700 sm:h-auto sm:justify-start sm:px-2.5 sm:py-1.5"
-                >
-                  <Zap className="h-3 w-3" /> Reserve {nextBarcodePreview}
-                </button>
-                <div className="flex w-full items-center gap-1.5 sm:min-w-[160px] sm:flex-1">
-                  <input
-                    tabIndex={-1}
-                    type="text"
-                    value={customBarcodeInput}
-                    onChange={(e) => {
-                      setCustomBarcodeInput(e.target.value);
-                      setBarcodeError(null);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        addCustomBarcode();
-                      }
-                    }}
-                    placeholder="Custom barcode"
-                    className="h-9 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-xs text-slate-800 outline-none placeholder:text-slate-400 focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/10 sm:h-7 sm:px-2.5"
-                  />
+                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                   <button
                     type="button"
                     tabIndex={-1}
-                    onClick={addCustomBarcode}
-                    className="inline-flex h-9 shrink-0 items-center justify-center gap-1 rounded-xl bg-slate-800 px-3 text-[11px] font-semibold text-white transition hover:bg-slate-700 sm:h-7 sm:px-2.5"
+                    onClick={addGeneratedBarcode}
+                    className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl bg-cyan-600 px-3 py-2 text-[11px] font-semibold text-white transition hover:bg-cyan-700 sm:h-auto sm:justify-start sm:px-2.5 sm:py-1.5"
                   >
-                    <Plus className="h-3 w-3" /> Add
+                    <Zap className="h-3 w-3" /> Reserve {nextBarcodePreview}
                   </button>
+                  <div className="flex w-full items-center gap-1.5 sm:min-w-[160px] sm:flex-1">
+                    <input
+                      tabIndex={-1}
+                      type="text"
+                      value={customBarcodeInput}
+                      onChange={(e) => {
+                        setCustomBarcodeInput(e.target.value);
+                        setBarcodeError(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          addCustomBarcode();
+                        }
+                      }}
+                      placeholder="Custom barcode"
+                      className="h-9 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-xs text-slate-800 outline-none placeholder:text-slate-400 focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/10 sm:h-7 sm:px-2.5"
+                    />
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      onClick={addCustomBarcode}
+                      className="inline-flex h-9 shrink-0 items-center justify-center gap-1 rounded-xl bg-slate-800 px-3 text-[11px] font-semibold text-white transition hover:bg-slate-700 sm:h-7 sm:px-2.5"
+                    >
+                      <Plus className="h-3 w-3" /> Add
+                    </button>
+                  </div>
                 </div>
-              </div>
 
-              {barcodeError && (
-                <p className="text-[11px] font-medium text-rose-500">
-                  {barcodeError}
-                </p>
-              )}
-              {barcodeEntries.length === 0 && (
-                <p className="text-[11px] italic text-slate-400">
-                  No barcodes added. On purchase, the next available barcode
-                  will be suggested.
-                </p>
-              )}
-            </div>
+                {barcodeError && (
+                  <p className="text-[11px] font-medium text-rose-500">
+                    {barcodeError}
+                  </p>
+                )}
+                {barcodeEntries.length === 0 && (
+                  <p className="text-[11px] italic text-slate-400">
+                    No barcodes added. On purchase, the next available barcode
+                    will be suggested.
+                  </p>
+                )}
+              </div>
+            )}
           </form>
         ) : (
           /* ── Bulk tab ── */

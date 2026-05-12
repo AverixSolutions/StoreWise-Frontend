@@ -103,6 +103,11 @@ type SaleRecord = {
 declare global {
   interface Window {
     electronAPI: {
+      setLicenseFeatures?: (features: {
+        licenseId: string;
+        barcodeEnabled?: boolean;
+      }) => Promise<{ success: boolean; error?: string }>;
+
       printHtml: (
         html: string,
         options?: {

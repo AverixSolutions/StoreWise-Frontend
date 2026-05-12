@@ -22,6 +22,7 @@ interface ItemsTableSectionProps {
   printBarcodesSlot?: React.ReactNode;
   onOpenMobileSheet?: () => void;
   hasMissingFields?: boolean;
+  barcodeEnabled?: boolean;
 }
 
 export default function ItemsTableSection({
@@ -43,6 +44,7 @@ export default function ItemsTableSection({
   printBarcodesSlot,
   onOpenMobileSheet,
   hasMissingFields = false,
+  barcodeEnabled = true,
 }: ItemsTableSectionProps) {
   const itemCount = rows.filter((r) => r.productId).length;
 
@@ -76,7 +78,7 @@ export default function ItemsTableSection({
 
         {/* Change 1 — Responsive toolbar with wrapped buttons and hidden labels */}
         <div className="flex items-center gap-1.5 flex-wrap justify-end">
-          {printBarcodesSlot}
+          {barcodeEnabled && printBarcodesSlot}
 
           <button
             onClick={onShowReports}
@@ -134,6 +136,7 @@ export default function ItemsTableSection({
           onAddRow={onAddRow}
           onRequestBatchSelect={onRequestBatchSelect}
           onBarcodeCommit={onBarcodeCommit}
+          barcodeEnabled={barcodeEnabled}
         />
       </div>
 

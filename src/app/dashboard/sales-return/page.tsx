@@ -32,6 +32,7 @@ import {
   mapItems,
   validateSaleBill,
 } from "@/components/sales/utils";
+import { canUseBarcode } from "@/lib/session/runtimeSession";
 
 function makeSnapshot(header: HeaderForm, rows: ItemRow[]) {
   return JSON.stringify({
@@ -120,6 +121,7 @@ function SalesReturnPageInner() {
 
   // NEW: Cancel confirmation modal
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
+  const barcodeEnabled = isClient ? canUseBarcode() : true;
 
   // Initialize from localStorage
   useEffect(() => {
@@ -258,14 +260,13 @@ function SalesReturnPageInner() {
     const product = await platform.getProduct(productId);
     if (!product) return;
 
-    const batchesRes = await platform.listBarcodesForProduct?.(
-      licenseId,
-      productId,
-    );
+    const batchesRes = barcodeEnabled
+      ? await platform.listBarcodesForProduct?.(licenseId, productId)
+      : await platform.listBatchesForProduct(productId, false);
 
     const liveBatches: BatchInfo[] = (batchesRes?.rows || []).map((b: any) => ({
       id: b.id,
-      barcode: b.barcode,
+      barcode: barcodeEnabled ? b.barcode : "",
       batchNo: b.batchNo,
       purchaseBatchNo: b.purchaseBatchNo || b.batchNo,
       mfgDate: b.mfgDate,
@@ -306,7 +307,7 @@ function SalesReturnPageInner() {
                 ...r,
                 ...basePatch,
                 batchId: b.id,
-                barcode: b.barcode || "",
+                barcode: barcodeEnabled ? b.barcode || "" : "",
                 batchNo: b.batchNo ?? null,
                 purchaseBatchNo: b.purchaseBatchNo ?? b.batchNo ?? null,
                 mfgDate: b.mfgDate ?? null,
@@ -347,7 +348,9 @@ function SalesReturnPageInner() {
           : {
               ...r,
               ...basePatch,
-              barcode: product.barcode || product.code || "",
+              barcode: barcodeEnabled
+                ? product.barcode || product.code || ""
+                : "",
             },
       ),
     );
@@ -362,15 +365,14 @@ function SalesReturnPageInner() {
     if (!productId) return;
 
     try {
-      const batchesRes = await platform.listBarcodesForProduct?.(
-        licenseId,
-        productId,
-      );
+      const batchesRes = barcodeEnabled
+        ? await platform.listBarcodesForProduct?.(licenseId, productId)
+        : await platform.listBatchesForProduct(productId, false);
 
       const liveBatches: BatchInfo[] = (batchesRes?.rows || []).map(
         (b: any) => ({
           id: b.id,
-          barcode: b.barcode,
+          barcode: barcodeEnabled ? b.barcode : "",
           batchNo: b.batchNo,
           purchaseBatchNo: b.purchaseBatchNo || b.batchNo,
           mfgDate: b.mfgDate,
@@ -646,6 +648,7 @@ function SalesReturnPageInner() {
             rows={rows}
             products={products}
             onSelectProduct={handleSelectProduct}
+            barcodeEnabled={barcodeEnabled}
             onUpdateRow={updateRow}
             onAddRow={addRow}
             onRemoveRow={removeRow}
@@ -686,6 +689,7 @@ function SalesReturnPageInner() {
         productName={batchPicker?.productName}
         nextBarcode=""
         allowCreateNew={false}
+        barcodeEnabled={barcodeEnabled}
         onSelect={(batch) => {
           if (!batchPicker) return;
 
@@ -703,7 +707,7 @@ function SalesReturnPageInner() {
                 : {
                     ...r,
                     batchId: batch.id,
-                    barcode: batch.barcode || "",
+                    barcode: barcodeEnabled ? batch.barcode || "" : "",
                     batchNo: batch.batchNo ?? null,
                     purchaseBatchNo:
                       batch.purchaseBatchNo ?? batch.batchNo ?? null,

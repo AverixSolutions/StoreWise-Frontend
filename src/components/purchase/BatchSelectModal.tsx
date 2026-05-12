@@ -14,6 +14,7 @@ interface BatchSelectModalProps {
   nextBarcode?: string; // pre-fetched next global barcode (peek)
   licenseId?: string;
   allowCreateNew?: boolean;
+  barcodeEnabled?: boolean;
 }
 
 export default function BatchSelectModal({
@@ -26,19 +27,21 @@ export default function BatchSelectModal({
   nextBarcode,
   licenseId,
   allowCreateNew = true,
+  barcodeEnabled = true,
 }: BatchSelectModalProps) {
   const firstButtonRef = useRef<HTMLButtonElement>(null);
   const [customBarcode, setCustomBarcode] = useState("");
   const [tab, setTab] = useState<"existing" | "new">("existing");
+  const canCreateBarcode = allowCreateNew && barcodeEnabled;
 
   useEffect(() => {
     if (isOpen) {
       setCustomBarcode("");
       // If no existing batches, jump to "new" tab
-      setTab(batches.length === 0 ? "new" : "existing");
+      setTab(canCreateBarcode && batches.length === 0 ? "new" : "existing");
       setTimeout(() => firstButtonRef.current?.focus(), 100);
     }
-  }, [isOpen, batches.length]);
+  }, [isOpen, batches.length, canCreateBarcode]);
 
   if (!isOpen) return null;
 
@@ -93,7 +96,7 @@ export default function BatchSelectModal({
             </div>
             <div>
               <div className="text-base font-semibold text-gray-900">
-                Select / Add Batch
+                {barcodeEnabled ? "Select / Add Batch" : "Select Batch"}
               </div>
               {productName && (
                 <div className="text-sm text-gray-600 truncate max-w-[320px]">
@@ -122,12 +125,12 @@ export default function BatchSelectModal({
             }`}
             onClick={() => setTab("existing")}
           >
-            Existing Barcodes{" "}
+            {barcodeEnabled ? "Existing Barcodes" : "Existing Batches"}{" "}
             <span className="ml-1 text-xs bg-gray-200 text-gray-700 px-1.5 py-0.5 rounded-full">
               {batches.length}
             </span>
           </button>
-          {allowCreateNew && (
+          {canCreateBarcode && (
             <button
               type="button"
               className={`flex-1 py-2.5 text-sm font-medium transition-colors ${
@@ -145,11 +148,15 @@ export default function BatchSelectModal({
         {/* Info Banner */}
         <div className="px-4 py-2 bg-blue-50 border-b border-blue-100 flex-shrink-0">
           <p className="text-xs text-blue-700">
-            💡 Each barcode = a separate batch with independent stock tracking.{" "}
-            {tab === "existing"
-              ? "Select an existing barcode or switch to add a new one. You can reopen this popup from barcode field using F2 or Ctrl+B."
-              : `Next auto-generated barcode: `}
-            {tab === "new" && nextBarcode && (
+            {barcodeEnabled
+              ? "Each barcode = a separate batch with independent stock tracking. "
+              : ""}
+            {barcodeEnabled
+              ? tab === "existing"
+                ? "Select an existing barcode or switch to add a new one."
+                : "Next auto-generated barcode: "
+              : "Select an existing batch for this product."}
+            {barcodeEnabled && tab === "new" && nextBarcode && (
               <span className="font-mono font-bold">{nextBarcode}</span>
             )}
           </p>
@@ -161,9 +168,17 @@ export default function BatchSelectModal({
             <div onKeyDown={handleListKeyDown} className="space-y-2">
               {batches.length === 0 ? (
                 <div className="py-8 text-center text-gray-400">
-                  <Barcode className="w-10 h-10 mx-auto mb-2 opacity-40" />
-                  <p className="text-sm">No barcodes yet for this product.</p>
-                  {allowCreateNew ? (
+                  {barcodeEnabled ? (
+                    <Barcode className="w-10 h-10 mx-auto mb-2 opacity-40" />
+                  ) : (
+                    <Boxes className="w-10 h-10 mx-auto mb-2 opacity-40" />
+                  )}
+                  <p className="text-sm">
+                    {barcodeEnabled
+                      ? "No barcodes yet for this product."
+                      : "No batches yet for this product."}
+                  </p>
+                  {canCreateBarcode ? (
                     <button
                       type="button"
                       onClick={() => setTab("new")}
@@ -188,7 +203,7 @@ export default function BatchSelectModal({
                     className="w-full text-left border border-gray-200 rounded-xl overflow-hidden hover:border-blue-500 hover:bg-blue-50 focus:border-blue-600 focus:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-200 transition-all"
                   >
                     <div className="grid grid-cols-[1.2fr_1.3fr_0.8fr_0.9fr_0.9fr_0.8fr] gap-2 px-4 py-2 bg-gray-50 border-b border-gray-200 text-[11px] font-semibold text-gray-600 uppercase">
-                      <div>Barcode</div>
+                      <div>{barcodeEnabled ? "Barcode" : "Batch"}</div>
                       <div>Purchase Batch</div>
                       <div>MRP</div>
                       <div>Sale</div>
@@ -198,7 +213,9 @@ export default function BatchSelectModal({
 
                     <div className="grid grid-cols-[1.2fr_1.3fr_0.8fr_0.9fr_0.9fr_0.8fr] gap-2 px-4 py-3 text-sm text-gray-900 items-center">
                       <div className="font-mono font-semibold">
-                        {b.barcode || "—"}
+                        {barcodeEnabled
+                          ? b.barcode || "—"
+                          : b.purchaseBatchNo || b.batchNo || "—"}
                       </div>
                       <div>{b.purchaseBatchNo || b.batchNo || "—"}</div>
                       <div>{b.mrp != null ? `₹${b.mrp}` : "—"}</div>
@@ -235,7 +252,7 @@ export default function BatchSelectModal({
             </div>
           )}
 
-          {allowCreateNew && tab === "new" && (
+          {canCreateBarcode && tab === "new" && (
             <div className="space-y-4 py-2">
               {/* Auto-generate option */}
               <div className="border-2 border-blue-200 rounded-xl p-4 bg-blue-50">

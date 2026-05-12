@@ -8,6 +8,7 @@ import type {
   LabelPrintRow,
 } from "@/lib/barcode/labelPrintTypes";
 import { printLabels } from "@/lib/barcode/printLabels";
+import { canUseBarcode } from "@/lib/session/runtimeSession";
 
 type PrinterRow = {
   id: string;
@@ -48,6 +49,7 @@ export default function PrintLabelsModal({
   rows,
   title = "Print Labels",
 }: Props) {
+  const barcodeEnabled = canUseBarcode();
   const [engine, setEngine] = useState<LabelPrintEngine>("HTML");
   const [printers, setPrinters] = useState<PrinterRow[]>([]);
   const [templates, setTemplates] = useState<TemplateRow[]>([]);
@@ -60,7 +62,7 @@ export default function PrintLabelsModal({
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || !barcodeEnabled) return;
 
     let cancelled = false;
 
@@ -110,7 +112,7 @@ export default function PrintLabelsModal({
     return () => {
       cancelled = true;
     };
-  }, [open, licenseId]);
+  }, [open, licenseId, barcodeEnabled]);
 
   useEffect(() => {
     if (!open) return;
@@ -193,7 +195,7 @@ export default function PrintLabelsModal({
     }
   }
 
-  if (!open) return null;
+  if (!open || !barcodeEnabled) return null;
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">

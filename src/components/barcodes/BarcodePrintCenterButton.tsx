@@ -4,6 +4,7 @@
 import { createPortal } from "react-dom";
 import { Tags } from "lucide-react";
 import BarcodePrintCenterModal from "./BarcodePrintCenterModal";
+import { canUseBarcode } from "@/lib/session/runtimeSession";
 import type { PrintCenterItemRow } from "@/lib/barcode/printCenterTypes";
 
 type Props = {
@@ -27,6 +28,8 @@ export default function BarcodePrintCenterButton({
   onOpen,
   onClose,
 }: Props) {
+  if (!canUseBarcode()) return null;
+
   return (
     <>
       <button

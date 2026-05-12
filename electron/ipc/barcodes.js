@@ -3,6 +3,7 @@
 const { ipcMain } = require("electron");
 const { v4: uuidv4 } = require("uuid");
 const db = require("../db");
+const { canUseBarcode, barcodeDisabledResult } = require("../licenseFeatures");
 
 function nowISO() {
   return new Date().toISOString();
@@ -61,6 +62,10 @@ function getSafeCurrentBarcodeNumber(licenseId) {
  * UI ONLY - Do not treat as guaranteed.
  */
 function peekNextBarcodeNumber(licenseId) {
+  if (!canUseBarcode(licenseId)) {
+    throw new Error("Barcode Support is disabled for this license.");
+  }
+
   const current = getSafeCurrentBarcodeNumber(licenseId);
   const next = current + 1;
 
@@ -114,6 +119,9 @@ const reserveBarcodesTx = db.transaction((licenseId, count = 1) => {
 
 function reserveBarcodes(licenseId, count = 1) {
   if (!licenseId) throw new Error("licenseId required");
+  if (!canUseBarcode(licenseId)) {
+    throw new Error("Barcode Support is disabled for this license.");
+  }
   return reserveBarcodesTx(licenseId, count);
 }
 
@@ -150,6 +158,7 @@ function registerBarcodeHandlers() {
   // ── Peek next barcode (no commit) ──
   ipcMain.handle("barcode:peekNext", (e, licenseId) => {
     if (!licenseId) return { success: false, error: "licenseId required" };
+    if (!canUseBarcode(licenseId)) return barcodeDisabledResult();
     try {
       const num = peekNextBarcodeNumber(licenseId);
       return {
@@ -165,6 +174,7 @@ function registerBarcodeHandlers() {
   // ── Reserve N barcodes (commits the sequence atomically) ──
   ipcMain.handle("barcode:reserve", (e, { licenseId, count = 1 }) => {
     if (!licenseId) return { success: false, error: "licenseId required" };
+    if (!canUseBarcode(licenseId)) return barcodeDisabledResult();
     try {
       const barcodes = reserveBarcodes(licenseId, Math.max(1, Number(count)));
       return { success: true, barcodes };
@@ -177,6 +187,9 @@ function registerBarcodeHandlers() {
   ipcMain.handle("barcode:listForProduct", (e, { licenseId, productId }) => {
     if (!licenseId || !productId)
       return { success: false, error: "licenseId and productId required" };
+    if (!canUseBarcode(licenseId)) {
+      return { ...barcodeDisabledResult(), rows: [] };
+    }
     try {
       const rows = db
         .prepare(
@@ -200,6 +213,7 @@ function registerBarcodeHandlers() {
   ipcMain.handle("barcode:createForProduct", (e, payload) => {
     if (!payload?.licenseId || !payload?.productId)
       return { success: false, error: "licenseId and productId required" };
+    if (!canUseBarcode(payload.licenseId)) return barcodeDisabledResult();
 
     const ts = nowISO();
 
@@ -313,6 +327,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, 0, ?, ?, ?)`,
   ipcMain.handle("barcode:deleteForProduct", (e, { licenseId, batchId }) => {
     if (!licenseId || !batchId)
       return { success: false, error: "licenseId and batchId required" };
+    if (!canUseBarcode(licenseId)) return barcodeDisabledResult();
 
     const ts = nowISO();
 
@@ -347,6 +362,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, 0, ?, ?, ?)`,
   // ── Get the next barcode for a purchase row ──
   ipcMain.handle("purchase:nextBarcodeForRow", (e, { licenseId }) => {
     if (!licenseId) return { success: false, error: "licenseId required" };
+    if (!canUseBarcode(licenseId)) return barcodeDisabledResult();
     try {
       const num = peekNextBarcodeNumber(licenseId);
       return { success: true, barcode: String(num).padStart(5, "0") };

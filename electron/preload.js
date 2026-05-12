@@ -2,6 +2,9 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("electronAPI", {
+  setLicenseFeatures: (features) =>
+    ipcRenderer.invoke("license:setFeatures", features),
+
   // ---- DASHBOARD ----
   getDashboardOverview: (licenseId, days = 7) =>
     ipcRenderer.invoke("dashboard:getOverview", { licenseId, days }),

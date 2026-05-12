@@ -2,14 +2,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { canUseBarcode } from "@/lib/session/runtimeSession";
 
 export default function LabelPrintSettingsPage() {
+  const barcodeEnabled = canUseBarcode();
+
   const licenseId =
     typeof window !== "undefined"
       ? localStorage.getItem("licenseId") || "demo-license"
       : "demo-license";
 
-  const electronAPI = (window as any).electronAPI;
+  const electronAPI =
+    typeof window !== "undefined" ? (window as any).electronAPI : null;
 
   const [printers, setPrinters] = useState<any[]>([]);
   const [templates, setTemplates] = useState<any[]>([]);
@@ -38,6 +42,7 @@ export default function LabelPrintSettingsPage() {
   });
 
   async function loadAll() {
+    if (!barcodeEnabled || !electronAPI) return;
     const p = await electronAPI.listLabelPrinters(licenseId);
     const t = await electronAPI.listLabelTemplates(licenseId);
 
@@ -46,11 +51,12 @@ export default function LabelPrintSettingsPage() {
   }
 
   useEffect(() => {
-    if (!electronAPI) return;
+    if (!barcodeEnabled || !electronAPI) return;
     loadAll();
-  }, []);
+  }, [barcodeEnabled, electronAPI]);
 
   async function savePrinter() {
+    if (!barcodeEnabled || !electronAPI) return;
     const res = await electronAPI.saveLabelPrinter({
       licenseId,
       ...printerForm,
@@ -76,6 +82,7 @@ export default function LabelPrintSettingsPage() {
   }
 
   async function saveTemplate() {
+    if (!barcodeEnabled || !electronAPI) return;
     const res = await electronAPI.saveLabelTemplate({
       licenseId,
       ...templateForm,
@@ -105,6 +112,7 @@ export default function LabelPrintSettingsPage() {
   }
 
   async function testPrint(engine: "ZPL" | "BARTENDER") {
+    if (!barcodeEnabled || !electronAPI) return;
     const matchingTemplates = templates.filter((t) => t.engine === engine);
     const matchingPrinters = printers.filter((p) => p.engine === engine);
 
@@ -141,6 +149,8 @@ export default function LabelPrintSettingsPage() {
     console.log(`${engine} test result`, res);
     alert(JSON.stringify(res, null, 2));
   }
+
+  if (!barcodeEnabled) return null;
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-6">

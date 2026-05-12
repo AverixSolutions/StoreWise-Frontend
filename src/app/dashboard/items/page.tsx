@@ -8,7 +8,10 @@ import { useSyncStatus } from "@/sync/SyncProvider";
 import ProductBatchesDrawer from "@/components/products/ProductBatchesDrawer";
 import BarcodePrintCenterButton from "@/components/barcodes/BarcodePrintCenterButton";
 import { platform } from "@/platform";
-import { getActiveLicenseId } from "@/lib/session/runtimeSession";
+import {
+  canUseBarcode,
+  getActiveLicenseId,
+} from "@/lib/session/runtimeSession";
 import { Plus, Search, X } from "lucide-react";
 import type {
   ProductSummary,
@@ -217,6 +220,8 @@ export default function ItemsPage() {
 
   if (!isClient) return null;
 
+  const barcodeEnabled = canUseBarcode();
+
   const hasFilters =
     searchQuery ||
     categoryFilter ||
@@ -249,7 +254,8 @@ export default function ItemsPage() {
               <span className="kyn-brand-text">Products in control.</span>
             </h1>
             <p className="mt-1.5 text-sm leading-6 text-slate-300">
-              Manage your products, pricing, batches and barcode assignments.
+              Manage your products, pricing, and batches
+              {barcodeEnabled ? " with barcode assignments." : "."}
             </p>
           </div>
 
