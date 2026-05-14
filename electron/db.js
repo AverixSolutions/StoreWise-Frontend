@@ -670,6 +670,46 @@ addColumnIfMissing("supplier_transactions", "chequeNo", "TEXT");
 addColumnIfMissing("supplier_transactions", "chequeIssueDate", "TEXT");
 addColumnIfMissing("supplier_transactions", "chequeClearanceDate", "TEXT");
 addColumnIfMissing("supplier_transactions", "paymentStatus", "TEXT");
+addColumnIfMissing("supplier_transactions", "paymentMode", "TEXT");
+
+const supplierPaymentModeBackfillRan = db
+  .prepare(
+    `SELECT 1 FROM _migrations WHERE name='supplier_payment_mode_backfill_v1' LIMIT 1`,
+  )
+  .get();
+
+if (!supplierPaymentModeBackfillRan) {
+  try {
+    const ts = new Date().toISOString();
+
+    db.prepare(
+      `
+      UPDATE supplier_transactions
+      SET paymentMode =
+        CASE
+          WHEN chequeNo IS NOT NULL
+            OR chequeIssueDate IS NOT NULL
+            OR chequeClearanceDate IS NOT NULL
+            OR paymentStatus = 'PENDING_CHEQUE'
+          THEN 'CHEQUE'
+          WHEN lower(COALESCE(notes, '')) LIKE '%bank%'
+          THEN 'BANK'
+          ELSE 'CASH'
+        END
+      WHERE kind = 'PAYMENT'
+        AND paymentMode IS NULL
+    `,
+    ).run();
+
+    db.prepare(
+      `INSERT INTO _migrations(name, ranAt) VALUES('supplier_payment_mode_backfill_v1', ?)`,
+    ).run(ts);
+
+    console.log("[db] supplier_payment_mode_backfill_v1 completed");
+  } catch (e) {
+    console.error("[db] supplier_payment_mode_backfill_v1 failed:", e);
+  }
+}
 
 // --- Purchases: link supplier ---
 addColumnIfMissing("purchases", "supplierId", "TEXT");

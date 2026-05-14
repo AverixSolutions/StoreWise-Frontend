@@ -1,11 +1,19 @@
 // src/components/purchase/ItemsTableSection.tsx
-import { Plus, PauseCircle, List, FileText, Receipt } from "lucide-react";
+import {
+  Plus,
+  PackagePlus,
+  PauseCircle,
+  List,
+  FileText,
+  Receipt,
+} from "lucide-react";
 import { ItemRow, Product } from "./types";
 import ItemsTable from "./ItemsTable";
 
 interface ItemsTableSectionProps {
   rows: ItemRow[];
   products: Product[];
+  onAddProduct?: () => void;
   onSelectProduct: (rowIndex: number, productId: string) => void;
   onUpdateRow: (index: number, patch: Partial<ItemRow>) => void;
   onAddRow: () => void;
@@ -28,6 +36,7 @@ interface ItemsTableSectionProps {
 export default function ItemsTableSection({
   rows,
   products,
+  onAddProduct,
   onSelectProduct,
   onUpdateRow,
   onAddRow,
@@ -109,6 +118,18 @@ export default function ItemsTableSection({
                 <span className="hidden sm:inline">Holds</span>
               </button>
             </>
+          )}
+
+          {onAddProduct && (
+            <button
+              type="button"
+              onClick={onAddProduct}
+              className="px-2 sm:px-3 py-1.5 rounded-md bg-emerald-500/20 border border-emerald-400/30 text-emerald-100 hover:bg-emerald-500/30 transition-colors flex items-center gap-1.5 text-xs font-semibold cursor-pointer"
+              title="Add Product"
+            >
+              <PackagePlus className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Product</span>
+            </button>
           )}
 
           <button

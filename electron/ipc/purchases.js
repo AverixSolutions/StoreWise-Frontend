@@ -366,6 +366,7 @@ function registerPurchaseHandlers() {
         FROM purchase_items pi
         LEFT JOIN products p ON p.id = pi.productId
         WHERE pi.purchaseId = ?
+        AND COALESCE(pi.deletedAt,'') = ''
         ORDER BY COALESCE(pi.lineNo, 0), pi.createdAt
   `,
       )
@@ -386,6 +387,7 @@ function registerPurchaseHandlers() {
       FROM purchase_items pi
       LEFT JOIN products p ON p.id = pi.productId
       WHERE pi.purchaseId = ?
+      AND COALESCE(pi.deletedAt,'') = ''
       ORDER BY COALESCE(pi.lineNo, 0), pi.createdAt
     `,
       )
@@ -723,8 +725,19 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
    WHERE purchaseId = ? AND COALESCE(deletedAt,'') = ''`,
       ).run(now, now, id);
 
-      // Replace items
-      db.prepare(`DELETE FROM purchase_items WHERE purchaseId = ?`).run(id);
+      // Soft-delete old items so sync can push tombstones to the server.
+      // DO NOT hard-delete here, or cloud keeps old active rows.
+      db.prepare(
+        `
+  UPDATE purchase_items
+  SET deletedAt = ?,
+      updatedAt = ?,
+      isSynced = 0,
+      syncedAt = NULL
+  WHERE purchaseId = ?
+    AND COALESCE(deletedAt,'') = ''
+`,
+      ).run(now, now, id);
 
       const insItem = db.prepare(`
         INSERT INTO purchase_items(
@@ -1328,7 +1341,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
         .prepare(
           `
         SELECT id, kind, refId, refNo, date, amount, sign, notes, createdAt,
-               paymentStatus, chequeNo, chequeIssueDate, chequeClearanceDate
+               paymentStatus, paymentMode, chequeNo, chequeIssueDate, chequeClearanceDate
         ${base}
         ORDER BY datetime(date) DESC, datetime(createdAt) DESC
         LIMIT @limit OFFSET @offset
@@ -1393,7 +1406,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
       const txId = uuidv4();
       const payAmt = Number(amount);
       const isCheque = mode === "CHEQUE";
-      const paymentStatus = isCheque ? "PENDING_CHEQUE" : "CLEARED";
+      const paymentStatus = isCheque ? "PENDING_CHEQUE" : null; // ← changed
 
       let allocSum = 0;
       for (const a of allocations || []) {
@@ -1440,10 +1453,10 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
           `
         INSERT INTO supplier_transactions
         (id, licenseId, supplierId, kind, refId, refNo, date, amount, sign, notes,
-         paymentStatus, chequeNo, chequeIssueDate, chequeClearanceDate,
+         paymentStatus, paymentMode, chequeNo, chequeIssueDate, chequeClearanceDate,
          createdAt, updatedAt, isSynced)
         VALUES(?, ?, ?, 'PAYMENT', NULL, NULL, ?, ?, -1, ?,
-               ?, ?, ?, ?,
+               ?, ?, ?, ?, ?,
                ?, ?, 0)
       `,
         ).run(
@@ -1453,7 +1466,8 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
           date || now,
           payAmt,
           notes || (isCheque ? "Cheque Payment" : "Payment"),
-          paymentStatus,
+          paymentStatus, // ← null for CASH/BANK, "PENDING_CHEQUE" for CHEQUE
+          mode, // ← new: stores "CASH" | "BANK" | "CHEQUE"
           chequeNo || null,
           chequeIssueDate || null,
           chequeClearanceDate || null,
@@ -1713,7 +1727,6 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
         .prepare(`SELECT COUNT(*) AS cnt ${base}`)
         .get(params).cnt;
 
-      // Pull payments + allocated sum
       const rows = db
         .prepare(
           `
@@ -1726,9 +1739,15 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
         st.notes,
         st.createdAt,
         st.paymentStatus,
+        st.paymentMode,
         st.chequeNo,
         CASE
-          WHEN st.chequeNo IS NOT NULL OR st.paymentStatus IS NOT NULL THEN 'CHEQUE'
+          WHEN st.paymentMode IN ('CASH', 'BANK', 'CHEQUE') THEN st.paymentMode
+          WHEN st.chequeNo IS NOT NULL
+            OR st.chequeIssueDate IS NOT NULL
+            OR st.chequeClearanceDate IS NOT NULL
+            OR st.paymentStatus = 'PENDING_CHEQUE'
+          THEN 'CHEQUE'
           WHEN LOWER(COALESCE(ct.notes,'')) LIKE '%bank%' THEN 'BANK'
           WHEN LOWER(COALESCE(ct.notes,'')) LIKE '%cash%' THEN 'CASH'
           ELSE 'CASH'
@@ -1743,7 +1762,6 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
         )
         .all(params);
 
-      // For each payment, fetch the bills it was applied to
       const billStmt = db.prepare(`
       SELECT b.purchaseId,
              COALESCE(p.billNo, printf('SL-%d', p.slNo)) AS billRef

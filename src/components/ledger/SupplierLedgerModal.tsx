@@ -361,6 +361,11 @@ export default function LedgerModal({
     try {
       const res = await platform.markChequeReceived?.(licenseId, txId);
       if (res?.success) {
+        await loadLedger();
+        if (billWise) {
+          await loadBills();
+        }
+
         setRefetchKey((k) => k + 1);
         onSaved?.();
       } else {
@@ -436,6 +441,12 @@ export default function LedgerModal({
         setChequeClearanceDate("");
         setChequeIssueDate(new Date().toISOString().slice(0, 10));
         clearAllocations();
+
+        await loadLedger();
+        if (billWise) {
+          await loadBills();
+        }
+
         setRefetchKey((k) => k + 1);
         onSaved?.();
       } else {

@@ -72,31 +72,37 @@ async function webMarkSynced(ids: string[], serverUpdatedAt: string) {
 async function webUpsertFromServer(records: DirtyRecord[]) {
   for (const record of records) {
     const existing = await idbGetByKey<IDBProduct>(STORES.PRODUCTS, record.id);
+
     const incomingTs = record.updatedAt
       ? new Date(record.updatedAt).getTime()
       : 0;
+
     const localTs = existing?.updatedAt
       ? new Date(existing.updatedAt).getTime()
       : 0;
 
-    if (!existing) {
-      // Brand new record from server — just store it
+    const existingCategory = (existing as any)?.category ?? null;
+    const existingSubcategory = (existing as any)?.subcategory ?? null;
+    const incomingCategory = (record as any)?.category ?? null;
+    const incomingSubcategory = (record as any)?.subcategory ?? null;
+
+    const shouldRepairSameTimestampMissingFields =
+      incomingTs === localTs &&
+      ((!existingCategory && !!incomingCategory) ||
+        (!existingSubcategory && !!incomingSubcategory));
+
+    if (
+      !existing ||
+      incomingTs > localTs ||
+      shouldRepairSameTimestampMissingFields
+    ) {
       await idbPut(STORES.PRODUCTS, {
-        ...record,
-        isSynced: 1,
-        syncedAt: new Date().toISOString(),
-      });
-    } else if (Number(existing.isSynced ?? 0) === 1 && incomingTs > localTs) {
-      // Local is clean AND server is newer — overwrite
-      await idbPut(STORES.PRODUCTS, {
-        ...existing,
+        ...(existing ?? {}),
         ...record,
         isSynced: 1,
         syncedAt: new Date().toISOString(),
       });
     }
-    // If local is dirty (isSynced=0), skip — the push cycle already
-    // sent it or will send it next cycle. Don't clobber local changes.
   }
 }
 

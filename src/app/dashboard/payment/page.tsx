@@ -1,7 +1,7 @@
 // src/app/payment/page.tsx
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Plus,
   Search,
@@ -28,6 +28,13 @@ type PaymentRow = {
   bills?: { purchaseId: string; billRef: string }[];
   paymentStatus?: string; // for cheque
 };
+type SupplierDueSummary = {
+  balance: number;
+  openingBalance: number;
+  outstanding: number;
+  outstandingBills: number;
+  transactions: number;
+};
 
 export default function PaymentPage() {
   const [licenseId, setLicenseId] = useState("demo-license");
@@ -51,6 +58,9 @@ export default function PaymentPage() {
 
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
+  const [summary, setSummary] = useState<SupplierDueSummary | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryRefreshKey, setSummaryRefreshKey] = useState(0);
 
   useEffect(() => {
     setIsClient(true);
@@ -95,11 +105,68 @@ export default function PaymentPage() {
     }
   }
 
+  const loadSupplierSummary = useCallback(async () => {
+    if (!isClient || !selected?.id) {
+      setSummary(null);
+      return;
+    }
+
+    setSummaryLoading(true);
+
+    try {
+      const [ledgerRes, billsRes] = await Promise.all([
+        platform.getSupplierLedger?.({
+          licenseId,
+          supplierId: selected.id,
+          page: 1,
+          pageSize: 1,
+        }),
+        platform.getSupplierOutstandingBills?.({
+          licenseId,
+          supplierId: selected.id,
+          page: 1,
+          pageSize: 100,
+        }),
+      ]);
+
+      const outstanding = (billsRes?.rows || []).reduce(
+        (sum: number, b: any) => sum + Number(b.remainingDue || 0),
+        0,
+      );
+
+      setSummary({
+        balance: Number(ledgerRes?.balance || 0),
+        openingBalance: Number(ledgerRes?.openingBalance || 0),
+        transactions: Number(ledgerRes?.total || 0),
+        outstanding,
+        outstandingBills: Number(
+          billsRes?.total || billsRes?.rows?.length || 0,
+        ),
+      });
+    } catch (err) {
+      console.error("Failed to load supplier summary:", err);
+      setSummary(null);
+    } finally {
+      setSummaryLoading(false);
+    }
+  }, [isClient, licenseId, selected?.id]);
+
   useEffect(() => {
     if (!isClient) return;
     loadPayments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isClient, licenseId, selected?.id, q, dateFrom, dateTo, page]);
+
+  useEffect(() => {
+    if (!isClient) return;
+    loadSupplierSummary();
+  }, [
+    isClient,
+    licenseId,
+    selected?.id,
+    summaryRefreshKey,
+    loadSupplierSummary,
+  ]);
 
   if (!isClient) return null;
 
@@ -166,7 +233,9 @@ export default function PaymentPage() {
               onChange={(id) => {
                 const s = suppliers.find((x) => x.id === id) || null;
                 setSelected(s);
+                setSummary(null);
                 setPage(1);
+                setSummaryRefreshKey((k) => k + 1);
               }}
               options={suppliers.map((s) => ({ value: s.id, label: s.name }))}
               placeholder="Select supplier"
@@ -211,6 +280,79 @@ export default function PaymentPage() {
             />
           </div>
         </div>
+
+        {selected && (
+          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                Supplier
+              </div>
+              <div className="mt-1 truncate text-sm font-bold text-slate-800">
+                {selected.name}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-rose-100 bg-rose-50 px-4 py-3">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-rose-500">
+                Current Balance
+              </div>
+              <div className="mt-1 text-lg font-bold text-rose-700">
+                {summaryLoading
+                  ? "Loading…"
+                  : `₹${Number(summary?.balance || 0).toLocaleString("en-IN", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}`}
+              </div>
+              <div className="mt-0.5 text-[11px] text-rose-500">
+                {Number(summary?.balance || 0) > 0
+                  ? "We owe supplier"
+                  : "Advance / clear"}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-600">
+                Outstanding Bills
+              </div>
+              <div className="mt-1 text-lg font-bold text-amber-700">
+                {summaryLoading
+                  ? "Loading…"
+                  : `₹${Number(summary?.outstanding || 0).toLocaleString(
+                      "en-IN",
+                      {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      },
+                    )}`}
+              </div>
+              <div className="mt-0.5 text-[11px] text-amber-600">
+                {summary?.outstandingBills || 0} pending bill(s)
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-cyan-100 bg-cyan-50 px-4 py-3">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-600">
+                Opening Balance
+              </div>
+              <div className="mt-1 text-lg font-bold text-cyan-700">
+                {summaryLoading
+                  ? "Loading…"
+                  : `₹${Number(summary?.openingBalance || 0).toLocaleString(
+                      "en-IN",
+                      {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      },
+                    )}`}
+              </div>
+              <div className="mt-0.5 text-[11px] text-cyan-600">
+                {summary?.transactions || 0} ledger transaction(s)
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="mt-3 flex justify-end">
           <button
             onClick={() => setOpen(true)}
@@ -374,9 +516,11 @@ export default function PaymentPage() {
           onClose={() => {
             setOpen(false);
             loadPayments();
+            setSummaryRefreshKey((k) => k + 1);
           }}
           onSaved={() => {
             loadPayments();
+            setSummaryRefreshKey((k) => k + 1);
           }}
           licenseId={licenseId}
           supplierId={selected.id}

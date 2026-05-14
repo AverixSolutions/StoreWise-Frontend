@@ -1708,11 +1708,73 @@ export default function BrandsCategoriesManager({
 
       setBrands(brandItems.sort((a, b) => a.value.localeCompare(b.value)));
 
-      if (categoriesResult.success) {
-        setCategoryRecords(categoriesResult.rows);
-      } else {
-        setCategoryRecords([]);
+      const masterCategories = categoriesResult.success
+        ? categoriesResult.rows
+        : [];
+      const mergedCategories: CategoryRecord[] = [...masterCategories];
+
+      function makeVirtualId(prefix: string, ...parts: string[]) {
+        return `${prefix}:${parts.map((p) => p.trim().toLowerCase()).join(":")}`;
       }
+
+      function findParentCategory(name: string) {
+        return mergedCategories.find(
+          (row) => !row.parentId && sameText(row.name, name),
+        );
+      }
+
+      function findSubcategory(parentId: string, name: string) {
+        return mergedCategories.find(
+          (row) => row.parentId === parentId && sameText(row.name, name),
+        );
+      }
+
+      for (const p of products) {
+        const parentName = p.category?.trim();
+        const childName = (p as any).subcategory?.trim();
+
+        if (!parentName) continue;
+
+        let parent = findParentCategory(parentName);
+
+        if (!parent) {
+          parent = {
+            id: makeVirtualId("virtual-category", licenseId, parentName),
+            licenseId,
+            name: parentName,
+            parentId: null,
+            createdAt: new Date(0).toISOString(),
+            updatedAt: new Date(0).toISOString(),
+          } as CategoryRecord;
+
+          mergedCategories.push(parent);
+        }
+
+        if (childName && !findSubcategory(parent.id, childName)) {
+          mergedCategories.push({
+            id: makeVirtualId(
+              "virtual-subcategory",
+              licenseId,
+              parentName,
+              childName,
+            ),
+            licenseId,
+            name: childName,
+            parentId: parent.id,
+            createdAt: new Date(0).toISOString(),
+            updatedAt: new Date(0).toISOString(),
+          } as CategoryRecord);
+        }
+      }
+
+      setCategoryRecords(
+        mergedCategories.sort((a, b) => {
+          const aIsChild = a.parentId ? 1 : 0;
+          const bIsChild = b.parentId ? 1 : 0;
+          if (aIsChild !== bIsChild) return aIsChild - bIsChild;
+          return a.name.localeCompare(b.name);
+        }),
+      );
     } catch (e) {
       console.error(e);
       setCategoryRecords([]);
@@ -1732,12 +1794,13 @@ export default function BrandsCategoriesManager({
   useEffect(() => {
     pullNow("brand");
     pullNow("category");
+    pullNow("product");
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const handler = (e: Event) => {
       const { entity } = (e as CustomEvent<{ entity: string }>).detail ?? {};
-      if (entity === "brand" || entity === "category") {
+      if (entity === "brand" || entity === "category" || entity === "product") {
         setRefreshTrigger((t) => t + 1);
       }
     };

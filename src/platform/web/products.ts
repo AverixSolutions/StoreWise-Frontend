@@ -58,7 +58,24 @@ type BarcodeSeqRecord = { licenseId: string; lastBarcodeNumber: number };
 
 async function getNextCodeNumber(licenseId: string): Promise<number> {
   const seq = await idbGetByKey<CodeSeqRecord>(STORES.CODE_SEQUENCE, licenseId);
-  return (seq?.lastCodeNumber ?? 0) + 1;
+  const seqLast = seq?.lastCodeNumber ?? 0;
+
+  const allProducts = await idbGetAllByIndex<WebProduct>(
+    STORES.PRODUCTS,
+    "licenseId",
+    licenseId,
+  );
+
+  const maxProductCodeNumber = allProducts.reduce((max, product) => {
+    const num =
+      typeof product.codeNumber === "number" &&
+      Number.isFinite(product.codeNumber)
+        ? product.codeNumber
+        : parseInt(String(product.code ?? "0"), 10) || 0;
+    return Math.max(max, num);
+  }, 0);
+
+  return Math.max(seqLast, maxProductCodeNumber) + 1;
 }
 
 async function bumpCodeSequence(licenseId: string, codeNumber: number) {
@@ -188,6 +205,23 @@ export async function webCreateProduct(
       licenseId: product.licenseId,
       shortCode,
     });
+
+    // ── Guard: reject if code already exists (e.g. synced from desktop) ──
+    const existingProducts = await idbGetAllByIndex<WebProduct>(
+      STORES.PRODUCTS,
+      "licenseId",
+      product.licenseId,
+    );
+    const duplicateCode = existingProducts.find(
+      (p) => !p.deletedAt && String(p.code) === String(product.code),
+    );
+    if (duplicateCode) {
+      return {
+        success: false,
+        error: `Product code ${product.code} already exists`,
+      };
+    }
+    // ─────────────────────────────────────────────────────────────────────
 
     const record: WebProduct = {
       ...product,
@@ -856,7 +890,11 @@ export async function webUpdateBatch(payload: {
       payload.barcode === undefined
         ? existing.barcode
         : payload.barcode?.trim() || null;
-    if (payload.barcode !== undefined && normalizedBarcode && !canUseBarcode()) {
+    if (
+      payload.barcode !== undefined &&
+      normalizedBarcode &&
+      !canUseBarcode()
+    ) {
       return {
         success: false,
         error: "Barcode Support is disabled for this license.",

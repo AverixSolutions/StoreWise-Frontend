@@ -15,7 +15,7 @@ function registerSupplierLedgerSyncHandlers() {
       SELECT
         st.id, st.licenseId, st.supplierId, st.kind,
         st.refId, st.refNo, st.date, st.amount, st.sign, st.notes,
-        st.paymentStatus, st.chequeNo, st.chequeIssueDate, st.chequeClearanceDate,
+        st.paymentStatus, st.paymentMode, st.chequeNo, st.chequeIssueDate, st.chequeClearanceDate,
         st.createdAt, st.updatedAt, st.deletedAt, st.isSynced, st.syncedAt,
         (
           SELECT json_group_array(json_object(
@@ -74,12 +74,12 @@ function registerSupplierLedgerSyncHandlers() {
       INSERT INTO supplier_transactions (
         id, licenseId, supplierId, kind,
         refId, refNo, date, amount, sign, notes,
-        paymentStatus, chequeNo, chequeIssueDate, chequeClearanceDate,
+        paymentStatus, paymentMode, chequeNo, chequeIssueDate, chequeClearanceDate,
         createdAt, updatedAt, deletedAt, isSynced, syncedAt
       ) VALUES (
         @id, @licenseId, @supplierId, @kind,
         @refId, @refNo, @date, @amount, @sign, @notes,
-        @paymentStatus, @chequeNo, @chequeIssueDate, @chequeClearanceDate,
+        @paymentStatus, @paymentMode, @chequeNo, @chequeIssueDate, @chequeClearanceDate,
         @createdAt, @updatedAt, @deletedAt, 1, @syncedAt
       )
       ON CONFLICT(id) DO UPDATE SET
@@ -91,6 +91,7 @@ function registerSupplierLedgerSyncHandlers() {
         sign                = excluded.sign,
         notes               = excluded.notes,
         paymentStatus       = excluded.paymentStatus,
+        paymentMode         = excluded.paymentMode,
         chequeNo            = excluded.chequeNo,
         chequeIssueDate     = excluded.chequeIssueDate,
         chequeClearanceDate = excluded.chequeClearanceDate,
@@ -126,6 +127,7 @@ function registerSupplierLedgerSyncHandlers() {
           sign: Number(r.sign || 0),
           notes: r.notes ?? null,
           paymentStatus: r.paymentStatus ?? null,
+          paymentMode: r.paymentMode ?? null,
           chequeNo: r.chequeNo ?? null,
           chequeIssueDate: r.chequeIssueDate
             ? r.chequeIssueDate instanceof Date

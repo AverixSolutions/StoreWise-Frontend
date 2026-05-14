@@ -60,6 +60,9 @@ class SyncManagerClass {
   // Prevent duplicate concurrent pushes for the same entity
   private pushInFlight = new Set<string>();
 
+  // Coalesce burst saves — if a push arrives while one is running, queue one rerun
+  private pushQueued = new Set<string>();
+
   // ── Lifecycle ───────────────────────────────────────────────────────────────
 
   init(isDesktop: boolean) {
@@ -99,8 +102,12 @@ class SyncManagerClass {
   // Pass entity name matching your adapter: "product" | "category" | "brand" | "supplier"
 
   async pushEntity(entityName: string): Promise<void> {
-    // Skip if already pushing this entity
-    if (this.pushInFlight.has(entityName)) return;
+    // If already pushing this entity, don't drop the request.
+    // Queue one rerun so burst saves (bulk import) still flush fully.
+    if (this.pushInFlight.has(entityName)) {
+      this.pushQueued.add(entityName);
+      return;
+    }
 
     const licenseId = getActiveLicenseId();
     const token = getActiveToken();
@@ -115,32 +122,45 @@ class SyncManagerClass {
     this.updateStatus({ running: true });
 
     try {
-      const result = await runPush(licenseId, adapter, token);
+      do {
+        // consume queued flag for this run
+        this.pushQueued.delete(entityName);
 
-      const prevStats = this.status.stats[entityName] ?? {
-        pushed: 0,
-        pulled: 0,
-      };
-      this.updateStatus({
-        running: false,
-        lastSyncAt: new Date().toISOString(),
-        lastError: result.errors[0] ?? null,
-        stats: {
-          ...this.status.stats,
-          [entityName]: {
-            pushed: prevStats.pushed + result.pushed,
-            pulled: prevStats.pulled,
+        const result = await runPush(licenseId, adapter, token);
+
+        const prevStats = this.status.stats[entityName] ?? {
+          pushed: 0,
+          pulled: 0,
+        };
+
+        // ── CHANGED: removed running: false here — we're still potentially
+        // looping, so keep running: true for the whole pushEntity() run.
+        // running: false is set once in the finally block below.
+        this.updateStatus({
+          lastSyncAt: new Date().toISOString(),
+          lastError: result.errors[0] ?? null,
+          stats: {
+            ...this.status.stats,
+            [entityName]: {
+              pushed: prevStats.pushed + result.pushed,
+              pulled: prevStats.pulled,
+            },
           },
-        },
-      });
+        });
+
+        // If more writes came in while this push was running,
+        // loop again immediately and flush them too.
+      } while (this.pushQueued.has(entityName));
     } catch (err: any) {
       this.updateStatus({
-        running: false,
         lastError: err.message ?? String(err),
       });
     } finally {
+      // ── CHANGED: running: false now lives exclusively here, so no other
+      // sync action can mistakenly treat this entity as idle mid-loop.
       this.pushInFlight.delete(entityName);
-      this._schedulePull(); // reschedule so next pull is fresh after a push
+      this.updateStatus({ running: false });
+      this._schedulePull();
     }
   }
 

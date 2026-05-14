@@ -92,30 +92,50 @@ export default function ItemsPage() {
       .then(([productsResult, categoriesResult, brandsResult]) => {
         setProductNames(productsResult.products.map((p: any) => p.name));
 
-        setCategories(
-          Array.from(
-            new Set(
-              productsResult.products
-                .map((p: any) => p.category)
-                .filter((c: string | undefined): c is string => !!c),
-            ),
-          ),
-        );
+        const productCategories = productsResult.products
+          .map((p: any) => p.category)
+          .filter((c: string | undefined): c is string => !!c);
 
-        setSubcategories(
-          Array.from(
-            new Set(
-              productsResult.products
-                .map((p: any) => p.subcategory)
-                .filter((s: string | undefined): s is string => !!s),
-            ),
-          ).sort((a, b) => a.localeCompare(b)),
-        );
+        const productSubcategories = productsResult.products
+          .map((p: any) => p.subcategory)
+          .filter((s: string | undefined): s is string => !!s);
 
         if (categoriesResult.success) {
           setCategoryRecords(categoriesResult.rows);
+
+          const masterParentCategories = categoriesResult.rows
+            .filter((row) => !row.parentId && !row.deletedAt)
+            .map((row) => row.name);
+
+          const masterSubcategories = categoriesResult.rows
+            .filter((row) => !!row.parentId && !row.deletedAt)
+            .map((row) => row.name);
+
+          setCategories(
+            Array.from(
+              new Set([...masterParentCategories, ...productCategories]),
+            ).sort((a, b) => a.localeCompare(b)),
+          );
+
+          setSubcategories(
+            Array.from(
+              new Set([...masterSubcategories, ...productSubcategories]),
+            ).sort((a, b) => a.localeCompare(b)),
+          );
         } else {
           setCategoryRecords([]);
+
+          setCategories(
+            Array.from(new Set(productCategories)).sort((a, b) =>
+              a.localeCompare(b),
+            ),
+          );
+
+          setSubcategories(
+            Array.from(new Set(productSubcategories)).sort((a, b) =>
+              a.localeCompare(b),
+            ),
+          );
         }
 
         const productBrands = productsResult.products

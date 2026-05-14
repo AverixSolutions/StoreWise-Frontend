@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { X, Play, Trash2, Edit3, Clock } from "lucide-react";
 import PromptModal from "@/components/ui/PromptModal";
+import ConfirmModal from "@/components/ui/ConfirmModal";
 import { platform } from "@/platform";
 import { SyncManager } from "@/sync/SyncManager";
 
@@ -31,6 +32,7 @@ export default function HoldsModal({
   const [loading, setLoading] = useState(false);
   const [renameId, setRenameId] = useState<string | null>(null);
   const [renameDefault, setRenameDefault] = useState<string>("");
+  const [deleteId, setDeleteId] = useState<string | null>(null);
 
   async function refresh() {
     setLoading(true);
@@ -52,11 +54,16 @@ export default function HoldsModal({
     if (isOpen) refresh();
   }, [isOpen]);
 
-  async function handleDelete(id: string) {
-    const ok = confirm("Delete this hold?");
-    if (!ok) return;
-    await platform.deletePurchaseHold?.(id);
+  function handleDelete(id: string) {
+    setDeleteId(id);
+  }
+
+  async function confirmDelete() {
+    if (!deleteId) return;
+
+    await platform.deletePurchaseHold?.(deleteId);
     SyncManager.pushEntity("purchaseHold").catch(() => {});
+    setDeleteId(null);
     refresh();
   }
 
@@ -389,6 +396,16 @@ export default function HoldsModal({
         confirmText="Save"
         onCancel={() => setRenameId(null)}
         onConfirm={(val) => confirmRename(val.trim())}
+      />
+
+      <ConfirmModal
+        isOpen={Boolean(deleteId)}
+        title="Delete Hold"
+        message="Delete this hold?"
+        confirmText="Delete"
+        cancelText="Cancel"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteId(null)}
       />
     </div>
   );

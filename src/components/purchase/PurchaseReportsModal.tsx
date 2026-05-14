@@ -10,6 +10,7 @@ import {
   ExternalLink,
   ShoppingCart,
 } from "lucide-react";
+import ConfirmModal from "@/components/ui/ConfirmModal";
 import { platform } from "@/platform";
 
 type Row = {
@@ -52,6 +53,7 @@ export default function PurchaseReportsModal({
   const [rows, setRows] = useState<Row[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
 
   async function refresh() {
     setLoading(true);
@@ -101,10 +103,15 @@ export default function PurchaseReportsModal({
     refresh();
   }
 
-  async function handleDelete(id: string) {
-    const ok = confirm("Soft delete this entry?");
-    if (!ok) return;
-    await platform.deletePurchase?.(id);
+  function handleDelete(id: string) {
+    setDeleteId(id);
+  }
+
+  async function confirmDelete() {
+    if (!deleteId) return;
+
+    await platform.deletePurchase?.(deleteId);
+    setDeleteId(null);
     refresh();
   }
 
@@ -603,6 +610,16 @@ export default function PurchaseReportsModal({
           </div>
         </div>
       </div>
+
+      <ConfirmModal
+        isOpen={Boolean(deleteId)}
+        title="Delete Purchase"
+        message="Soft delete this entry?"
+        confirmText="Delete"
+        cancelText="Cancel"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteId(null)}
+      />
     </div>
   );
 }

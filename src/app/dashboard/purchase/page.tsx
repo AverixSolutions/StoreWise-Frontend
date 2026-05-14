@@ -35,6 +35,8 @@ import { canUseBarcode } from "@/lib/session/runtimeSession";
 import { isSyncEnabled } from "@/platform/mode";
 import { SyncManager } from "@/sync/SyncManager";
 import { useSyncStatus } from "@/sync/SyncProvider";
+import ProductFormModal from "@/components/products/ProductFormModal";
+import type { CategoryRecord } from "@/platform/types";
 
 type BatchDecision = "OVERRIDE" | "NEW";
 
@@ -154,6 +156,10 @@ export default function PurchasePage() {
   const [templates, setTemplates] = useState<any[]>([]);
 
   const [products, setProducts] = useState<Product[]>([]);
+  const [showProductModal, setShowProductModal] = useState(false);
+  const [productCategories, setProductCategories] = useState<string[]>([]);
+  const [productBrands, setProductBrands] = useState<string[]>([]);
+  const [categoryRecords, setCategoryRecords] = useState<CategoryRecord[]>([]);
   const [suppliers, setSuppliers] = useState<
     Array<{ id: string; name: string }>
   >([]);
@@ -193,6 +199,7 @@ export default function PurchasePage() {
   const [isDirty, setIsDirty] = useState(false);
 
   const [showHolds, setShowHolds] = useState(false);
+  const [resumedHoldId, setResumedHoldId] = useState<string | null>(null);
   const [showReports, setShowReports] = useState(false);
   const [showTitlePrompt, setShowTitlePrompt] = useState(false);
   const [defaultHoldTitle, setDefaultHoldTitle] = useState<string>("");
@@ -203,6 +210,8 @@ export default function PurchasePage() {
   const [validationMsgs, setValidationMsgs] = useState<string[]>([]);
   const [editingSlNo, setEditingSlNo] = useState<number | null>(null);
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
+  const [printConfirmOpen, setPrintConfirmOpen] = useState(false);
+  const [pendingPrintId, setPendingPrintId] = useState<string | null>(null);
   const [showBarcodePrint, setShowBarcodePrint] = useState(false);
   const [billDetailsOpen, setBillDetailsOpen] = useState(true);
   const [isMobileSheetOpen, setIsMobileSheetOpen] = useState(false);
@@ -269,14 +278,80 @@ export default function PurchasePage() {
     sessionStorage.removeItem(key);
   }, []);
 
+  async function reloadProductsAndMasters() {
+    const [productsResult, categoriesResult, brandsResult] = await Promise.all([
+      platform.getProducts(licenseId, { page: 1, pageSize: 1000 }),
+      platform.listCategories(licenseId),
+      platform.listBrands(licenseId),
+    ]);
+
+    const nextProducts = productsResult.products as Product[];
+    setProducts(nextProducts);
+
+    const productCategoryNames = nextProducts
+      .map((p: any) => p.category)
+      .filter((v: string | undefined): v is string => !!v);
+
+    const productSubcategoryNames = nextProducts
+      .map((p: any) => p.subcategory)
+      .filter((v: string | undefined): v is string => !!v);
+
+    if (categoriesResult.success) {
+      setCategoryRecords(categoriesResult.rows);
+
+      const masterCategoryNames = categoriesResult.rows
+        .filter((row) => !row.parentId && !row.deletedAt)
+        .map((row) => row.name);
+
+      const masterSubcategoryNames = categoriesResult.rows
+        .filter((row) => !!row.parentId && !row.deletedAt)
+        .map((row) => row.name);
+
+      setProductCategories(
+        Array.from(
+          new Set([
+            ...masterCategoryNames,
+            ...masterSubcategoryNames,
+            ...productCategoryNames,
+            ...productSubcategoryNames,
+          ]),
+        ).sort((a, b) => a.localeCompare(b)),
+      );
+    } else {
+      setCategoryRecords([]);
+      setProductCategories(
+        Array.from(
+          new Set([...productCategoryNames, ...productSubcategoryNames]),
+        ).sort((a, b) => a.localeCompare(b)),
+      );
+    }
+
+    const productBrandNames = nextProducts
+      .map((p: any) => p.brand)
+      .filter((v: string | undefined): v is string => !!v);
+
+    const masterBrandNames = brandsResult.success
+      ? brandsResult.rows.map((row) => row.name)
+      : [];
+
+    setProductBrands(
+      Array.from(new Set([...masterBrandNames, ...productBrandNames])).sort(
+        (a, b) => a.localeCompare(b),
+      ),
+    );
+  }
+
   useEffect(() => {
     if (!isClient) return;
     pullNow("purchase");
     pullNow("purchaseItem");
+    pullNow("purchaseHold");
     pullNow("supplier");
-    platform.getProducts(licenseId, { page: 1, pageSize: 200 }).then((res) => {
-      setProducts(res.products as Product[]);
-    });
+    pullNow("product");
+    pullNow("category");
+    pullNow("brand");
+
+    reloadProductsAndMasters().catch(console.error);
     platform.peekNextPurchaseSlNo?.(licenseId).then((res) => {
       setNextEntryNo(res?.nextSlNo ?? 1);
     });
@@ -289,13 +364,9 @@ export default function PurchasePage() {
       const { entity } = (e as CustomEvent<{ entity: string; count: number }>)
         .detail;
       if (debounceTimer) clearTimeout(debounceTimer);
-      if (entity === "product") {
+      if (entity === "product" || entity === "category" || entity === "brand") {
         debounceTimer = setTimeout(() => {
-          platform
-            .getProducts(licenseId, { page: 1, pageSize: 200 })
-            .then((res) => {
-              setProducts(res.products as Product[]);
-            });
+          reloadProductsAndMasters().catch(console.error);
         }, 150);
       }
       if (entity === "supplier") {
@@ -753,7 +824,10 @@ export default function PurchasePage() {
 
     const res = await platform.savePurchaseHold?.(payload);
     if (res?.success) {
-      alert(`✅ Held as #${res.holdNo}${title ? ` • ${title}` : ""}`);
+      setValidationMsgs([
+        `Held as #${res.holdNo}${title ? ` • ${title}` : ""}`,
+      ]);
+      setValidationOpen(true);
 
       if (isSyncEnabled()) {
         SyncManager.pushEntity("purchaseHold").catch(() => {});
@@ -771,6 +845,14 @@ export default function PurchasePage() {
 
   function handleShowHolds() {
     setShowHolds(true);
+  }
+
+  function handleAddInlineProduct() {
+    setShowProductModal(true);
+  }
+
+  async function handleInlineProductSuccess() {
+    await reloadProductsAndMasters();
   }
 
   function handleBarcodeError(err: any) {
@@ -828,6 +910,7 @@ export default function PurchasePage() {
 
       setHeader(normalized);
       setRows(nextRows);
+      setResumedHoldId(holdId);
       setShowHolds(false);
 
       initialSnapshot.current = makeSnapshot(normalized, nextRows);
@@ -839,10 +922,18 @@ export default function PurchasePage() {
     if (suppliers.length === 0) await loadSuppliers();
 
     const res = await platform.getPurchaseFull?.(purchaseId);
-    if (!res?.success) return alert("Failed to load purchase");
+    if (!res?.success) {
+      setValidationMsgs(["Failed to load purchase."]);
+      setValidationOpen(true);
+      return;
+    }
 
     const { purchase, items } = res;
-    if (!purchase || !items) return alert("Failed to load purchase data");
+    if (!purchase || !items) {
+      setValidationMsgs(["Failed to load purchase data."]);
+      setValidationOpen(true);
+      return;
+    }
 
     const hdr = headerFromPurchaseDb(purchase, suppliers);
     const mappedRows = rowsFromDbItems(items);
@@ -855,6 +946,25 @@ export default function PurchasePage() {
 
     initialSnapshot.current = makeSnapshot(hdr, mappedRows);
     setIsDirty(false);
+  }
+
+  async function handlePrintConfirm() {
+    if (!pendingPrintId) return;
+
+    try {
+      const res = await printPurchaseBill(pendingPrintId, { preview: true });
+
+      if (!res?.success) {
+        setValidationMsgs([res?.error || "Print failed"]);
+        setValidationOpen(true);
+      }
+    } catch (e: any) {
+      setValidationMsgs(["Print failed: " + String(e?.message || e)]);
+      setValidationOpen(true);
+    } finally {
+      setPrintConfirmOpen(false);
+      setPendingPrintId(null);
+    }
   }
 
   async function checkBatchConflicts(
@@ -918,6 +1028,34 @@ export default function PurchasePage() {
     }
 
     return conflicts;
+  }
+
+  async function consumeResumedHoldAfterSave() {
+    if (!resumedHoldId) return;
+
+    const holdId = resumedHoldId;
+
+    try {
+      const res = await platform.deletePurchaseHold?.(holdId);
+
+      if (res?.success) {
+        setResumedHoldId(null);
+
+        if (isSyncEnabled()) {
+          SyncManager.pushEntity("purchaseHold").catch(() => {});
+        }
+
+        try {
+          pullNow("purchaseHold");
+        } catch {}
+
+        return;
+      }
+
+      console.warn("Purchase saved, but hold cleanup failed:", res?.error);
+    } catch (err) {
+      console.warn("Purchase saved, but hold cleanup failed:", err);
+    }
   }
 
   const handleSave = async (opts?: {
@@ -987,20 +1125,24 @@ export default function PurchasePage() {
             SyncManager.pushEntity("purchase").catch(() => {});
             SyncManager.pushEntity("purchaseItem").catch(() => {});
           }
-          alert("✅ Updated!");
+
+          setValidationMsgs(["Purchase updated successfully."]);
+          setValidationOpen(true);
           setEditingPurchaseId(null);
           resetAll();
           return true;
         } else {
           const msg = res?.error || "Unknown error";
           if (!handleBarcodeError({ message: msg })) {
-            alert("Update failed: " + msg);
+            setValidationMsgs(["Update failed: " + msg]);
+            setValidationOpen(true);
           }
           return false;
         }
       } catch (err: any) {
         if (!handleBarcodeError(err)) {
-          alert("Update failed: " + String(err?.message || err));
+          setValidationMsgs(["Update failed: " + String(err?.message || err)]);
+          setValidationOpen(true);
         }
         return false;
       }
@@ -1028,7 +1170,8 @@ export default function PurchasePage() {
       if (!res?.success) {
         const msg = res?.error || "Unknown error";
         if (!handleBarcodeError({ message: msg })) {
-          alert("Save failed: " + msg);
+          setValidationMsgs(["Save failed: " + msg]);
+          setValidationOpen(true);
         }
         return false;
       }
@@ -1038,14 +1181,12 @@ export default function PurchasePage() {
         SyncManager.pushEntity("purchaseItem").catch(() => {});
       }
 
+      await consumeResumedHoldAfterSave();
+
       try {
         const peek = await platform.peekNextPurchaseSlNo?.(licenseId);
         setNextEntryNo(peek?.nextSlNo ?? null);
       } catch {}
-
-      const shouldPrint = confirm(
-        `✅ Saved! SlNo: ${res.slNo}, Total: ${res.totalAmount}\n\nOpen print preview now?`,
-      );
 
       setEditingPurchaseId(res.purchaseId || null);
       setEditingSlNo(res.slNo ?? null);
@@ -1053,13 +1194,8 @@ export default function PurchasePage() {
       initialSnapshot.current = makeSnapshot(header, rowsToUse);
       setIsDirty(false);
 
-      if (shouldPrint && res.purchaseId) {
-        try {
-          await printPurchaseBill(res.purchaseId, { preview: true });
-        } catch (e: any) {
-          alert("Print failed: " + String(e?.message || e));
-        }
-      }
+      setPendingPrintId(res.purchaseId || null);
+      setPrintConfirmOpen(true);
 
       if (priceUpdateSettings.updatePricesAfterSave) {
         const priceUpdates = rowsToUse
@@ -1111,7 +1247,8 @@ export default function PurchasePage() {
       return true;
     } catch (err: any) {
       if (!handleBarcodeError(err)) {
-        alert("Save failed: " + String(err?.message || err));
+        setValidationMsgs(["Save failed: " + String(err?.message || err)]);
+        setValidationOpen(true);
       }
       return false;
     }
@@ -1161,6 +1298,7 @@ export default function PurchasePage() {
     setRows(freshRows);
     setEditingPurchaseId(null);
     setEditingSlNo(null);
+    setResumedHoldId(null);
     setBillDetailsOpen(true);
 
     initialSnapshot.current = makeSnapshot(freshHeader, freshRows);
@@ -1246,9 +1384,15 @@ export default function PurchasePage() {
                   const res = await printPurchaseBill(editingPurchaseId, {
                     preview: true,
                   });
-                  if (!res?.success) alert(res?.error || "Print failed");
+                  if (!res?.success) {
+                    setValidationMsgs([res?.error || "Print failed"]);
+                    setValidationOpen(true);
+                  }
                 } catch (e: any) {
-                  alert("Print failed: " + String(e?.message || e));
+                  setValidationMsgs([
+                    "Print failed: " + String(e?.message || e),
+                  ]);
+                  setValidationOpen(true);
                 }
               }}
               className="px-3 py-1.5 rounded-md bg-[#1e3a5f] text-white text-sm hover:bg-[#16304f] transition-colors"
@@ -1319,6 +1463,7 @@ export default function PurchasePage() {
             <ItemsTableSection
               rows={rows}
               products={products}
+              onAddProduct={handleAddInlineProduct}
               onSelectProduct={handleSelectProduct}
               onUpdateRow={updateRow}
               onAddRow={addRow}
@@ -1413,6 +1558,16 @@ export default function PurchasePage() {
           }}
         />
       )}
+
+      <ProductFormModal
+        isOpen={showProductModal}
+        onClose={() => setShowProductModal(false)}
+        onSuccess={handleInlineProductSuccess}
+        editProduct={null}
+        existingCategories={productCategories}
+        existingBrands={productBrands}
+        categoryRecords={categoryRecords}
+      />
 
       {/* Holds list */}
       <HoldsModal
@@ -1732,6 +1887,21 @@ export default function PurchasePage() {
         }}
         barcodeEnabled={barcodeEnabled}
       />
+
+      {/* Print confirm modal */}
+      <ConfirmModal
+        isOpen={printConfirmOpen}
+        title="Print bill?"
+        message="Purchase saved. Open print preview now?"
+        confirmText="Print"
+        cancelText="Skip"
+        onConfirm={handlePrintConfirm}
+        onCancel={() => {
+          setPrintConfirmOpen(false);
+          setPendingPrintId(null);
+        }}
+      />
+
       {/* Confirm discard current bill */}
       <ConfirmModal
         isOpen={cancelConfirmOpen}
