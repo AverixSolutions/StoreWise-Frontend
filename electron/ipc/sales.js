@@ -156,8 +156,46 @@ function registerSaleHandlers() {
   });
 
   ipcMain.handle("sale:getFull", (evt, id) => {
-    const s = db.prepare(`SELECT *, typeId FROM sales WHERE id = ?`).get(id);
+    const s = db
+      .prepare(
+        `SELECT s.*, typeId, c.name AS customerNameFallback, c.phone AS customerPhoneFallback,
+                c.gstin AS customerGstinFallback, c.addressLine1 AS customerAddressLine1,
+                c.addressLine2 AS customerAddressLine2, c.city AS customerCity,
+                c.state AS customerState, c.pincode AS customerPincode
+         FROM sales s
+         LEFT JOIN customers c ON c.id = s.customerId AND c.licenseId = s.licenseId
+         WHERE s.id = ?`,
+      )
+      .get(id);
     if (!s) return { success: false, error: "Not found" };
+    const sale = { ...s };
+    sale.customerName = sale.customerName || sale.customerNameFallback || null;
+    sale.customerMobile = sale.customerMobile || sale.customerPhone || null;
+    sale.customerPhone =
+      sale.customerPhone || sale.customerPhoneFallback || null;
+    sale.customerGstin =
+      sale.customerGstin || sale.customerGstinFallback || null;
+    if (!sale.customerAddress) {
+      sale.customerAddress =
+        [
+          sale.customerAddressLine1,
+          sale.customerAddressLine2,
+          sale.customerCity,
+          sale.customerState,
+          sale.customerPincode,
+        ]
+          .filter(Boolean)
+          .join(", ") || null;
+    }
+    delete sale.customerNameFallback;
+    delete sale.customerPhoneFallback;
+    delete sale.customerGstinFallback;
+    delete sale.customerAddressLine1;
+    delete sale.customerAddressLine2;
+    delete sale.customerCity;
+    delete sale.customerState;
+    delete sale.customerPincode;
+
     const items = db
       .prepare(
         `
@@ -170,7 +208,7 @@ function registerSaleHandlers() {
     `,
       )
       .all(id);
-    return { success: true, sale: s, items };
+    return { success: true, sale, items };
   });
 
   // ---- peek next slno ----
@@ -702,11 +740,7 @@ function registerSaleHandlers() {
         .get(id);
       db.prepare(
         `UPDATE sales SET deletedAt=?, updatedAt=?, isSynced=0, syncedAt=NULL WHERE id=?`,
-      ).run(
-        now,
-        now,
-        id,
-      );
+      ).run(now, now, id);
       db.prepare(
         `UPDATE sale_items SET deletedAt=?, updatedAt=?, isSynced=0, syncedAt=NULL WHERE saleId=?`,
       ).run(now, now, id);

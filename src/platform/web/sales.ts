@@ -137,9 +137,46 @@ export async function webGetSaleFull(id: string): Promise<SaleFullResult> {
       : [];
 
     if (sale) {
+      const enrichedSale = { ...sale } as any;
+      const needsCustomerFill =
+        (!enrichedSale.customerMobile && !enrichedSale.customerPhone) ||
+        !enrichedSale.customerGstin ||
+        !enrichedSale.customerAddress ||
+        !enrichedSale.customerName;
+
+      if (sale.customerId && needsCustomerFill) {
+        const customer = await idbGetByKey<any>(
+          STORES.CUSTOMERS,
+          sale.customerId,
+        );
+        if (customer) {
+          enrichedSale.customerName =
+            enrichedSale.customerName || customer.name || null;
+          enrichedSale.customerPhone =
+            enrichedSale.customerPhone || customer.phone || null;
+          enrichedSale.customerMobile =
+            enrichedSale.customerMobile || customer.phone || null;
+          enrichedSale.customerGstin =
+            enrichedSale.customerGstin || customer.gstin || null;
+
+          if (!enrichedSale.customerAddress) {
+            enrichedSale.customerAddress =
+              [
+                customer.addressLine1,
+                customer.addressLine2,
+                customer.city,
+                customer.state,
+                customer.pincode,
+              ]
+                .filter(Boolean)
+                .join(", ") || null;
+          }
+        }
+      }
+
       return {
         success: true,
-        sale: sale as any,
+        sale: enrichedSale,
         items: items.filter((i) => !i.deletedAt),
       };
     }

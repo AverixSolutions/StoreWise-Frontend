@@ -232,6 +232,16 @@ export default function SalesPage() {
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const barcodeEnabled = isClient ? canUseBarcode() : true;
 
+  async function handlePrintBill() {
+    if (!editingSaleId) return;
+    try {
+      const res = await printSaleBill(editingSaleId, { preview: false });
+      if (!res?.success) alert(res?.error || "Print failed");
+    } catch (e: any) {
+      alert("Print failed: " + String(e?.message || e));
+    }
+  }
+
   useEffect(() => {
     if (!isClient) return;
     pullNow("sale");
@@ -257,12 +267,17 @@ export default function SalesPage() {
 
     (async () => {
       try {
-        const res = await platform.listActiveOffers?.(licenseId, header.saleDate);
+        const res = await platform.listActiveOffers?.(
+          licenseId,
+          header.saleDate,
+        );
         const offers = (((res as any)?.offers || res?.rows || []) ??
           []) as OfferRecord[];
         const targetGroups = await Promise.all(
           offers.map(async (offer) => {
-            const targetRes = await platform.listOfferTargetProducts?.(offer.id);
+            const targetRes = await platform.listOfferTargetProducts?.(
+              offer.id,
+            );
             return targetRes?.rows || [];
           }),
         );
@@ -301,12 +316,17 @@ export default function SalesPage() {
       }
       if (entity === "offer" || entity === "offerTargetProduct") {
         debounceTimer = setTimeout(async () => {
-          const res = await platform.listActiveOffers?.(licenseId, header.saleDate);
+          const res = await platform.listActiveOffers?.(
+            licenseId,
+            header.saleDate,
+          );
           const offers = (((res as any)?.offers || res?.rows || []) ??
             []) as OfferRecord[];
           const targetGroups = await Promise.all(
             offers.map(async (offer) => {
-              const targetRes = await platform.listOfferTargetProducts?.(offer.id);
+              const targetRes = await platform.listOfferTargetProducts?.(
+                offer.id,
+              );
               return targetRes?.rows || [];
             }),
           );
@@ -629,7 +649,8 @@ export default function SalesPage() {
         typeId: (res.hold.header as any)?.typeId ?? null,
         offerSummaryJson: (res.hold.header as any)?.offerSummaryJson ?? null,
         offerSavings: Number((res.hold.header as any)?.offerSavings || 0),
-        offerOverridesJson: (res.hold.header as any)?.offerOverridesJson ?? null,
+        offerOverridesJson:
+          (res.hold.header as any)?.offerOverridesJson ?? null,
         customer,
       };
       const nextRows = res.hold.rows;
@@ -1104,7 +1125,7 @@ export default function SalesPage() {
               onClick={async () => {
                 try {
                   const res = await printSaleBill(editingSaleId, {
-                    preview: true,
+                    preview: false,
                   });
                   if (!res?.success) alert(res?.error || "Print failed");
                 } catch (e: any) {
@@ -1185,6 +1206,8 @@ export default function SalesPage() {
               setDefaultHoldTitle(header.billNo || billNoPreview || "");
               setShowTitlePrompt(true);
             }}
+            onPrintBill={handlePrintBill}
+            canPrint={Boolean(editingSaleId)}
             onShowHolds={() => setShowHolds(true)}
             onShowReports={() => setShowReports(true)}
             showHoldControls={!editingSaleId}

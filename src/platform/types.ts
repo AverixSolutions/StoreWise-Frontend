@@ -1132,6 +1132,9 @@ export type SaleCreatePayload = {
   billNo?: string | null;
   customerId?: string | null;
   customerName?: string | null;
+  customerMobile?: string | null;
+  customerGstin?: string | null;
+  customerAddress?: string | null;
   department?: string | null;
   debitAccount?: string | null;
   natureOfEntry?: string | null;
@@ -1195,6 +1198,10 @@ export type SaleRow = {
   billNo?: string | null;
   customerId?: string | null;
   customerName?: string | null;
+  customerMobile?: string | null;
+  customerPhone?: string | null;
+  customerGstin?: string | null;
+  customerAddress?: string | null;
   saleDate: string;
   entryTime?: string;
   totalAmount: number;
@@ -1514,9 +1521,7 @@ export type PlatformAPI = {
     licenseId: string,
     saleDateTime?: string,
   ) => Promise<OfferListResult>;
-  listOfferTargetProducts?: (
-    offerId: string,
-  ) => Promise<OfferTargetListResult>;
+  listOfferTargetProducts?: (offerId: string) => Promise<OfferTargetListResult>;
   saveOfferTargetProducts?: (
     payload: OfferTargetSavePayload,
   ) => Promise<OfferMutationResult>;
@@ -1823,7 +1828,9 @@ export type PlatformAPI = {
     items: QuotationItemInput[],
   ) => Promise<CreateQuotationResult>;
 
-  updateQuotation?: (payload: QuotationUpdatePayload) => Promise<MutationResult>;
+  updateQuotation?: (
+    payload: QuotationUpdatePayload,
+  ) => Promise<MutationResult>;
 
   deleteQuotation?: (
     id: string,
@@ -1842,7 +1849,11 @@ export type PlatformAPI = {
 
   convertQuotationToSale?: (
     quotationId: string,
-    overrides?: { billNo?: string | null; saleType?: "CASH" | "CREDIT"; saleDate?: string },
+    overrides?: {
+      billNo?: string | null;
+      saleType?: "CASH" | "CREDIT";
+      saleDate?: string;
+    },
   ) => Promise<ConvertQuotationResult>;
 };
 

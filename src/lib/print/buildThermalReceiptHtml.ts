@@ -29,7 +29,10 @@ type ReceiptInput = {
   billNo?: string | number | null;
   date?: string | null;
   time?: string | null;
+  customerName?: string | null;
   customerPhone?: string | null;
+  customerGstin?: string | null;
+  customerAddress?: string | null;
   items: ReceiptItem[];
   totalQty: number;
   subTotal: number;
@@ -81,7 +84,10 @@ export function buildThermalReceiptHtml(input: ReceiptInput) {
     billNo,
     date,
     time,
+    customerName,
     customerPhone,
+    customerGstin,
+    customerAddress,
     items,
     totalQty,
     subTotal,
@@ -103,20 +109,23 @@ export function buildThermalReceiptHtml(input: ReceiptInput) {
   const rows = items
     .map(
       (it) => `
-        <tr>
-          <td class="c">${esc(it.lineNo)}</td>
-          <td class="l name">${esc(it.name)}${
-            it.offerLabel
-              ? `<div class="offer-note">${esc(it.offerLabel)}${
-                  it.offerSavings ? ` Saved ${money(it.offerSavings)}` : ""
-                }</div>`
-              : ""
-          }</td>
-          <td class="c">${esc(it.qty)}</td>
-          <td class="r">${money(it.rate)}</td>
-          <td class="r">${money(it.total)}</td>
-        </tr>
-      `,
+      <tr>
+        <td class="item-cell">
+          <div class="item-name">${esc(it.lineNo)}. ${esc(it.name)}</div>
+          <div class="item-meta">
+            ${esc(it.qty)} × ${money(it.rate)}
+            ${
+              it.offerLabel
+                ? `<span class="offer-note"> • ${esc(it.offerLabel)}${
+                    it.offerSavings ? ` Saved ${money(it.offerSavings)}` : ""
+                  }</span>`
+                : ""
+            }
+          </div>
+        </td>
+        <td class="amount-cell">${money(it.total)}</td>
+      </tr>
+    `,
     )
     .join("");
 
@@ -139,6 +148,10 @@ export function buildThermalReceiptHtml(input: ReceiptInput) {
       margin: 0;
     }
 
+    * {
+      box-sizing: border-box;
+    }
+
     html, body {
       margin: 0;
       padding: 0;
@@ -148,25 +161,39 @@ export function buildThermalReceiptHtml(input: ReceiptInput) {
     }
 
     body {
-      width: 80mm;
+      width: 64mm;
+      max-width: 64mm;
+      margin: 0 auto;
+      overflow: hidden;
     }
 
     .receipt {
-      width: 72mm;
+      width: 60mm;
+      max-width: 60mm;
       margin: 0 auto;
-      padding: 8px 0 12px;
-      font-size: 12px;
-      line-height: 1.25;
+      padding: 4px 0 8px;
+      font-size: 10px;
+      line-height: 1.2;
+      overflow: hidden;
     }
 
     .center { text-align: center; }
     .left { text-align: left; }
     .right { text-align: right; }
     .bold { font-weight: 700; }
-    .title { font-size: 15px; font-weight: 700; }
-    .shop { font-size: 22px; font-weight: 800; line-height: 1.05; }
-    .mid { font-size: 13px; font-weight: 700; }
-    .small { font-size: 11px; }
+    .title { font-size: 13px; font-weight: 700; }
+    .shop {
+      font-size: 17px;
+      font-weight: 800;
+      line-height: 1.08;
+      word-break: break-word;
+    }
+    .mid {
+      font-size: 10.5px;
+      font-weight: 700;
+      word-break: break-word;
+    }
+    .small { font-size: 10px; }
 
     .sep {
       border-top: 1px solid #000;
@@ -177,66 +204,98 @@ export function buildThermalReceiptHtml(input: ReceiptInput) {
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
-      gap: 10px;
+      gap: 4px;
       margin: 2px 0;
+      width: 100%;
+    }
+
+    .row > div {
+      min-width: 0;
+      overflow-wrap: anywhere;
     }
 
     table {
       width: 100%;
+      max-width: 100%;
+      table-layout: fixed;
       border-collapse: collapse;
       margin-top: 6px;
+      overflow: hidden;
     }
 
     th, td {
-      padding: 4px 2px;
+      padding: 3px 0;
       vertical-align: top;
-      font-size: 12px;
+      font-size: 10px;
+      overflow: hidden;
     }
 
     thead th {
       border-top: 1px solid #000;
       border-bottom: 1px solid #000;
-      font-size: 11px;
+      font-size: 10px;
     }
 
     .l { text-align: left; }
     .c { text-align: center; }
     .r { text-align: right; }
 
-    .name {
-      width: 44%;
-      font-weight: 700;
+    .item-cell {
+      width: 66%;
+      max-width: 66%;
+      text-align: left;
       word-break: break-word;
+      overflow-wrap: anywhere;
+      padding-right: 3px;
+    }
+
+    .amount-cell {
+      width: 34%;
+      max-width: 34%;
+      text-align: right;
+      white-space: nowrap;
+      font-weight: 700;
+      font-size: 9.5px;
+      overflow: hidden;
+    }
+
+    .item-name {
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .item-meta {
+      margin-top: 2px;
+      font-size: 10px;
+      font-weight: 600;
+    }
+
+    .summary-row td {
+      border-top: 1px solid #000;
+    }
+
+    .offer-note {
+      font-size: 10px;
+      font-weight: 700;
     }
 
     .total-box {
-      border: 1px solid #000;
-      border-radius: 6px;
-      padding: 8px;
-      margin: 8px 0;
+      border-top: 1px solid #000;
+      border-bottom: 1px solid #000;
+      padding: 6px 0;
+      margin: 7px 0;
     }
 
     .grand {
-      font-size: 16px;
+      font-size: 13px;
       font-weight: 800;
-    }
-
-    .gst-row {
-      display: grid;
-      grid-template-columns: 0.8fr 1.2fr 1fr 1fr;
-      gap: 6px;
-      margin: 2px 0;
+      white-space: nowrap;
     }
 
     .note {
       margin: 2px 0;
       font-weight: 700;
       letter-spacing: 0.2px;
-    }
-    .offer-note {
-      margin-top: 2px;
-      font-size: 10px;
-      font-weight: 700;
     }
   </style>
 </head>
@@ -258,31 +317,39 @@ export function buildThermalReceiptHtml(input: ReceiptInput) {
       </div>
     </div>
 
-    ${customerPhone ? `<div style="margin:6px 0 4px;"><span class="bold">To :</span> ${esc(customerPhone)}</div>` : ""}
+    ${
+      customerName || customerPhone || customerGstin || customerAddress
+        ? `<div style="margin:6px 0 4px;">
+            ${customerName ? `<div><span class="bold">Customer:</span> ${esc(customerName)}</div>` : ""}
+            ${customerPhone ? `<div><span class="bold">Mobile:</span> ${esc(customerPhone)}</div>` : ""}
+            ${customerGstin ? `<div><span class="bold">GSTIN:</span> ${esc(customerGstin)}</div>` : ""}
+            ${customerAddress ? `<div><span class="bold">Address:</span> ${esc(customerAddress)}</div>` : ""}
+          </div>`
+        : ""
+    }
 
     <table>
+      <colgroup>
+        <col style="width:66%" />
+        <col style="width:34%" />
+      </colgroup>
       <thead>
         <tr>
-          <th class="c">#</th>
-          <th class="l">Name</th>
-          <th class="c">Qty</th>
-          <th class="r">Rate</th>
-          <th class="r">Total</th>
+          <th class="l">Item</th>
+          <th class="r">Amount</th>
         </tr>
       </thead>
       <tbody>
         ${rows}
-        <tr>
-          <td colspan="2" class="right bold">Total</td>
-          <td class="c bold">${esc(totalQty)}</td>
-          <td></td>
+        <tr class="summary-row">
+          <td class="right bold">Total Qty: ${esc(totalQty)}</td>
           <td class="r bold">${money(subTotal)}</td>
         </tr>
         ${
           offerSavings > 0
             ? `
-            <tr>
-              <td colspan="4" class="right bold">Offer savings</td>
+            <tr class="summary-row">
+              <td class="right bold">Offer savings</td>
               <td class="r bold">${money(offerSavings)}</td>
             </tr>
           `
@@ -291,8 +358,8 @@ export function buildThermalReceiptHtml(input: ReceiptInput) {
         ${
           discount > 0
             ? `
-            <tr>
-              <td colspan="4" class="right bold">Bill discount</td>
+            <tr class="summary-row">
+              <td class="right bold">Bill discount</td>
               <td class="r bold">-${money(discount)}</td>
             </tr>
           `
@@ -304,22 +371,9 @@ export function buildThermalReceiptHtml(input: ReceiptInput) {
     <div class="total-box">
       <div class="row">
         <div class="bold">Bill Amount:</div>
-        <div class="grand">${money(grandTotal)}</div>
+        <div class="grand right">${money(grandTotal)}</div>
       </div>
       <div class="center">${esc(amountInWords(grandTotal))}</div>
-    </div>
-
-    <div class="gst-row bold">
-      <div>GST %</div>
-      <div>Taxable</div>
-      <div>CGST Amt</div>
-      <div>SGST Amt</div>
-    </div>
-    <div class="gst-row">
-      <div>5%</div>
-      <div>${money(grandTotal)}</div>
-      <div>0.00</div>
-      <div>0.00</div>
     </div>
 
     ${

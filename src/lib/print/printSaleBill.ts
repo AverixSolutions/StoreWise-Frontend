@@ -68,7 +68,10 @@ export async function printSaleBill(
         billNo: sale.billNo || sale.slNo || "",
         date: sale.saleDate,
         time: sale.entryTime || sale.saleDate,
+        customerName: sale.customerName || "",
         customerPhone: sale.customerMobile || sale.customerPhone || "",
+        customerGstin: sale.customerGstin || "",
+        customerAddress: sale.customerAddress || "",
         items: items.map((it: any, i: number) => ({
           lineNo: it.lineNo ?? i + 1,
           name: it.productName || it.name || "",

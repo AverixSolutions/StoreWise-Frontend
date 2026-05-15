@@ -1,3 +1,4 @@
+// src/components/master/OfferMaster.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -106,6 +107,24 @@ function asDateInput(value?: string | null) {
   return String(value).slice(0, 10);
 }
 
+function normalizeOfferDateValue(
+  value?: string | null,
+  field?: "startsAt" | "endsAt",
+) {
+  if (!value || !String(value).trim()) return null;
+  const trimmed = String(value).trim();
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return `${trimmed}${
+      field === "endsAt" ? "T23:59:59.999Z" : "T00:00:00.000Z"
+    }`;
+  }
+
+  const date = new Date(trimmed);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString();
+}
+
 function typeBadge(type: OfferType) {
   if (type === "SPECIAL_PRICE") return "Special";
   if (type === "RATION") return "Ration";
@@ -119,7 +138,8 @@ function toForm(offer: OfferRecord): FormState {
     isActive: offer.isActive ?? 1,
     applyScope: offer.applyScope || "ALL_PRODUCTS",
     priority: Number(offer.priority || 0),
-    customerRequired: offer.customerRequired ?? (offer.type === "RATION" ? 1 : 0),
+    customerRequired:
+      offer.customerRequired ?? (offer.type === "RATION" ? 1 : 0),
     oncePerBill: offer.oncePerBill ?? (offer.type === "RATION" ? 1 : 0),
     discountMode: offer.discountAmount != null ? "AMOUNT" : "PCT",
   };
@@ -221,7 +241,8 @@ function MappingModal({
           </div>
           {isRation && (
             <p className="mt-2 text-xs text-slate-500">
-              Use Qualifier for trigger products and Benefit for ration products.
+              Use Qualifier for trigger products and Benefit for ration
+              products.
             </p>
           )}
         </div>
@@ -261,7 +282,9 @@ function MappingModal({
                         {product.name}
                       </p>
                       <p className="mt-0.5 text-xs text-slate-500">
-                        {[product.code, product.unit].filter(Boolean).join(" • ")}
+                        {[product.code, product.unit]
+                          .filter(Boolean)
+                          .join(" • ")}
                       </p>
                       {role && isRation && (
                         <select
@@ -322,7 +345,9 @@ export default function OfferMaster({ onBack }: Props) {
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
-  const [form, setForm] = useState<FormState>(emptyForm("SPECIAL_PRICE", licenseId));
+  const [form, setForm] = useState<FormState>(
+    emptyForm("SPECIAL_PRICE", licenseId),
+  );
   const [draftTargets, setDraftTargets] = useState<DraftTarget[]>([]);
   const [mappingOpen, setMappingOpen] = useState(false);
   const [deleteOffer, setDeleteOffer] = useState<OfferRecord | null>(null);
@@ -412,6 +437,8 @@ export default function OfferMaster({ onBack }: Props) {
       licenseId,
       isActive: form.isActive ? 1 : 0,
       priority: Number(form.priority || 0),
+      startsAt: normalizeOfferDateValue(form.startsAt, "startsAt"),
+      endsAt: normalizeOfferDateValue(form.endsAt, "endsAt"),
       minQty: form.minQty == null ? null : Number(form.minQty),
       maxQty: form.maxQty == null ? null : Number(form.maxQty),
       minAmount: form.minAmount == null ? null : Number(form.minAmount),
@@ -419,9 +446,7 @@ export default function OfferMaster({ onBack }: Props) {
       fixedUnitPrice:
         form.fixedUnitPrice == null ? null : Number(form.fixedUnitPrice),
       discountPercent:
-        form.discountMode === "PCT"
-          ? Number(form.discountPercent || 0)
-          : null,
+        form.discountMode === "PCT" ? Number(form.discountPercent || 0) : null,
       discountAmount:
         form.discountMode === "AMOUNT"
           ? Number(form.discountAmount || 0)
@@ -441,7 +466,11 @@ export default function OfferMaster({ onBack }: Props) {
     if (payload.type === "SPECIAL_PRICE" && !payload.fixedUnitPrice) {
       return alert("Fixed unit price is required for special offers.");
     }
-    if (payload.type === "HOURLY_DISCOUNT" && !payload.discountPercent && !payload.discountAmount) {
+    if (
+      payload.type === "HOURLY_DISCOUNT" &&
+      !payload.discountPercent &&
+      !payload.discountAmount
+    ) {
       return alert("Enter a percentage or amount discount.");
     }
 
@@ -495,7 +524,8 @@ export default function OfferMaster({ onBack }: Props) {
               Offer Master
             </h1>
             <p className="mt-2 max-w-2xl text-sm text-slate-300">
-              Configure automatic special prices, ration benefits and hourly discounts.
+              Configure automatic special prices, ration benefits and hourly
+              discounts.
             </p>
           </div>
           <div className="flex gap-2">
@@ -526,7 +556,9 @@ export default function OfferMaster({ onBack }: Props) {
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const active = tab.type === activeType;
-              const count = offers.filter((o) => o.type === tab.type && !o.deletedAt).length;
+              const count = offers.filter(
+                (o) => o.type === tab.type && !o.deletedAt,
+              ).length;
               return (
                 <button
                   key={tab.type}
@@ -542,7 +574,9 @@ export default function OfferMaster({ onBack }: Props) {
                   {tab.label}
                   <span
                     className={`rounded-full px-2 py-0.5 text-[11px] ${
-                      active ? "bg-white/15 text-white" : "bg-slate-100 text-slate-500"
+                      active
+                        ? "bg-white/15 text-white"
+                        : "bg-slate-100 text-slate-500"
                     }`}
                   >
                     {count}
@@ -619,11 +653,16 @@ export default function OfferMaster({ onBack }: Props) {
                     </div>
                     <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
                       <span>Priority {offer.priority || 0}</span>
-                      <span>{offer.applyScope === "ALL_PRODUCTS" ? "All products" : `${targetCounts[offer.id] || 0} mapped`}</span>
+                      <span>
+                        {offer.applyScope === "ALL_PRODUCTS"
+                          ? "All products"
+                          : `${targetCounts[offer.id] || 0} mapped`}
+                      </span>
                       {offer.startsAt || offer.endsAt ? (
                         <span className="inline-flex items-center gap-1">
                           <CalendarClock className="h-3.5 w-3.5" />
-                          {asDateInput(offer.startsAt) || "Any"} to {asDateInput(offer.endsAt) || "Any"}
+                          {asDateInput(offer.startsAt) || "Any"} to{" "}
+                          {asDateInput(offer.endsAt) || "Any"}
                         </span>
                       ) : null}
                     </div>
@@ -696,7 +735,9 @@ export default function OfferMaster({ onBack }: Props) {
                   <input
                     className={inputCls}
                     value={form.name}
-                    onChange={(e) => setForm((s) => ({ ...s, name: e.target.value }))}
+                    onChange={(e) =>
+                      setForm((s) => ({ ...s, name: e.target.value }))
+                    }
                     placeholder="Example: Soap box special"
                   />
                 </Field>
@@ -737,13 +778,20 @@ export default function OfferMaster({ onBack }: Props) {
                     className={inputCls}
                     type="number"
                     value={form.priority ?? 0}
-                    onChange={(e) => setForm((s) => ({ ...s, priority: Number(e.target.value || 0) }))}
+                    onChange={(e) =>
+                      setForm((s) => ({
+                        ...s,
+                        priority: Number(e.target.value || 0),
+                      }))
+                    }
                   />
                 </Field>
                 <div className="flex items-end">
                   <button
                     type="button"
-                    onClick={() => setForm((s) => ({ ...s, isActive: s.isActive ? 0 : 1 }))}
+                    onClick={() =>
+                      setForm((s) => ({ ...s, isActive: s.isActive ? 0 : 1 }))
+                    }
                     className={`h-[42px] w-full rounded-xl border px-4 text-sm font-semibold ${
                       form.isActive
                         ? "border-emerald-200 bg-emerald-50 text-emerald-700"
@@ -759,7 +807,12 @@ export default function OfferMaster({ onBack }: Props) {
                     className={inputCls}
                     type="date"
                     value={asDateInput(form.startsAt)}
-                    onChange={(e) => setForm((s) => ({ ...s, startsAt: e.target.value || null }))}
+                    onChange={(e) =>
+                      setForm((s) => ({
+                        ...s,
+                        startsAt: e.target.value || null,
+                      }))
+                    }
                   />
                 </Field>
                 <Field label="End Date">
@@ -767,7 +820,9 @@ export default function OfferMaster({ onBack }: Props) {
                     className={inputCls}
                     type="date"
                     value={asDateInput(form.endsAt)}
-                    onChange={(e) => setForm((s) => ({ ...s, endsAt: e.target.value || null }))}
+                    onChange={(e) =>
+                      setForm((s) => ({ ...s, endsAt: e.target.value || null }))
+                    }
                   />
                 </Field>
 
@@ -792,13 +847,49 @@ export default function OfferMaster({ onBack }: Props) {
                   </h4>
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                     <Field label="Minimum Qty">
-                      <input className={inputCls} type="number" min={0} value={form.minQty ?? 0} onChange={(e) => setForm((s) => ({ ...s, minQty: Number(e.target.value || 0) }))} />
+                      <input
+                        className={inputCls}
+                        type="number"
+                        min={0}
+                        value={form.minQty ?? 0}
+                        onChange={(e) =>
+                          setForm((s) => ({
+                            ...s,
+                            minQty: Number(e.target.value || 0),
+                          }))
+                        }
+                      />
                     </Field>
                     <Field label="Maximum Qty">
-                      <input className={inputCls} type="number" min={0} value={form.maxQty ?? ""} onChange={(e) => setForm((s) => ({ ...s, maxQty: e.target.value ? Number(e.target.value) : null }))} />
+                      <input
+                        className={inputCls}
+                        type="number"
+                        min={0}
+                        value={form.maxQty ?? ""}
+                        onChange={(e) =>
+                          setForm((s) => ({
+                            ...s,
+                            maxQty: e.target.value
+                              ? Number(e.target.value)
+                              : null,
+                          }))
+                        }
+                      />
                     </Field>
                     <Field label="Fixed Unit Price">
-                      <input className={inputCls} type="number" min={0} step="0.01" value={form.fixedUnitPrice ?? 0} onChange={(e) => setForm((s) => ({ ...s, fixedUnitPrice: Number(e.target.value || 0) }))} />
+                      <input
+                        className={inputCls}
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={form.fixedUnitPrice ?? 0}
+                        onChange={(e) =>
+                          setForm((s) => ({
+                            ...s,
+                            fixedUnitPrice: Number(e.target.value || 0),
+                          }))
+                        }
+                      />
                     </Field>
                   </div>
                 </div>
@@ -811,19 +902,81 @@ export default function OfferMaster({ onBack }: Props) {
                   </h4>
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
                     <Field label="Start Time">
-                      <input className={inputCls} type="time" value={form.timeStart || ""} onChange={(e) => setForm((s) => ({ ...s, timeStart: e.target.value || null }))} />
+                      <input
+                        className={inputCls}
+                        type="time"
+                        value={form.timeStart || ""}
+                        onChange={(e) =>
+                          setForm((s) => ({
+                            ...s,
+                            timeStart: e.target.value || null,
+                          }))
+                        }
+                      />
                     </Field>
                     <Field label="End Time">
-                      <input className={inputCls} type="time" value={form.timeEnd || ""} onChange={(e) => setForm((s) => ({ ...s, timeEnd: e.target.value || null }))} />
+                      <input
+                        className={inputCls}
+                        type="time"
+                        value={form.timeEnd || ""}
+                        onChange={(e) =>
+                          setForm((s) => ({
+                            ...s,
+                            timeEnd: e.target.value || null,
+                          }))
+                        }
+                      />
                     </Field>
                     <Field label="Discount Type">
-                      <select className={inputCls} value={form.discountMode || "PCT"} onChange={(e) => setForm((s) => ({ ...s, discountMode: e.target.value as any, discountPercent: e.target.value === "PCT" ? s.discountPercent ?? 0 : null, discountAmount: e.target.value === "AMOUNT" ? s.discountAmount ?? 0 : null }))}>
+                      <select
+                        className={inputCls}
+                        value={form.discountMode || "PCT"}
+                        onChange={(e) =>
+                          setForm((s) => ({
+                            ...s,
+                            discountMode: e.target.value as any,
+                            discountPercent:
+                              e.target.value === "PCT"
+                                ? (s.discountPercent ?? 0)
+                                : null,
+                            discountAmount:
+                              e.target.value === "AMOUNT"
+                                ? (s.discountAmount ?? 0)
+                                : null,
+                          }))
+                        }
+                      >
                         <option value="PCT">Percentage</option>
                         <option value="AMOUNT">Amount per unit</option>
                       </select>
                     </Field>
                     <Field label="Discount Value">
-                      <input className={inputCls} type="number" min={0} step="0.01" value={form.discountMode === "AMOUNT" ? form.discountAmount ?? 0 : form.discountPercent ?? 0} onChange={(e) => setForm((s) => s.discountMode === "AMOUNT" ? { ...s, discountAmount: Number(e.target.value || 0), discountPercent: null } : { ...s, discountPercent: Number(e.target.value || 0), discountAmount: null })} />
+                      <input
+                        className={inputCls}
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={
+                          form.discountMode === "AMOUNT"
+                            ? (form.discountAmount ?? 0)
+                            : (form.discountPercent ?? 0)
+                        }
+                        onChange={(e) =>
+                          setForm((s) =>
+                            s.discountMode === "AMOUNT"
+                              ? {
+                                  ...s,
+                                  discountAmount: Number(e.target.value || 0),
+                                  discountPercent: null,
+                                }
+                              : {
+                                  ...s,
+                                  discountPercent: Number(e.target.value || 0),
+                                  discountAmount: null,
+                                },
+                          )
+                        }
+                      />
                     </Field>
                   </div>
                 </div>
@@ -837,29 +990,101 @@ export default function OfferMaster({ onBack }: Props) {
                     </h4>
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                       <Field label="Trigger Kind">
-                        <select className={inputCls} value={form.triggerKind || "BILL_AMOUNT"} onChange={(e) => setForm((s) => ({ ...s, triggerKind: e.target.value as OfferTriggerKind }))}>
+                        <select
+                          className={inputCls}
+                          value={form.triggerKind || "BILL_AMOUNT"}
+                          onChange={(e) =>
+                            setForm((s) => ({
+                              ...s,
+                              triggerKind: e.target.value as OfferTriggerKind,
+                            }))
+                          }
+                        >
                           <option value="BILL_AMOUNT">Bill amount</option>
                           <option value="PRODUCT_QTY">Product quantity</option>
                           <option value="UNIT_QTY">Unit quantity</option>
                         </select>
                       </Field>
                       <Field label="Trigger Scope">
-                        <select className={inputCls} value={form.triggerScope || "ALL_PRODUCTS"} onChange={(e) => setForm((s) => ({ ...s, triggerScope: e.target.value as OfferTriggerScope }))}>
-                          <option value="ALL_PRODUCTS">All products qualify</option>
-                          <option value="SELECTED_PRODUCTS">Selected products qualify</option>
+                        <select
+                          className={inputCls}
+                          value={form.triggerScope || "ALL_PRODUCTS"}
+                          onChange={(e) =>
+                            setForm((s) => ({
+                              ...s,
+                              triggerScope: e.target.value as OfferTriggerScope,
+                            }))
+                          }
+                        >
+                          <option value="ALL_PRODUCTS">
+                            All products qualify
+                          </option>
+                          <option value="SELECTED_PRODUCTS">
+                            Selected products qualify
+                          </option>
                         </select>
                       </Field>
                       <Field label="Exact Unit">
-                        <input className={inputCls} value={form.unit || ""} onChange={(e) => setForm((s) => ({ ...s, unit: e.target.value || null }))} placeholder="KG, NOS, LTR" />
+                        <input
+                          className={inputCls}
+                          value={form.unit || ""}
+                          onChange={(e) =>
+                            setForm((s) => ({
+                              ...s,
+                              unit: e.target.value || null,
+                            }))
+                          }
+                          placeholder="KG, NOS, LTR"
+                        />
                       </Field>
                       <Field label="Minimum Amount">
-                        <input className={inputCls} type="number" min={0} step="0.01" value={form.minAmount ?? ""} onChange={(e) => setForm((s) => ({ ...s, minAmount: e.target.value ? Number(e.target.value) : null }))} />
+                        <input
+                          className={inputCls}
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={form.minAmount ?? ""}
+                          onChange={(e) =>
+                            setForm((s) => ({
+                              ...s,
+                              minAmount: e.target.value
+                                ? Number(e.target.value)
+                                : null,
+                            }))
+                          }
+                        />
                       </Field>
                       <Field label="Minimum Qty">
-                        <input className={inputCls} type="number" min={0} value={form.minQty ?? ""} onChange={(e) => setForm((s) => ({ ...s, minQty: e.target.value ? Number(e.target.value) : null }))} />
+                        <input
+                          className={inputCls}
+                          type="number"
+                          min={0}
+                          value={form.minQty ?? ""}
+                          onChange={(e) =>
+                            setForm((s) => ({
+                              ...s,
+                              minQty: e.target.value
+                                ? Number(e.target.value)
+                                : null,
+                            }))
+                          }
+                        />
                       </Field>
                       <Field label="Maximum Qty">
-                        <input className={inputCls} type="number" min={0} value={form.maxQty ?? ""} onChange={(e) => setForm((s) => ({ ...s, maxQty: e.target.value ? Number(e.target.value) : null }))} />
+                        <input
+                          className={inputCls}
+                          type="number"
+                          min={0}
+                          value={form.maxQty ?? ""}
+                          onChange={(e) =>
+                            setForm((s) => ({
+                              ...s,
+                              maxQty: e.target.value
+                                ? Number(e.target.value)
+                                : null,
+                            }))
+                          }
+                        />
                       </Field>
                     </div>
                     {form.triggerKind === "UNIT_QTY" && (
@@ -875,51 +1100,194 @@ export default function OfferMaster({ onBack }: Props) {
                     </h4>
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                       <Field label="Benefit Target">
-                        <select className={inputCls} value={form.benefitTarget || "SAME_ELIGIBLE_ITEMS"} onChange={(e) => setForm((s) => ({ ...s, benefitTarget: e.target.value as OfferBenefitTarget }))}>
-                          <option value="SAME_ELIGIBLE_ITEMS">Same eligible items</option>
-                          <option value="SELECTED_RATION_PRODUCTS">Selected ration products</option>
+                        <select
+                          className={inputCls}
+                          value={form.benefitTarget || "SAME_ELIGIBLE_ITEMS"}
+                          onChange={(e) =>
+                            setForm((s) => ({
+                              ...s,
+                              benefitTarget: e.target
+                                .value as OfferBenefitTarget,
+                            }))
+                          }
+                        >
+                          <option value="SAME_ELIGIBLE_ITEMS">
+                            Same eligible items
+                          </option>
+                          <option value="SELECTED_RATION_PRODUCTS">
+                            Selected ration products
+                          </option>
                         </select>
                       </Field>
                       <Field label="Benefit Kind">
-                        <select className={inputCls} value={form.benefitKind || "FIXED_UNIT_PRICE"} onChange={(e) => setForm((s) => ({ ...s, benefitKind: e.target.value as OfferBenefitKind }))}>
-                          <option value="FIXED_UNIT_PRICE">Fixed unit price</option>
-                          <option value="PERCENT_DISCOUNT">Percent discount</option>
-                          <option value="AMOUNT_DISCOUNT">Amount discount</option>
+                        <select
+                          className={inputCls}
+                          value={form.benefitKind || "FIXED_UNIT_PRICE"}
+                          onChange={(e) =>
+                            setForm((s) => ({
+                              ...s,
+                              benefitKind: e.target.value as OfferBenefitKind,
+                            }))
+                          }
+                        >
+                          <option value="FIXED_UNIT_PRICE">
+                            Fixed unit price
+                          </option>
+                          <option value="PERCENT_DISCOUNT">
+                            Percent discount
+                          </option>
+                          <option value="AMOUNT_DISCOUNT">
+                            Amount discount
+                          </option>
                           <option value="FREE">Free</option>
                         </select>
                       </Field>
                       <Field label="Benefit Qty Mode">
-                        <select className={inputCls} value={form.benefitQtyMode || "ALL_ELIGIBLE_QTY"} onChange={(e) => setForm((s) => ({ ...s, benefitQtyMode: e.target.value as OfferBenefitQtyMode }))}>
-                          <option value="ALL_ELIGIBLE_QTY">All eligible qty</option>
-                          <option value="QTY_ABOVE_THRESHOLD">Qty above threshold</option>
+                        <select
+                          className={inputCls}
+                          value={form.benefitQtyMode || "ALL_ELIGIBLE_QTY"}
+                          onChange={(e) =>
+                            setForm((s) => ({
+                              ...s,
+                              benefitQtyMode: e.target
+                                .value as OfferBenefitQtyMode,
+                            }))
+                          }
+                        >
+                          <option value="ALL_ELIGIBLE_QTY">
+                            All eligible qty
+                          </option>
+                          <option value="QTY_ABOVE_THRESHOLD">
+                            Qty above threshold
+                          </option>
                           <option value="FIXED_QTY">Fixed qty</option>
                           <option value="LIMITED_QTY">Limited qty</option>
                         </select>
                       </Field>
                       <Field label="Fixed Unit Price">
-                        <input className={inputCls} type="number" min={0} step="0.01" value={form.fixedUnitPrice ?? ""} onChange={(e) => setForm((s) => ({ ...s, fixedUnitPrice: e.target.value ? Number(e.target.value) : null }))} />
+                        <input
+                          className={inputCls}
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={form.fixedUnitPrice ?? ""}
+                          onChange={(e) =>
+                            setForm((s) => ({
+                              ...s,
+                              fixedUnitPrice: e.target.value
+                                ? Number(e.target.value)
+                                : null,
+                            }))
+                          }
+                        />
                       </Field>
                       <Field label="Discount Percent">
-                        <input className={inputCls} type="number" min={0} step="0.01" value={form.discountPercent ?? ""} onChange={(e) => setForm((s) => ({ ...s, discountPercent: e.target.value ? Number(e.target.value) : null }))} />
+                        <input
+                          className={inputCls}
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={form.discountPercent ?? ""}
+                          onChange={(e) =>
+                            setForm((s) => ({
+                              ...s,
+                              discountPercent: e.target.value
+                                ? Number(e.target.value)
+                                : null,
+                            }))
+                          }
+                        />
                       </Field>
                       <Field label="Discount Amount">
-                        <input className={inputCls} type="number" min={0} step="0.01" value={form.discountAmount ?? ""} onChange={(e) => setForm((s) => ({ ...s, discountAmount: e.target.value ? Number(e.target.value) : null }))} />
+                        <input
+                          className={inputCls}
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={form.discountAmount ?? ""}
+                          onChange={(e) =>
+                            setForm((s) => ({
+                              ...s,
+                              discountAmount: e.target.value
+                                ? Number(e.target.value)
+                                : null,
+                            }))
+                          }
+                        />
                       </Field>
                       <Field label="Fixed Benefit Qty">
-                        <input className={inputCls} type="number" min={0} value={form.fixedBenefitQty ?? ""} onChange={(e) => setForm((s) => ({ ...s, fixedBenefitQty: e.target.value ? Number(e.target.value) : null }))} />
+                        <input
+                          className={inputCls}
+                          type="number"
+                          min={0}
+                          value={form.fixedBenefitQty ?? ""}
+                          onChange={(e) =>
+                            setForm((s) => ({
+                              ...s,
+                              fixedBenefitQty: e.target.value
+                                ? Number(e.target.value)
+                                : null,
+                            }))
+                          }
+                        />
                       </Field>
                       <Field label="Max Benefit Qty">
-                        <input className={inputCls} type="number" min={0} value={form.maxBenefitQty ?? ""} onChange={(e) => setForm((s) => ({ ...s, maxBenefitQty: e.target.value ? Number(e.target.value) : null }))} />
+                        <input
+                          className={inputCls}
+                          type="number"
+                          min={0}
+                          value={form.maxBenefitQty ?? ""}
+                          onChange={(e) =>
+                            setForm((s) => ({
+                              ...s,
+                              maxBenefitQty: e.target.value
+                                ? Number(e.target.value)
+                                : null,
+                            }))
+                          }
+                        />
                       </Field>
                       <Field label="Max Benefit Amount">
-                        <input className={inputCls} type="number" min={0} step="0.01" value={form.maxBenefitAmount ?? ""} onChange={(e) => setForm((s) => ({ ...s, maxBenefitAmount: e.target.value ? Number(e.target.value) : null }))} />
+                        <input
+                          className={inputCls}
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={form.maxBenefitAmount ?? ""}
+                          onChange={(e) =>
+                            setForm((s) => ({
+                              ...s,
+                              maxBenefitAmount: e.target.value
+                                ? Number(e.target.value)
+                                : null,
+                            }))
+                          }
+                        />
                       </Field>
                     </div>
                     <div className="mt-4 flex flex-wrap gap-2">
-                      <button type="button" onClick={() => setForm((s) => ({ ...s, customerRequired: s.customerRequired ? 0 : 1 }))} className={`rounded-xl border px-3 py-2 text-xs font-semibold ${form.customerRequired ? "border-amber-200 bg-amber-50 text-amber-700" : "border-slate-200 bg-white text-slate-500"}`}>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setForm((s) => ({
+                            ...s,
+                            customerRequired: s.customerRequired ? 0 : 1,
+                          }))
+                        }
+                        className={`rounded-xl border px-3 py-2 text-xs font-semibold ${form.customerRequired ? "border-amber-200 bg-amber-50 text-amber-700" : "border-slate-200 bg-white text-slate-500"}`}
+                      >
                         Customer required
                       </button>
-                      <button type="button" onClick={() => setForm((s) => ({ ...s, oncePerBill: s.oncePerBill ? 0 : 1 }))} className={`rounded-xl border px-3 py-2 text-xs font-semibold ${form.oncePerBill ? "border-cyan-200 bg-cyan-50 text-cyan-700" : "border-slate-200 bg-white text-slate-500"}`}>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setForm((s) => ({
+                            ...s,
+                            oncePerBill: s.oncePerBill ? 0 : 1,
+                          }))
+                        }
+                        className={`rounded-xl border px-3 py-2 text-xs font-semibold ${form.oncePerBill ? "border-cyan-200 bg-cyan-50 text-cyan-700" : "border-slate-200 bg-white text-slate-500"}`}
+                      >
                         Once per bill
                       </button>
                     </div>
@@ -931,7 +1299,9 @@ export default function OfferMaster({ onBack }: Props) {
                 <textarea
                   className={`${inputCls} min-h-[86px] resize-none`}
                   value={form.notes || ""}
-                  onChange={(e) => setForm((s) => ({ ...s, notes: e.target.value }))}
+                  onChange={(e) =>
+                    setForm((s) => ({ ...s, notes: e.target.value }))
+                  }
                   placeholder="Internal note for this offer"
                 />
               </Field>

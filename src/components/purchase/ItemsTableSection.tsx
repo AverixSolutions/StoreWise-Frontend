@@ -6,6 +6,7 @@ import {
   List,
   FileText,
   Receipt,
+  Printer,
 } from "lucide-react";
 import { ItemRow, Product } from "./types";
 import ItemsTable from "./ItemsTable";
@@ -23,6 +24,8 @@ interface ItemsTableSectionProps {
   headerDiscount: number;
   onHold?: () => void;
   onShowHolds?: () => void;
+  onPrintBill?: () => void;
+  canPrint?: boolean;
   onShowReports: () => void;
   showHoldControls?: boolean;
   onRequestBatchSelect?: (rowIndex: number) => void;
@@ -48,7 +51,9 @@ export default function ItemsTableSection({
   headerDiscount,
   onHold,
   onShowHolds,
+  onPrintBill,
   onShowReports,
+  canPrint = false,
   showHoldControls = true,
   onRequestBatchSelect,
   onBarcodeCommit,
@@ -102,6 +107,22 @@ export default function ItemsTableSection({
             <FileText className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Reports</span>
           </button>
+
+          {onPrintBill && (
+            <button
+              onClick={onPrintBill}
+              disabled={!canPrint}
+              title={canPrint ? "Print Bill" : "Save bill before printing"}
+              className={`px-2 sm:px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5 text-xs font-medium ${
+                canPrint
+                  ? "bg-white/10 border border-white/20 text-white/90 hover:bg-white/20 cursor-pointer"
+                  : "bg-slate-200 border border-slate-200 text-slate-500 cursor-not-allowed"
+              }`}
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Print</span>
+            </button>
+          )}
 
           {showHoldControls && (
             <>

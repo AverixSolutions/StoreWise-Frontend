@@ -342,14 +342,14 @@ export default function BillDetailsSection({
             <div className="flex justify-between text-xs text-slate-500">
               <span>Offer savings</span>
               <span className="font-medium text-emerald-600">
-                â‚¹ {Number(offerSavings).toFixed(2)}
+                ₹ {Number(offerSavings).toFixed(2)}
               </span>
             </div>
           )}
           <div className="flex justify-between text-xs text-slate-500">
             <span>Bill discount</span>
             <span className="font-medium text-rose-600">
-              - â‚¹ {Number(header.discount || 0).toFixed(2)}
+              - ₹ {Number(header.discount || 0).toFixed(2)}
             </span>
           </div>
           <div className="border-t border-slate-100 pt-2 flex justify-between items-center">
