@@ -46,6 +46,19 @@ async function apiFetch<T = any>(
   return res.json() as Promise<T>;
 }
 
+function triggerSaleReturnPull() {
+  if (typeof window === "undefined") return;
+  import("@/sync/SyncManager")
+    .then(({ SyncManager }) => {
+      SyncManager.pullNow("saleReturn").catch(() => {});
+      SyncManager.pullNow("saleReturnItem").catch(() => {});
+      SyncManager.pullNow("customerTransaction").catch(() => {});
+      SyncManager.pullNow("cashTransaction").catch(() => {});
+      SyncManager.pullNow("product").catch(() => {});
+    })
+    .catch(() => {});
+}
+
 // ── READS via API ─────────────────────────────────────────────────────────────
 
 export async function webListSaleReturns(
@@ -104,6 +117,7 @@ export async function webCreateSaleReturn(payload: {
       method: "POST",
       body: JSON.stringify(payload),
     });
+    if (res.success) triggerSaleReturnPull();
     return res;
   } catch (err: any) {
     return { success: false, error: String(err?.message || err) };
@@ -120,6 +134,7 @@ export async function webUpdateSaleReturn(
       method: "PUT",
       body: JSON.stringify(payload),
     });
+    if (res.success) triggerSaleReturnPull();
     return res;
   } catch (err: any) {
     return { success: false, error: String(err?.message || err) };
@@ -134,6 +149,7 @@ export async function webDeleteSaleReturn(
       `/api/sale-returns/${id}`,
       { method: "DELETE" },
     );
+    if (res.success) triggerSaleReturnPull();
     return res;
   } catch (err: any) {
     return { success: false, error: String(err?.message || err) };

@@ -53,6 +53,9 @@ function triggerSalePull() {
     .then(({ SyncManager }) => {
       SyncManager.pullNow("sale").catch(() => {});
       SyncManager.pullNow("saleItem").catch(() => {});
+      SyncManager.pullNow("customerTransaction").catch(() => {});
+      SyncManager.pullNow("cashTransaction").catch(() => {});
+      SyncManager.pullNow("product").catch(() => {});
     })
     .catch(() => {});
 }

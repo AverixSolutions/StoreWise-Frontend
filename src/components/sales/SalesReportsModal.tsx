@@ -11,6 +11,8 @@ import {
   ShoppingCart,
 } from "lucide-react";
 import { platform } from "@/platform";
+import { isSyncEnabled } from "@/platform/mode";
+import { SyncManager } from "@/sync/SyncManager";
 
 type Row = {
   id: string;
@@ -101,6 +103,13 @@ export default function SalesReportsModal({
     const ok = confirm("Soft delete this entry?");
     if (!ok) return;
     await platform.deleteSale?.(id);
+    if (isSyncEnabled()) {
+      SyncManager.pushEntity("sale").catch(() => {});
+      SyncManager.pushEntity("saleItem").catch(() => {});
+      SyncManager.pushEntity("customerTransaction").catch(() => {});
+      SyncManager.pushEntity("cashTransaction").catch(() => {});
+      SyncManager.pushEntity("product").catch(() => {});
+    }
     refresh();
   }
 

@@ -47,6 +47,15 @@ function addColumnIfMissing(table, column, type) {
   }
 }
 
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS _migrations (
+    name TEXT PRIMARY KEY,
+    ranAt TEXT NOT NULL
+  )
+`,
+).run();
+
 // Product Table
 db.prepare(
   `
@@ -801,6 +810,7 @@ db.prepare(
 
 // Cheque fields on customer_transactions
 addColumnIfMissing("customer_transactions", "paymentStatus", "TEXT");
+addColumnIfMissing("customer_transactions", "paymentMode", "TEXT");
 addColumnIfMissing("customer_transactions", "chequeNo", "TEXT");
 addColumnIfMissing("customer_transactions", "chequeIssueDate", "TEXT");
 addColumnIfMissing("customer_transactions", "chequeClearanceDate", "TEXT");
@@ -1142,6 +1152,51 @@ db.prepare(
 db.prepare(
   `CREATE INDEX IF NOT EXISTS idx_cust_tx_synced ON customer_transactions(isSynced)`,
 ).run();
+
+addColumnIfMissing("customer_transactions", "paymentStatus", "TEXT");
+addColumnIfMissing("customer_transactions", "paymentMode", "TEXT");
+addColumnIfMissing("customer_transactions", "chequeNo", "TEXT");
+addColumnIfMissing("customer_transactions", "chequeIssueDate", "TEXT");
+addColumnIfMissing("customer_transactions", "chequeClearanceDate", "TEXT");
+
+const customerPaymentModeBackfillRan = db
+  .prepare(
+    `SELECT 1 FROM _migrations WHERE name='customer_payment_mode_backfill_v1' LIMIT 1`,
+  )
+  .get();
+
+if (!customerPaymentModeBackfillRan) {
+  try {
+    const ts = new Date().toISOString();
+
+    db.prepare(
+      `
+      UPDATE customer_transactions
+      SET paymentMode =
+        CASE
+          WHEN chequeNo IS NOT NULL
+            OR chequeIssueDate IS NOT NULL
+            OR chequeClearanceDate IS NOT NULL
+            OR paymentStatus = 'PENDING_CHEQUE'
+          THEN 'CHEQUE'
+          WHEN lower(COALESCE(notes, '')) LIKE '%bank%'
+          THEN 'BANK'
+          ELSE 'CASH'
+        END
+      WHERE kind = 'RECEIPT'
+        AND paymentMode IS NULL
+    `,
+    ).run();
+
+    db.prepare(
+      `INSERT INTO _migrations(name, ranAt) VALUES('customer_payment_mode_backfill_v1', ?)`,
+    ).run(ts);
+
+    console.log("[db] customer_payment_mode_backfill_v1 completed");
+  } catch (e) {
+    console.error("[db] customer_payment_mode_backfill_v1 failed:", e);
+  }
+}
 
 // ====== ACCOUNTING MASTER TABLES ======
 

@@ -260,6 +260,14 @@ contextBridge.exposeInMainWorld("electronAPI", {
   bulkUpsertCustomerTransactions: (records) =>
     ipcRenderer.invoke("bulk-upsert-customer-transactions", records),
 
+  // Cash transaction sync
+  getDirtyCashTransactions: (licenseId, limit) =>
+    ipcRenderer.invoke("get-dirty-cash-transactions", licenseId, limit),
+  markCashTransactionsSynced: (ids, serverSyncedAt) =>
+    ipcRenderer.invoke("mark-cash-transactions-synced", ids, serverSyncedAt),
+  bulkUpsertCashTransactions: (records) =>
+    ipcRenderer.invoke("bulk-upsert-cash-transactions", records),
+
   // Supplier transaction sync
   getDirtySupplierTransactions: (licenseId, limit) =>
     ipcRenderer.invoke("get-dirty-supplier-transactions", licenseId, limit),
@@ -340,6 +348,18 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("sale-return:mark-synced", ids, ts),
   getNextSaleReturnSlNo: (licenseId) =>
     ipcRenderer.invoke("sale-return:peek-next-slno", licenseId),
+
+  // Sale return sync
+  getDirtySaleReturns: (licenseId, limit) =>
+    ipcRenderer.invoke("sale-return:get-dirty", licenseId, limit),
+  getDirtySaleReturnItems: (licenseId, limit) =>
+    ipcRenderer.invoke("sale-return:get-dirty-items", licenseId, limit),
+  markSaleReturnItemsSynced: (ids, ts) =>
+    ipcRenderer.invoke("sale-return:mark-items-synced", ids, ts),
+  bulkUpsertSaleReturns: (records) =>
+    ipcRenderer.invoke("sale-return:bulk-upsert", records),
+  bulkUpsertSaleReturnItems: (records) =>
+    ipcRenderer.invoke("sale-return:bulk-upsert-items", records),
 
   // CUSTOMERS
   listCustomers: (licenseId, filters) =>
@@ -452,6 +472,20 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("quotation:convert-to-sale", quotationId, overrides),
   peekNextQuotationSlNo: (licenseId) =>
     ipcRenderer.invoke("quotation:peek-next-slno", licenseId),
+
+  // Quotation sync
+  getDirtyQuotations: (licenseId, limit) =>
+    ipcRenderer.invoke("quotation:get-dirty", licenseId, limit),
+  markQuotationsSynced: (ids, ts) =>
+    ipcRenderer.invoke("quotation:mark-synced", ids, ts),
+  getDirtyQuotationItems: (licenseId, limit) =>
+    ipcRenderer.invoke("quotation:get-dirty-items", licenseId, limit),
+  markQuotationItemsSynced: (ids, ts) =>
+    ipcRenderer.invoke("quotation:mark-items-synced", ids, ts),
+  bulkUpsertQuotations: (records) =>
+    ipcRenderer.invoke("quotation:bulk-upsert", records),
+  bulkUpsertQuotationItems: (records) =>
+    ipcRenderer.invoke("quotation:bulk-upsert-items", records),
 
   // Label printing
   listLabelPrinters: (licenseId) =>

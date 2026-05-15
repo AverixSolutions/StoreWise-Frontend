@@ -26,6 +26,16 @@ async function apiFetch<T = any>(
   return res.json();
 }
 
+function triggerCustomerLedgerPull() {
+  if (typeof window === "undefined") return;
+  import("@/sync/SyncManager")
+    .then(({ SyncManager }) => {
+      SyncManager.pullNow("customerTransaction").catch(() => {});
+      SyncManager.pullNow("cashTransaction").catch(() => {});
+    })
+    .catch(() => {});
+}
+
 export async function webGetCustomerLedger(params: {
   licenseId: string;
   customerId: string;
@@ -72,10 +82,12 @@ export async function webCreateCustomerReceipt(payload: {
   chequeClearanceDate?: string | null;
   allocations?: Array<{ saleId: string; amount: number }>;
 }) {
-  return apiFetch("/api/customer-receipts", {
+  const res = await apiFetch("/api/customer-receipts", {
     method: "POST",
     body: JSON.stringify(payload),
   });
+  if ((res as any)?.success) triggerCustomerLedgerPull();
+  return res;
 }
 
 export async function webListReceipts(params: {
@@ -102,8 +114,10 @@ export async function webMarkCustomerChequeReceived(
   licenseId: string,
   txId: string,
 ) {
-  return apiFetch("/api/customer-cheque/mark-received", {
+  const res = await apiFetch("/api/customer-cheque/mark-received", {
     method: "POST",
     body: JSON.stringify({ licenseId, txId }),
   });
+  if ((res as any)?.success) triggerCustomerLedgerPull();
+  return res;
 }

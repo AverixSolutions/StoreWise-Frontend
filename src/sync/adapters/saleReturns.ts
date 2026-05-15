@@ -5,9 +5,13 @@ import type { SyncAdapter, DirtyRecord } from "../SyncEngine";
 
 // getDirtySaleReturns is not exposed in preload.js — stub returns empty
 async function desktopGetDirtyReturns(
-  _licenseId: string,
+  licenseId: string,
 ): Promise<DirtyRecord[]> {
-  return [];
+  const res = await (window as any).electronAPI.getDirtySaleReturns(
+    licenseId,
+    200,
+  );
+  return res?.records ?? [];
 }
 
 // markSaleReturnsSynced IS in preload: "sale-return:mark-synced"
@@ -16,7 +20,10 @@ async function desktopMarkReturnsSynced(ids: string[], ts: string) {
 }
 
 // bulkUpsertSaleReturns is not exposed in preload.js — no-op
-async function desktopUpsertReturnsFromServer(_records: DirtyRecord[]) {}
+async function desktopUpsertReturnsFromServer(records: DirtyRecord[]) {
+  if (!records.length) return;
+  await (window as any).electronAPI.bulkUpsertSaleReturns(records);
+}
 
 async function desktopGetReturnsSyncState() {
   return (window as any).electronAPI.getSyncState("saleReturn");
@@ -29,16 +36,25 @@ async function desktopSetReturnsSyncState(state: any) {
 
 // getDirtySaleReturnItems is not exposed in preload.js — stub returns empty
 async function desktopGetDirtyReturnItems(
-  _licenseId: string,
+  licenseId: string,
 ): Promise<DirtyRecord[]> {
-  return [];
+  const res = await (window as any).electronAPI.getDirtySaleReturnItems(
+    licenseId,
+    500,
+  );
+  return res?.records ?? [];
 }
 
 // markSaleReturnItemsSynced is not exposed in preload.js — no-op
-async function desktopMarkReturnItemsSynced(_ids: string[], _ts: string) {}
+async function desktopMarkReturnItemsSynced(ids: string[], ts: string) {
+  await (window as any).electronAPI.markSaleReturnItemsSynced(ids, ts);
+}
 
 // bulkUpsertSaleReturnItems is not exposed in preload.js — no-op
-async function desktopUpsertReturnItemsFromServer(_records: DirtyRecord[]) {}
+async function desktopUpsertReturnItemsFromServer(records: DirtyRecord[]) {
+  if (!records.length) return;
+  await (window as any).electronAPI.bulkUpsertSaleReturnItems(records);
+}
 
 async function desktopGetReturnItemsSyncState() {
   return (window as any).electronAPI.getSyncState("saleReturnItem");

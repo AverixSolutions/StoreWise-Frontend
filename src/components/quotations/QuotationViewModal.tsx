@@ -119,6 +119,10 @@ export default function QuotationViewModal({
         SyncManager.pushEntity("sale").catch(() => {});
         SyncManager.pushEntity("saleItem").catch(() => {});
         SyncManager.pushEntity("quotation").catch(() => {});
+        SyncManager.pushEntity("quotationItem").catch(() => {});
+        SyncManager.pushEntity("customerTransaction").catch(() => {});
+        SyncManager.pushEntity("cashTransaction").catch(() => {});
+        SyncManager.pushEntity("product").catch(() => {});
       }
       onConvertSuccess((res as any).saleId);
     } catch (err: any) {
@@ -139,6 +143,7 @@ export default function QuotationViewModal({
       }
       if (isSyncEnabled()) {
         SyncManager.pushEntity("quotation").catch(() => {});
+        SyncManager.pushEntity("quotationItem").catch(() => {});
       }
       onDeleted();
     } catch (err: any) {

@@ -43,6 +43,19 @@ async function apiFetch<T = any>(
 type IDBQuotation = QuotationRow & { licenseId: string; [key: string]: any };
 type IDBQuotationItem = QuotationItemRow & { [key: string]: any };
 
+function triggerQuotationPull(extraEntities: string[] = []) {
+  if (typeof window === "undefined") return;
+  import("@/sync/SyncManager")
+    .then(({ SyncManager }) => {
+      SyncManager.pullNow("quotation").catch(() => {});
+      SyncManager.pullNow("quotationItem").catch(() => {});
+      extraEntities.forEach((entity) => {
+        SyncManager.pullNow(entity).catch(() => {});
+      });
+    })
+    .catch(() => {});
+}
+
 // ── reads from IDB (with API fallback) ────────────────────────────────────────
 
 export async function webListQuotations(
@@ -167,6 +180,7 @@ export async function webCreateQuotation(
       method: "POST",
       body: JSON.stringify({ header, items }),
     });
+    if (res.success) triggerQuotationPull();
     return res;
   } catch (err: any) {
     return { success: false, error: String(err?.message || err) };
@@ -177,10 +191,12 @@ export async function webUpdateQuotation(
   payload: QuotationUpdatePayload,
 ): Promise<MutationResult> {
   try {
-    return await apiFetch<MutationResult>(`/api/quotations/${payload.id}`, {
+    const res = await apiFetch<MutationResult>(`/api/quotations/${payload.id}`, {
       method: "PUT",
       body: JSON.stringify(payload),
     });
+    if (res.success) triggerQuotationPull();
+    return res;
   } catch (err: any) {
     return { success: false, error: String(err?.message || err) };
   }
@@ -190,10 +206,12 @@ export async function webDeleteQuotation(
   id: string,
 ): Promise<MutationResult & { deletedAt?: string }> {
   try {
-    return await apiFetch<MutationResult & { deletedAt?: string }>(
+    const res = await apiFetch<MutationResult & { deletedAt?: string }>(
       `/api/quotations/${id}`,
       { method: "DELETE" },
     );
+    if (res.success) triggerQuotationPull();
+    return res;
   } catch (err: any) {
     return { success: false, error: String(err?.message || err) };
   }
@@ -204,13 +222,23 @@ export async function webConvertQuotationToSale(
   overrides?: { billNo?: string | null; saleType?: "CASH" | "CREDIT"; saleDate?: string },
 ): Promise<ConvertQuotationResult> {
   try {
-    return await apiFetch<ConvertQuotationResult>(
+    const res = await apiFetch<ConvertQuotationResult>(
       `/api/quotations/${quotationId}/convert`,
       {
         method: "POST",
         body: JSON.stringify(overrides ?? {}),
       },
     );
+    if (res.success) {
+      triggerQuotationPull([
+        "sale",
+        "saleItem",
+        "customerTransaction",
+        "cashTransaction",
+        "product",
+      ]);
+    }
+    return res;
   } catch (err: any) {
     return { success: false, error: String(err?.message || err) };
   }

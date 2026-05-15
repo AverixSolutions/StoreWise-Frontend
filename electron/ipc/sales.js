@@ -144,6 +144,7 @@ function registerSaleHandlers() {
       FROM sale_items si
       LEFT JOIN products p ON p.id = si.productId
       WHERE si.saleId = ?
+        AND COALESCE(si.deletedAt,'') = ''
       ORDER BY COALESCE(si.lineNo,0), si.createdAt
     `,
       )
@@ -161,6 +162,7 @@ function registerSaleHandlers() {
       FROM sale_items si
       LEFT JOIN products p ON p.id = si.productId
       WHERE si.saleId = ?
+        AND COALESCE(si.deletedAt,'') = ''
       ORDER BY COALESCE(si.lineNo,0), si.createdAt
     `,
       )
@@ -374,6 +376,26 @@ function registerSaleHandlers() {
           now,
         );
       }
+
+      if (header.saleType === "CASH") {
+        const grand = Math.max(0, totalAmount - (header.discount || 0));
+        db.prepare(
+          `
+          INSERT INTO cash_transactions
+          (id, licenseId, kind, refId, refNo, date, amount, sign, notes, createdAt, updatedAt, isSynced)
+          VALUES(?, ?, 'SALE', ?, ?, ?, ?, 1, 'Sale (Cash)', ?, ?, 0)
+        `,
+        ).run(
+          uuidv4(),
+          header.licenseId,
+          newId,
+          header.billNo || null,
+          header.saleDate || now,
+          grand,
+          now,
+          now,
+        );
+      }
     });
 
     trx(header, items);
@@ -442,7 +464,9 @@ function registerSaleHandlers() {
         now,
       });
 
-      db.prepare(`DELETE FROM sale_items WHERE saleId = ?`).run(id);
+      db.prepare(
+        `UPDATE sale_items SET deletedAt=?, updatedAt=?, isSynced=0, syncedAt=NULL WHERE saleId = ? AND COALESCE(deletedAt,'') = ''`,
+      ).run(now, now, id);
       const insItem = db.prepare(`
   INSERT INTO sale_items(
     id, saleId, productId, quantity, unit, rate, taxPercent, taxAmount,
@@ -554,10 +578,19 @@ function registerSaleHandlers() {
 
       db.prepare(
         `
-        DELETE FROM customer_transactions
+        UPDATE customer_transactions
+        SET deletedAt=@now, updatedAt=@now, isSynced=0, syncedAt=NULL
         WHERE licenseId=@licenseId AND kind='SALE' AND refId=@refId
       `,
-      ).run({ licenseId: header.licenseId, refId: id });
+      ).run({ licenseId: header.licenseId, refId: id, now });
+
+      db.prepare(
+        `
+        UPDATE cash_transactions
+        SET deletedAt=@now, updatedAt=@now, isSynced=0, syncedAt=NULL
+        WHERE licenseId=@licenseId AND kind='SALE' AND refId=@refId
+      `,
+      ).run({ licenseId: header.licenseId, refId: id, now });
 
       if (header.saleType !== "CASH" && header.customerId) {
         db.prepare(
@@ -569,6 +602,24 @@ function registerSaleHandlers() {
         ).run(
           header.licenseId,
           header.customerId,
+          id,
+          header.billNo || null,
+          header.saleDate || now,
+          grand,
+          now,
+          now,
+        );
+      }
+
+      if (header.saleType === "CASH") {
+        db.prepare(
+          `
+          INSERT INTO cash_transactions
+          (id, licenseId, kind, refId, refNo, date, amount, sign, notes, createdAt, updatedAt, isSynced)
+          VALUES (lower(hex(randomblob(16))), ?, 'SALE', ?, ?, ?, ?, 1, 'Sale (Cash)', ?, ?, 0)
+        `,
+        ).run(
+          header.licenseId,
           id,
           header.billNo || null,
           header.saleDate || now,
@@ -613,22 +664,31 @@ function registerSaleHandlers() {
       const saleRow = db
         .prepare(`SELECT licenseId FROM sales WHERE id=?`)
         .get(id);
-      db.prepare(`UPDATE sales SET deletedAt=?, isSynced=0 WHERE id=?`).run(
+      db.prepare(
+        `UPDATE sales SET deletedAt=?, updatedAt=?, isSynced=0, syncedAt=NULL WHERE id=?`,
+      ).run(
+        now,
         now,
         id,
       );
       db.prepare(
-        `UPDATE sale_items SET deletedAt=?, isSynced=0 WHERE saleId=?`,
-      ).run(now, id);
+        `UPDATE sale_items SET deletedAt=?, updatedAt=?, isSynced=0, syncedAt=NULL WHERE saleId=?`,
+      ).run(now, now, id);
 
       if (saleRow?.licenseId) {
         db.prepare(
-          `DELETE FROM customer_transactions WHERE licenseId=? AND kind='SALE' AND refId=?`,
-        ).run(saleRow.licenseId, id);
+          `UPDATE customer_transactions SET deletedAt=?, updatedAt=?, isSynced=0, syncedAt=NULL WHERE licenseId=? AND kind='SALE' AND refId=?`,
+        ).run(now, now, saleRow.licenseId, id);
+        db.prepare(
+          `UPDATE cash_transactions SET deletedAt=?, updatedAt=?, isSynced=0, syncedAt=NULL WHERE licenseId=? AND kind='SALE' AND refId=?`,
+        ).run(now, now, saleRow.licenseId, id);
       } else {
         db.prepare(
-          `DELETE FROM customer_transactions WHERE kind='SALE' AND refId=?`,
-        ).run(id);
+          `UPDATE customer_transactions SET deletedAt=?, updatedAt=?, isSynced=0, syncedAt=NULL WHERE kind='SALE' AND refId=?`,
+        ).run(now, now, id);
+        db.prepare(
+          `UPDATE cash_transactions SET deletedAt=?, updatedAt=?, isSynced=0, syncedAt=NULL WHERE kind='SALE' AND refId=?`,
+        ).run(now, now, id);
       }
     });
     try {

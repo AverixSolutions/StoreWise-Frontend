@@ -2,6 +2,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { X, Search, Calendar, RotateCcw, ExternalLink } from "lucide-react";
+import { platform } from "@/platform";
 
 type Row = {
   id: string;
@@ -54,11 +55,8 @@ export default function SalesReturnReportsModal({
         pageSize,
       };
 
-      const res = await (window as any).electronAPI.listSaleReturns(
-        licenseId,
-        filters,
-      );
-      const mapped: Row[] = (res.returns || []).map((r: any) => ({
+      const res = await platform.listSaleReturns?.(licenseId, filters);
+      const mapped: Row[] = (res?.returns || []).map((r: any) => ({
         id: r.id,
         slNo: r.slNo ?? null,
         billNo: r.billNo,
@@ -70,7 +68,7 @@ export default function SalesReturnReportsModal({
         saleType: r.saleType || "CASH",
       }));
       setRows(mapped);
-      setTotal(res.total || 0);
+      setTotal(res?.total || 0);
     } finally {
       setLoading(false);
     }

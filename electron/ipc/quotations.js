@@ -143,6 +143,7 @@ function registerQuotationHandlers() {
          FROM quotation_items qi
          LEFT JOIN products p ON p.id = qi.productId
          WHERE qi.quotationId = ?
+           AND COALESCE(qi.deletedAt,'') = ''
          ORDER BY COALESCE(qi.lineNo,0), qi.createdAt`,
       )
       .all(id);
@@ -165,7 +166,7 @@ function registerQuotationHandlers() {
 
     const trx = db.transaction((header, items) => {
       const slNo = getNextQuotationSlNo(header.licenseId);
-      const quotationNo = formatQuotationNo(slNo);
+      const quotationNo = header.quotationNo || formatQuotationNo(slNo);
 
       db.prepare(
         `INSERT INTO quotations(
@@ -290,7 +291,7 @@ function registerQuotationHandlers() {
 
       db.prepare(
         `UPDATE quotations SET
-           customerId=@customerId, customerName=@customerName,
+           quotationNo=@quotationNo, customerId=@customerId, customerName=@customerName,
            department=@department, debitAccount=@debitAccount,
            natureOfEntry=@natureOfEntry, quotationDate=@quotationDate,
            entryTime=@entryTime, discount=@discount, totalAmount=@totalAmount,
@@ -298,6 +299,7 @@ function registerQuotationHandlers() {
          WHERE id=@id`,
       ).run({
         id,
+        quotationNo: header.quotationNo || existing.quotationNo,
         customerId: header.customerId || null,
         customerName: header.customerName || null,
         department: header.department || null,
@@ -312,7 +314,9 @@ function registerQuotationHandlers() {
         now,
       });
 
-      db.prepare(`DELETE FROM quotation_items WHERE quotationId = ?`).run(id);
+      db.prepare(
+        `UPDATE quotation_items SET deletedAt=?, updatedAt=?, isSynced=0, syncedAt=NULL WHERE quotationId = ? AND COALESCE(deletedAt,'') = ''`,
+      ).run(now, now, id);
 
       const insItem = db.prepare(
         `INSERT INTO quotation_items(
@@ -380,6 +384,9 @@ function registerQuotationHandlers() {
 
       db.prepare(
         `UPDATE quotations SET deletedAt=?, updatedAt=?, isSynced=0 WHERE id=?`,
+      ).run(now, now, id);
+      db.prepare(
+        `UPDATE quotation_items SET deletedAt=?, updatedAt=?, isSynced=0, syncedAt=NULL WHERE quotationId=? AND COALESCE(deletedAt,'')=''`,
       ).run(now, now, id);
       return { success: true, deletedAt: now };
     } catch (e) {
@@ -543,6 +550,25 @@ function registerQuotationHandlers() {
         );
       }
 
+      if (saleType === "CASH") {
+        const grand = Math.max(0, totalAmount - Number(quot.discount || 0));
+        db.prepare(
+          `INSERT INTO cash_transactions
+           (id, licenseId, kind, refId, refNo, date, amount, sign, notes, createdAt, updatedAt, isSynced)
+           VALUES(?,?, 'SALE', ?, ?, ?, ?, 1, ?, ?, ?, 0)`,
+        ).run(
+          uuidv4(),
+          quot.licenseId,
+          saleId,
+          saleBillNo,
+          overrides.saleDate || quot.quotationDate,
+          grand,
+          `Sale (Cash, from quotation ${quot.quotationNo || quot.slNo})`,
+          now,
+          now,
+        );
+      }
+
       // mark quotation converted
       db.prepare(
         `UPDATE quotations
@@ -559,6 +585,287 @@ function registerQuotationHandlers() {
     } catch (e) {
       return { success: false, error: String(e.message || e) };
     }
+  });
+
+  ipcMain.handle("quotation:get-dirty", (evt, licenseId, limit = 200) => {
+    const rows = db
+      .prepare(
+        `
+      SELECT id, slNo, quotationNo, userId, licenseId,
+             customerId, customerName, department,
+             debitAccount, natureOfEntry, quotationDate, entryTime,
+             totalAmount, discount, status, notes, convertedSaleId,
+             createdAt, updatedAt, deletedAt, isSynced, syncedAt
+      FROM quotations
+      WHERE licenseId = ?
+        AND (isSynced = 0 OR isSynced IS NULL)
+      ORDER BY updatedAt ASC
+      LIMIT ?
+    `,
+      )
+      .all(licenseId, limit);
+    return { success: true, records: rows };
+  });
+
+  ipcMain.handle("quotation:mark-synced", (evt, ids, serverSyncedAt) => {
+    if (!Array.isArray(ids) || ids.length === 0) return { success: true };
+    const ts = serverSyncedAt || new Date().toISOString();
+    db.transaction((ids) => {
+      const stmt = db.prepare(
+        `UPDATE quotations SET isSynced = 1, syncedAt = ? WHERE id = ?`,
+      );
+      ids.forEach((id) => stmt.run(ts, id));
+    })(ids);
+    return { success: true, syncedAt: ts };
+  });
+
+  ipcMain.handle(
+    "quotation:get-dirty-items",
+    (evt, licenseId, limit = 500) => {
+      const rows = db
+        .prepare(
+          `
+      SELECT qi.id, qi.quotationId, qi.productId, qi.barcode,
+             qi.quantity, qi.unit, qi.rate, qi.mrp,
+             qi.taxPercent, qi.taxAmount,
+             qi.discount, qi.discountType,
+             qi.salePrice, qi.profit, qi.totalCost, qi.billedValue,
+             qi.effectiveUnitValue,
+             qi.batchNo, qi.batchId,
+             qi.mfgDate, qi.expiryDate,
+             qi.lineNo, qi.isFree,
+             qi.createdAt, qi.updatedAt, qi.deletedAt,
+             qi.isSynced, qi.syncedAt
+      FROM quotation_items qi
+      JOIN quotations q ON q.id = qi.quotationId
+      WHERE q.licenseId = ?
+        AND (qi.isSynced = 0 OR qi.isSynced IS NULL)
+      ORDER BY qi.updatedAt ASC
+      LIMIT ?
+    `,
+        )
+        .all(licenseId, limit);
+      return { success: true, records: rows };
+    },
+  );
+
+  ipcMain.handle("quotation:mark-items-synced", (evt, ids, serverSyncedAt) => {
+    if (!Array.isArray(ids) || ids.length === 0) return { success: true };
+    const ts = serverSyncedAt || new Date().toISOString();
+    db.transaction((ids) => {
+      const stmt = db.prepare(
+        `UPDATE quotation_items SET isSynced = 1, syncedAt = ? WHERE id = ?`,
+      );
+      ids.forEach((id) => stmt.run(ts, id));
+    })(ids);
+    return { success: true, syncedAt: ts };
+  });
+
+  ipcMain.handle("quotation:bulk-upsert", (evt, records) => {
+    if (!Array.isArray(records) || records.length === 0)
+      return { success: true, upserted: 0 };
+
+    const now = new Date().toISOString();
+    const upsert = db.prepare(`
+      INSERT INTO quotations (
+        id, slNo, quotationNo, userId, licenseId,
+        customerId, customerName, department, debitAccount, natureOfEntry,
+        quotationDate, entryTime, totalAmount, discount, status, notes,
+        convertedSaleId, createdAt, updatedAt, deletedAt, isSynced, syncedAt
+      ) VALUES (
+        @id, @slNo, @quotationNo, @userId, @licenseId,
+        @customerId, @customerName, @department, @debitAccount, @natureOfEntry,
+        @quotationDate, @entryTime, @totalAmount, @discount, @status, @notes,
+        @convertedSaleId, @createdAt, @updatedAt, @deletedAt, 1, @syncedAt
+      )
+      ON CONFLICT(id) DO UPDATE SET
+        slNo            = excluded.slNo,
+        quotationNo     = excluded.quotationNo,
+        customerId      = excluded.customerId,
+        customerName    = excluded.customerName,
+        department      = excluded.department,
+        debitAccount    = excluded.debitAccount,
+        natureOfEntry   = excluded.natureOfEntry,
+        quotationDate   = excluded.quotationDate,
+        entryTime       = excluded.entryTime,
+        totalAmount     = excluded.totalAmount,
+        discount        = excluded.discount,
+        status          = excluded.status,
+        notes           = excluded.notes,
+        convertedSaleId = excluded.convertedSaleId,
+        updatedAt       = excluded.updatedAt,
+        deletedAt       = excluded.deletedAt,
+        isSynced        = 1,
+        syncedAt        = excluded.syncedAt
+      WHERE excluded.updatedAt > quotations.updatedAt
+         OR quotations.updatedAt IS NULL
+    `);
+
+    db.transaction((records) => {
+      for (const r of records) {
+        upsert.run({
+          id: r.id,
+          slNo: r.slNo ?? null,
+          quotationNo: r.quotationNo ?? null,
+          userId: r.userId ?? null,
+          licenseId: r.licenseId,
+          customerId: r.customerId ?? null,
+          customerName: r.customerName ?? null,
+          department: r.department ?? null,
+          debitAccount: r.debitAccount ?? null,
+          natureOfEntry: r.natureOfEntry ?? null,
+          quotationDate:
+            r.quotationDate instanceof Date
+              ? r.quotationDate.toISOString()
+              : (r.quotationDate ?? now),
+          entryTime:
+            r.entryTime instanceof Date
+              ? r.entryTime.toISOString()
+              : (r.entryTime ?? null),
+          totalAmount: Number(r.totalAmount || 0),
+          discount: Number(r.discount || 0),
+          status: r.status ?? "DRAFT",
+          notes: r.notes ?? null,
+          convertedSaleId: r.convertedSaleId ?? null,
+          createdAt:
+            r.createdAt instanceof Date
+              ? r.createdAt.toISOString()
+              : (r.createdAt ?? now),
+          updatedAt:
+            r.updatedAt instanceof Date
+              ? r.updatedAt.toISOString()
+              : (r.updatedAt ?? now),
+          deletedAt:
+            r.deletedAt instanceof Date
+              ? r.deletedAt.toISOString()
+              : (r.deletedAt ?? null),
+          syncedAt:
+            r.syncedAt instanceof Date
+              ? r.syncedAt.toISOString()
+              : (r.syncedAt ?? now),
+        });
+      }
+    })(records);
+
+    const maxRow = db
+      .prepare(
+        `SELECT MAX(slNo) AS maxSlNo FROM quotations WHERE licenseId = ? AND COALESCE(deletedAt,'') = ''`,
+      )
+      .get(records[0]?.licenseId);
+
+    if (maxRow?.maxSlNo) {
+      db.prepare(
+        `
+        INSERT INTO quotation_sequence (licenseId, lastSlNo)
+        VALUES (?, ?)
+        ON CONFLICT(licenseId) DO UPDATE SET
+          lastSlNo = MAX(excluded.lastSlNo, quotation_sequence.lastSlNo)
+      `,
+      ).run(records[0].licenseId, maxRow.maxSlNo);
+    }
+
+    return { success: true, upserted: records.length };
+  });
+
+  ipcMain.handle("quotation:bulk-upsert-items", (evt, records) => {
+    if (!Array.isArray(records) || records.length === 0)
+      return { success: true, upserted: 0 };
+
+    const now = new Date().toISOString();
+    const upsert = db.prepare(`
+      INSERT INTO quotation_items (
+        id, quotationId, productId, barcode,
+        quantity, unit, rate, mrp,
+        taxPercent, taxAmount, discount, discountType,
+        salePrice, profit, totalCost, billedValue,
+        effectiveUnitValue, batchNo, batchId,
+        mfgDate, expiryDate, lineNo, isFree,
+        createdAt, updatedAt, deletedAt, isSynced, syncedAt
+      ) VALUES (
+        @id, @quotationId, @productId, @barcode,
+        @quantity, @unit, @rate, @mrp,
+        @taxPercent, @taxAmount, @discount, @discountType,
+        @salePrice, @profit, @totalCost, @billedValue,
+        @effectiveUnitValue, @batchNo, @batchId,
+        @mfgDate, @expiryDate, @lineNo, @isFree,
+        @createdAt, @updatedAt, @deletedAt, 1, @syncedAt
+      )
+      ON CONFLICT(id) DO UPDATE SET
+        quantity           = excluded.quantity,
+        unit               = excluded.unit,
+        rate               = excluded.rate,
+        mrp                = excluded.mrp,
+        taxPercent         = excluded.taxPercent,
+        taxAmount          = excluded.taxAmount,
+        discount           = excluded.discount,
+        discountType       = excluded.discountType,
+        salePrice          = excluded.salePrice,
+        profit             = excluded.profit,
+        totalCost          = excluded.totalCost,
+        billedValue        = excluded.billedValue,
+        effectiveUnitValue = excluded.effectiveUnitValue,
+        batchNo            = excluded.batchNo,
+        batchId            = excluded.batchId,
+        mfgDate            = excluded.mfgDate,
+        expiryDate         = excluded.expiryDate,
+        lineNo             = excluded.lineNo,
+        isFree             = excluded.isFree,
+        updatedAt          = excluded.updatedAt,
+        deletedAt          = excluded.deletedAt,
+        isSynced           = 1,
+        syncedAt           = excluded.syncedAt
+      WHERE excluded.updatedAt > quotation_items.updatedAt
+         OR quotation_items.updatedAt IS NULL
+    `);
+
+    db.transaction((records) => {
+      for (const r of records) {
+        upsert.run({
+          id: r.id,
+          quotationId: r.quotationId,
+          productId: r.productId,
+          barcode: r.barcode ?? null,
+          quantity: Number(r.quantity || 0),
+          unit: r.unit,
+          rate: Number(r.rate || 0),
+          mrp: r.mrp != null ? Number(r.mrp) : null,
+          taxPercent: r.taxPercent,
+          taxAmount: Number(r.taxAmount || 0),
+          discount: Number(r.discount || 0),
+          discountType: r.discountType ?? "ABS",
+          salePrice: r.salePrice != null ? Number(r.salePrice) : null,
+          profit: r.profit != null ? Number(r.profit) : null,
+          totalCost: Number(r.totalCost || 0),
+          billedValue: Number(r.billedValue || 0),
+          effectiveUnitValue:
+            r.effectiveUnitValue != null ? Number(r.effectiveUnitValue) : null,
+          batchNo: r.batchNo ?? null,
+          batchId: r.batchId ?? null,
+          mfgDate: r.mfgDate ?? null,
+          expiryDate: r.expiryDate ?? null,
+          lineNo: r.lineNo ?? null,
+          isFree: r.isFree ? 1 : 0,
+          createdAt:
+            r.createdAt instanceof Date
+              ? r.createdAt.toISOString()
+              : (r.createdAt ?? now),
+          updatedAt:
+            r.updatedAt instanceof Date
+              ? r.updatedAt.toISOString()
+              : (r.updatedAt ?? now),
+          deletedAt:
+            r.deletedAt instanceof Date
+              ? r.deletedAt.toISOString()
+              : (r.deletedAt ?? null),
+          syncedAt:
+            r.syncedAt instanceof Date
+              ? r.syncedAt.toISOString()
+              : (r.syncedAt ?? now),
+        });
+      }
+    })(records);
+
+    return { success: true, upserted: records.length };
   });
 }
 

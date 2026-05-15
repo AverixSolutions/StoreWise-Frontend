@@ -885,6 +885,65 @@ declare global {
         records: any[],
       ) => Promise<{ success: boolean; upserted: number }>;
 
+      // Cash Transaction Sync
+      getDirtyCashTransactions: (
+        licenseId: string,
+        limit?: number,
+      ) => Promise<{ success: boolean; records: any[] }>;
+
+      markCashTransactionsSynced: (
+        ids: string[],
+        serverSyncedAt?: string,
+      ) => Promise<{ success: boolean }>;
+
+      bulkUpsertCashTransactions: (
+        records: any[],
+      ) => Promise<{ success: boolean; upserted: number }>;
+
+      // Sale return sync
+      getDirtySaleReturns: (
+        licenseId: string,
+        limit?: number,
+      ) => Promise<{ success: boolean; records: any[] }>;
+      getDirtySaleReturnItems: (
+        licenseId: string,
+        limit?: number,
+      ) => Promise<{ success: boolean; records: any[] }>;
+      markSaleReturnItemsSynced: (
+        ids: string[],
+        serverSyncedAt?: string,
+      ) => Promise<{ success: boolean }>;
+      bulkUpsertSaleReturns: (
+        records: any[],
+      ) => Promise<{ success: boolean; upserted: number }>;
+      bulkUpsertSaleReturnItems: (
+        records: any[],
+      ) => Promise<{ success: boolean; upserted: number }>;
+
+      // Quotation sync
+      getDirtyQuotations: (
+        licenseId: string,
+        limit?: number,
+      ) => Promise<{ success: boolean; records: any[] }>;
+      markQuotationsSynced: (
+        ids: string[],
+        serverSyncedAt?: string,
+      ) => Promise<{ success: boolean }>;
+      getDirtyQuotationItems: (
+        licenseId: string,
+        limit?: number,
+      ) => Promise<{ success: boolean; records: any[] }>;
+      markQuotationItemsSynced: (
+        ids: string[],
+        serverSyncedAt?: string,
+      ) => Promise<{ success: boolean }>;
+      bulkUpsertQuotations: (
+        records: any[],
+      ) => Promise<{ success: boolean; upserted: number }>;
+      bulkUpsertQuotationItems: (
+        records: any[],
+      ) => Promise<{ success: boolean; upserted: number }>;
+
       // Purchase return sync
       getDirtyPurchaseReturns: (
         licenseId: string,

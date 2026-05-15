@@ -157,13 +157,14 @@ function computeSaleReturnAmounts(item, appliedQty) {
 }
 
 function deleteSaleReturnLedgers(licenseId, refId) {
+  const now = nowISO();
   db.prepare(
-    `DELETE FROM customer_transactions WHERE licenseId=? AND kind='RETURN' AND refId=?`,
-  ).run(licenseId, refId);
+    `UPDATE customer_transactions SET deletedAt=?, updatedAt=?, isSynced=0, syncedAt=NULL WHERE licenseId=? AND kind='RETURN' AND refId=?`,
+  ).run(now, now, licenseId, refId);
 
   db.prepare(
-    `DELETE FROM cash_transactions WHERE licenseId=? AND kind='PAYMENT' AND refId=?`,
-  ).run(licenseId, refId);
+    `UPDATE cash_transactions SET deletedAt=?, updatedAt=?, isSynced=0, syncedAt=NULL WHERE licenseId=? AND kind='PAYMENT' AND refId=?`,
+  ).run(now, now, licenseId, refId);
 }
 
 function createSaleReturnLedgers({ header, refId, grandAmount, txDate, now }) {
@@ -322,10 +323,10 @@ function registerSaleReturnHandlers() {
 
     const insHdr = db.prepare(`
       INSERT INTO sale_returns(
-        id, slNo, userId, licenseId, customerId, customerName, billNo,
+        id, slNo, userId, licenseId, typeId, customerId, customerName, billNo,
         department, debitAccount, natureOfEntry, returnDate, entryTime,
         totalAmount, discount, saleType, createdAt, updatedAt, isSynced
-      ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+      ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
     `);
 
     const insItem = db.prepare(`
@@ -344,6 +345,7 @@ function registerSaleReturnHandlers() {
         slNo,
         header.userId || null,
         header.licenseId,
+        header.typeId || null,
         header.customerId || null,
         header.customerName || null,
         header.billNo || null,
@@ -418,12 +420,15 @@ function registerSaleReturnHandlers() {
       reverseSaleReturnItemsStock(id);
       deleteSaleReturnLedgers(existing.licenseId, id);
 
-      db.prepare(`DELETE FROM sale_return_items WHERE returnId=?`).run(id);
+      db.prepare(
+        `UPDATE sale_return_items SET deletedAt=?, updatedAt=?, isSynced=0, syncedAt=NULL WHERE returnId=? AND COALESCE(deletedAt,'')=''`,
+      ).run(now, now, id);
 
       db.prepare(
         `
         UPDATE sale_returns SET
           customerId=@customerId,
+          typeId=@typeId,
           customerName=@customerName,
           billNo=@billNo,
           department=@department,
@@ -441,6 +446,7 @@ function registerSaleReturnHandlers() {
       ).run({
         id,
         customerId: header.customerId || null,
+        typeId: header.typeId || null,
         customerName: header.customerName || null,
         billNo: header.billNo || null,
         department: header.department || null,
@@ -541,6 +547,7 @@ function registerSaleReturnHandlers() {
         FROM sale_return_items sri
         LEFT JOIN products p ON p.id = sri.productId
         WHERE sri.returnId=?
+          AND COALESCE(sri.deletedAt,'')=''
         ORDER BY COALESCE(sri.lineNo,0), sri.createdAt
       `,
       )
@@ -560,6 +567,7 @@ function registerSaleReturnHandlers() {
         FROM sale_return_items sri
         LEFT JOIN products p ON p.id = sri.productId
         WHERE sri.returnId=?
+          AND COALESCE(sri.deletedAt,'')=''
         ORDER BY COALESCE(sri.lineNo,0), sri.createdAt
       `,
       )
@@ -585,7 +593,7 @@ function registerSaleReturnHandlers() {
       ).run(now, now, id);
 
       db.prepare(
-        `UPDATE sale_return_items SET deletedAt=?, updatedAt=?, isSynced=0 WHERE returnId=?`,
+        `UPDATE sale_return_items SET deletedAt=?, updatedAt=?, isSynced=0, syncedAt=NULL WHERE returnId=?`,
       ).run(now, now, id);
 
       deleteSaleReturnLedgers(existing.licenseId, id);
@@ -609,6 +617,288 @@ function registerSaleReturnHandlers() {
     });
     trx(ids);
     return { success: true, syncedAt: ts };
+  });
+
+  ipcMain.handle("sale-return:get-dirty", (evt, licenseId, limit = 200) => {
+    const rows = db
+      .prepare(
+        `
+      SELECT id, slNo, billNo, userId, licenseId, typeId,
+             customerId, customerName, department,
+             debitAccount, natureOfEntry, saleType,
+             returnDate, entryTime,
+             totalAmount, discount,
+             createdAt, updatedAt, deletedAt,
+             isSynced, syncedAt
+      FROM sale_returns
+      WHERE licenseId = ?
+        AND (isSynced = 0 OR isSynced IS NULL)
+      ORDER BY updatedAt ASC
+      LIMIT ?
+    `,
+      )
+      .all(licenseId, limit);
+    return { success: true, records: rows };
+  });
+
+  ipcMain.handle(
+    "sale-return:get-dirty-items",
+    (evt, licenseId, limit = 500) => {
+      const rows = db
+        .prepare(
+          `
+      SELECT sri.id, sri.returnId, sri.productId, sri.barcode,
+             sri.quantity, sri.unit, sri.rate, sri.mrp,
+             sri.taxPercent, sri.taxAmount,
+             sri.discount, sri.discountType,
+             sri.salePrice, sri.profit, sri.totalCost, sri.billedValue,
+             sri.effectiveUnitValue,
+             sri.batchNo, sri.batchId,
+             sri.mfgDate, sri.expiryDate,
+             sri.lineNo, sri.appliedQuantity,
+             sri.overReturnQuantity, sri.overReturnReason,
+             sri.createdAt, sri.updatedAt, sri.deletedAt,
+             sri.isSynced, sri.syncedAt
+      FROM sale_return_items sri
+      JOIN sale_returns sr ON sr.id = sri.returnId
+      WHERE sr.licenseId = ?
+        AND (sri.isSynced = 0 OR sri.isSynced IS NULL)
+      ORDER BY sri.updatedAt ASC
+      LIMIT ?
+    `,
+        )
+        .all(licenseId, limit);
+      return { success: true, records: rows };
+    },
+  );
+
+  ipcMain.handle("sale-return:mark-items-synced", (evt, ids, serverSyncedAt) => {
+    if (!Array.isArray(ids) || ids.length === 0) return { success: true };
+    const ts = serverSyncedAt || nowISO();
+    db.transaction((ids) => {
+      const stmt = db.prepare(
+        `UPDATE sale_return_items SET isSynced = 1, syncedAt = ? WHERE id = ?`,
+      );
+      ids.forEach((id) => stmt.run(ts, id));
+    })(ids);
+    return { success: true, syncedAt: ts };
+  });
+
+  ipcMain.handle("sale-return:bulk-upsert", (evt, records) => {
+    if (!Array.isArray(records) || records.length === 0)
+      return { success: true, upserted: 0 };
+
+    const now = nowISO();
+    const upsert = db.prepare(`
+      INSERT INTO sale_returns (
+        id, slNo, billNo, userId, licenseId, typeId,
+        customerId, customerName, department,
+        debitAccount, natureOfEntry, saleType,
+        returnDate, entryTime,
+        totalAmount, discount,
+        createdAt, updatedAt, deletedAt,
+        isSynced, syncedAt
+      ) VALUES (
+        @id, @slNo, @billNo, @userId, @licenseId, @typeId,
+        @customerId, @customerName, @department,
+        @debitAccount, @natureOfEntry, @saleType,
+        @returnDate, @entryTime,
+        @totalAmount, @discount,
+        @createdAt, @updatedAt, @deletedAt,
+        1, @syncedAt
+      )
+      ON CONFLICT(id) DO UPDATE SET
+        slNo          = excluded.slNo,
+        billNo        = excluded.billNo,
+        typeId        = excluded.typeId,
+        customerId    = excluded.customerId,
+        customerName  = excluded.customerName,
+        department    = excluded.department,
+        debitAccount  = excluded.debitAccount,
+        natureOfEntry = excluded.natureOfEntry,
+        saleType      = excluded.saleType,
+        returnDate    = excluded.returnDate,
+        entryTime     = excluded.entryTime,
+        totalAmount   = excluded.totalAmount,
+        discount      = excluded.discount,
+        updatedAt     = excluded.updatedAt,
+        deletedAt     = excluded.deletedAt,
+        isSynced      = 1,
+        syncedAt      = excluded.syncedAt
+      WHERE excluded.updatedAt > sale_returns.updatedAt
+         OR sale_returns.updatedAt IS NULL
+    `);
+
+    db.transaction((records) => {
+      for (const r of records) {
+        upsert.run({
+          id: r.id,
+          slNo: r.slNo ?? null,
+          billNo: r.billNo ?? null,
+          userId: r.userId ?? null,
+          licenseId: r.licenseId,
+          typeId: r.typeId ?? null,
+          customerId: r.customerId ?? null,
+          customerName: r.customerName ?? null,
+          department: r.department ?? null,
+          debitAccount: r.debitAccount ?? null,
+          natureOfEntry: r.natureOfEntry ?? null,
+          saleType: r.saleType ?? "CREDIT",
+          returnDate:
+            r.returnDate instanceof Date
+              ? r.returnDate.toISOString()
+              : (r.returnDate ?? now),
+          entryTime:
+            r.entryTime instanceof Date
+              ? r.entryTime.toISOString()
+              : (r.entryTime ?? null),
+          totalAmount: Number(r.totalAmount || 0),
+          discount: Number(r.discount || 0),
+          createdAt:
+            r.createdAt instanceof Date
+              ? r.createdAt.toISOString()
+              : (r.createdAt ?? now),
+          updatedAt:
+            r.updatedAt instanceof Date
+              ? r.updatedAt.toISOString()
+              : (r.updatedAt ?? now),
+          deletedAt:
+            r.deletedAt instanceof Date
+              ? r.deletedAt.toISOString()
+              : (r.deletedAt ?? null),
+          syncedAt:
+            r.syncedAt instanceof Date
+              ? r.syncedAt.toISOString()
+              : (r.syncedAt ?? now),
+        });
+      }
+    })(records);
+
+    const maxRow = db
+      .prepare(
+        `SELECT MAX(slNo) AS maxSlNo FROM sale_returns WHERE licenseId = ? AND COALESCE(deletedAt,'') = ''`,
+      )
+      .get(records[0]?.licenseId);
+
+    if (maxRow?.maxSlNo) {
+      db.prepare(
+        `
+        INSERT INTO sale_return_sequence (licenseId, lastSlNo)
+        VALUES (?, ?)
+        ON CONFLICT(licenseId) DO UPDATE SET
+          lastSlNo = MAX(excluded.lastSlNo, sale_return_sequence.lastSlNo)
+      `,
+      ).run(records[0].licenseId, maxRow.maxSlNo);
+    }
+
+    return { success: true, upserted: records.length };
+  });
+
+  ipcMain.handle("sale-return:bulk-upsert-items", (evt, records) => {
+    if (!Array.isArray(records) || records.length === 0)
+      return { success: true, upserted: 0 };
+
+    const now = nowISO();
+    const upsert = db.prepare(`
+      INSERT INTO sale_return_items (
+        id, returnId, productId, barcode,
+        quantity, unit, rate, mrp,
+        taxPercent, taxAmount, discount, discountType,
+        salePrice, profit, totalCost, billedValue,
+        effectiveUnitValue, batchNo, batchId,
+        mfgDate, expiryDate, lineNo,
+        appliedQuantity, overReturnQuantity, overReturnReason,
+        createdAt, updatedAt, deletedAt, isSynced, syncedAt
+      ) VALUES (
+        @id, @returnId, @productId, @barcode,
+        @quantity, @unit, @rate, @mrp,
+        @taxPercent, @taxAmount, @discount, @discountType,
+        @salePrice, @profit, @totalCost, @billedValue,
+        @effectiveUnitValue, @batchNo, @batchId,
+        @mfgDate, @expiryDate, @lineNo,
+        @appliedQuantity, @overReturnQuantity, @overReturnReason,
+        @createdAt, @updatedAt, @deletedAt, 1, @syncedAt
+      )
+      ON CONFLICT(id) DO UPDATE SET
+        quantity             = excluded.quantity,
+        unit                 = excluded.unit,
+        rate                 = excluded.rate,
+        mrp                  = excluded.mrp,
+        taxPercent           = excluded.taxPercent,
+        taxAmount            = excluded.taxAmount,
+        discount             = excluded.discount,
+        discountType         = excluded.discountType,
+        salePrice            = excluded.salePrice,
+        profit               = excluded.profit,
+        totalCost            = excluded.totalCost,
+        billedValue          = excluded.billedValue,
+        effectiveUnitValue   = excluded.effectiveUnitValue,
+        batchNo              = excluded.batchNo,
+        batchId              = excluded.batchId,
+        mfgDate              = excluded.mfgDate,
+        expiryDate           = excluded.expiryDate,
+        lineNo               = excluded.lineNo,
+        appliedQuantity      = excluded.appliedQuantity,
+        overReturnQuantity   = excluded.overReturnQuantity,
+        overReturnReason     = excluded.overReturnReason,
+        updatedAt            = excluded.updatedAt,
+        deletedAt            = excluded.deletedAt,
+        isSynced             = 1,
+        syncedAt             = excluded.syncedAt
+      WHERE excluded.updatedAt > sale_return_items.updatedAt
+         OR sale_return_items.updatedAt IS NULL
+    `);
+
+    db.transaction((records) => {
+      for (const r of records) {
+        upsert.run({
+          id: r.id,
+          returnId: r.returnId,
+          productId: r.productId,
+          barcode: r.barcode ?? null,
+          quantity: Number(r.quantity || 0),
+          unit: r.unit,
+          rate: Number(r.rate || 0),
+          mrp: r.mrp != null ? Number(r.mrp) : null,
+          taxPercent: r.taxPercent,
+          taxAmount: Number(r.taxAmount || 0),
+          discount: Number(r.discount || 0),
+          discountType: r.discountType ?? "ABS",
+          salePrice: r.salePrice != null ? Number(r.salePrice) : null,
+          profit: r.profit != null ? Number(r.profit) : null,
+          totalCost: Number(r.totalCost || 0),
+          billedValue: Number(r.billedValue || 0),
+          effectiveUnitValue:
+            r.effectiveUnitValue != null ? Number(r.effectiveUnitValue) : null,
+          batchNo: r.batchNo ?? null,
+          batchId: r.batchId ?? null,
+          mfgDate: r.mfgDate ?? null,
+          expiryDate: r.expiryDate ?? null,
+          lineNo: r.lineNo ?? null,
+          appliedQuantity: Number(r.appliedQuantity || 0),
+          overReturnQuantity: Number(r.overReturnQuantity || 0),
+          overReturnReason: r.overReturnReason ?? null,
+          createdAt:
+            r.createdAt instanceof Date
+              ? r.createdAt.toISOString()
+              : (r.createdAt ?? now),
+          updatedAt:
+            r.updatedAt instanceof Date
+              ? r.updatedAt.toISOString()
+              : (r.updatedAt ?? now),
+          deletedAt:
+            r.deletedAt instanceof Date
+              ? r.deletedAt.toISOString()
+              : (r.deletedAt ?? null),
+          syncedAt:
+            r.syncedAt instanceof Date
+              ? r.syncedAt.toISOString()
+              : (r.syncedAt ?? now),
+        });
+      }
+    })(records);
+
+    return { success: true, upserted: records.length };
   });
 
   ipcMain.handle("sale-return:peek-next-slno", (evt, licenseId) => {

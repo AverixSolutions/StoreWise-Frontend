@@ -15,6 +15,8 @@ import {
 } from "lucide-react";
 import Dropdown from "@/components/ui/Dropdown";
 import { platform } from "@/platform";
+import { isSyncEnabled } from "@/platform/mode";
+import { SyncManager } from "@/sync/SyncManager";
 
 const inputCls =
   "w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 outline-none shadow-[0_1px_4px_rgba(0,0,0,0.06)] transition focus:border-cyan-400 focus:ring-4 focus:ring-cyan-400/15";
@@ -331,6 +333,10 @@ export default function CustomerLedgerModal({
     try {
       const res = await platform.markCustomerChequeReceived?.(licenseId, txId);
       if (res?.success) {
+        if (isSyncEnabled()) {
+          SyncManager.pushEntity("customerTransaction").catch(() => {});
+          SyncManager.pushEntity("cashTransaction").catch(() => {});
+        }
         setRefetchKey((k) => k + 1);
         onSaved?.();
       } else alert("Failed: " + (res?.error || "Unknown error"));
@@ -379,6 +385,10 @@ export default function CustomerLedgerModal({
 
       const res = await platform.createCustomerReceipt?.(payload);
       if (res?.success) {
+        if (isSyncEnabled()) {
+          SyncManager.pushEntity("customerTransaction").catch(() => {});
+          SyncManager.pushEntity("cashTransaction").catch(() => {});
+        }
         setPayAmount(0);
         setPayNotes("");
         setPayDate(new Date().toISOString());

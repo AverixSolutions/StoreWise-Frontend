@@ -609,6 +609,9 @@ export default function SalesPage() {
           if (isSyncEnabled()) {
             SyncManager.pushEntity("sale").catch(() => {});
             SyncManager.pushEntity("saleItem").catch(() => {});
+            SyncManager.pushEntity("customerTransaction").catch(() => {});
+            SyncManager.pushEntity("cashTransaction").catch(() => {});
+            SyncManager.pushEntity("product").catch(() => {});
           }
           alert("✅ Updated!");
           setEditingSaleId(null);
@@ -648,6 +651,9 @@ export default function SalesPage() {
         if (isSyncEnabled()) {
           SyncManager.pushEntity("sale").catch(() => {});
           SyncManager.pushEntity("saleItem").catch(() => {});
+          SyncManager.pushEntity("customerTransaction").catch(() => {});
+          SyncManager.pushEntity("cashTransaction").catch(() => {});
+          SyncManager.pushEntity("product").catch(() => {});
         }
         const shouldPrint = confirm(
           `✅ Saved! SlNo: ${res.slNo}, Total: ${res.totalAmount}\n\nOpen print preview now?`,

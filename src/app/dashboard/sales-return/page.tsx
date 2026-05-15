@@ -467,8 +467,13 @@ function SalesReturnPageInner() {
         items,
       });
       if (res?.success) {
-        if (isSyncEnabled())
+        if (isSyncEnabled()) {
           SyncManager.pushEntity("saleReturn").catch(() => {});
+          SyncManager.pushEntity("saleReturnItem").catch(() => {});
+          SyncManager.pushEntity("customerTransaction").catch(() => {});
+          SyncManager.pushEntity("cashTransaction").catch(() => {});
+          SyncManager.pushEntity("product").catch(() => {});
+        }
         alert(
           `✅ Return updated! Total: ${(res.totalAmount ?? grandTotal).toFixed(2)}`,
         );
@@ -489,7 +494,13 @@ function SalesReturnPageInner() {
       items,
     });
     if (res?.success) {
-      if (isSyncEnabled()) SyncManager.pushEntity("saleReturn").catch(() => {});
+      if (isSyncEnabled()) {
+        SyncManager.pushEntity("saleReturn").catch(() => {});
+        SyncManager.pushEntity("saleReturnItem").catch(() => {});
+        SyncManager.pushEntity("customerTransaction").catch(() => {});
+        SyncManager.pushEntity("cashTransaction").catch(() => {});
+        SyncManager.pushEntity("product").catch(() => {});
+      }
       alert(
         `✅ Return saved! SlNo: ${res.slNo}, Total: ${(res.totalAmount ?? grandTotal).toFixed(2)}`,
       );

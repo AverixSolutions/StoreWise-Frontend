@@ -889,6 +889,7 @@ export type SaleReturnCreatePayload = {
   entryTime?: string;
   discount?: number;
   saleType: "CASH" | "CREDIT";
+  typeId?: string | null;
 };
 
 export type SaleReturnUpdatePayload = {
@@ -924,6 +925,7 @@ export type SaleReturnRow = {
   totalAmount: number;
   discount?: number;
   saleType?: "CASH" | "CREDIT";
+  typeId?: string | null;
   deletedAt?: string | null;
   // additional fields present in the getFull response
   department?: string | null;
@@ -1717,6 +1719,7 @@ export type QuotationCreatePayload = {
   userId?: string;
   customerId?: string | null;
   customerName?: string | null;
+  quotationNo?: string | null;
   department?: string | null;
   debitAccount?: string | null;
   natureOfEntry?: string | null;

@@ -47,7 +47,7 @@ function registerCustomerLedgerHandlers() {
         .prepare(
           `
         SELECT id, kind, refId, refNo, date, amount, sign, notes, createdAt,
-               paymentStatus, chequeNo, chequeIssueDate, chequeClearanceDate
+               paymentStatus, paymentMode, chequeNo, chequeIssueDate, chequeClearanceDate
         ${base}
         ORDER BY datetime(date) DESC, datetime(createdAt) DESC
         LIMIT @limit OFFSET @offset
@@ -186,7 +186,7 @@ function registerCustomerLedgerHandlers() {
       const txId = uuidv4();
       const payAmt = Number(amount);
       const isCheque = mode === "CHEQUE";
-      const paymentStatus = isCheque ? "PENDING_CHEQUE" : "CLEARED";
+      const paymentStatus = isCheque ? "PENDING_CHEQUE" : null;
 
       let allocSum = 0;
       for (const a of allocations || []) {
@@ -232,10 +232,10 @@ function registerCustomerLedgerHandlers() {
           `
           INSERT INTO customer_transactions
           (id, licenseId, customerId, kind, refId, refNo, date, amount, sign, notes,
-           paymentStatus, chequeNo, chequeIssueDate, chequeClearanceDate,
+           paymentStatus, paymentMode, chequeNo, chequeIssueDate, chequeClearanceDate,
            createdAt, updatedAt, isSynced)
           VALUES(?, ?, ?, 'RECEIPT', NULL, NULL, ?, ?, -1, ?,
-                 ?, ?, ?, ?, ?, ?, 0)
+                 ?, ?, ?, ?, ?, ?, ?, 0)
         `,
         ).run(
           txId,
@@ -245,6 +245,7 @@ function registerCustomerLedgerHandlers() {
           payAmt,
           notes || (isCheque ? "Cheque Receipt" : "Receipt"),
           paymentStatus,
+          mode,
           chequeNo || null,
           chequeIssueDate || null,
           chequeClearanceDate || null,
@@ -335,7 +336,11 @@ function registerCustomerLedgerHandlers() {
         db.prepare(
           `
           UPDATE customer_transactions
-          SET paymentStatus = 'CLEARED', updatedAt = ?, isSynced = 0
+          SET paymentStatus = 'CLEARED',
+              paymentMode = COALESCE(paymentMode, 'CHEQUE'),
+              updatedAt = ?,
+              isSynced = 0,
+              syncedAt = NULL
           WHERE id = ?
         `,
         ).run(now, txId);
@@ -434,9 +439,10 @@ function registerCustomerLedgerHandlers() {
           ct.id, ct.customerId,
           COALESCE(c.name,'') AS customerName,
           ct.date, ct.amount, ct.notes, ct.createdAt,
-          ct.paymentStatus, ct.chequeNo,
+          ct.paymentStatus, ct.paymentMode, ct.chequeNo,
           CASE
-            WHEN ct.chequeNo IS NOT NULL OR ct.paymentStatus IS NOT NULL THEN 'CHEQUE'
+            WHEN ct.paymentMode IN ('CASH', 'BANK', 'CHEQUE') THEN ct.paymentMode
+            WHEN ct.chequeNo IS NOT NULL OR ct.paymentStatus = 'PENDING_CHEQUE' THEN 'CHEQUE'
             WHEN LOWER(COALESCE(cash.notes,'')) LIKE '%bank%' THEN 'BANK'
             ELSE 'CASH'
           END AS mode,
@@ -487,7 +493,7 @@ function registerCustomerLedgerHandlers() {
       SELECT
         ct.id, ct.licenseId, ct.customerId, ct.kind,
         ct.refId, ct.refNo, ct.date, ct.amount, ct.sign, ct.notes,
-        ct.paymentStatus, ct.chequeNo, ct.chequeIssueDate, ct.chequeClearanceDate,
+        ct.paymentStatus, ct.paymentMode, ct.chequeNo, ct.chequeIssueDate, ct.chequeClearanceDate,
         ct.createdAt, ct.updatedAt, ct.deletedAt, ct.isSynced, ct.syncedAt,
         (
           SELECT json_group_array(json_object(
@@ -534,17 +540,18 @@ function registerCustomerLedgerHandlers() {
     const upsertTx = db.prepare(`
       INSERT INTO customer_transactions (
         id, licenseId, customerId, kind, refId, refNo, date, amount, sign, notes,
-        paymentStatus, chequeNo, chequeIssueDate, chequeClearanceDate,
+        paymentStatus, paymentMode, chequeNo, chequeIssueDate, chequeClearanceDate,
         createdAt, updatedAt, deletedAt, isSynced, syncedAt
       ) VALUES (
         @id, @licenseId, @customerId, @kind, @refId, @refNo, @date, @amount, @sign, @notes,
-        @paymentStatus, @chequeNo, @chequeIssueDate, @chequeClearanceDate,
+        @paymentStatus, @paymentMode, @chequeNo, @chequeIssueDate, @chequeClearanceDate,
         @createdAt, @updatedAt, @deletedAt, 1, @syncedAt
       )
       ON CONFLICT(id) DO UPDATE SET
         kind = excluded.kind, refId = excluded.refId, refNo = excluded.refNo,
         date = excluded.date, amount = excluded.amount, sign = excluded.sign,
         notes = excluded.notes, paymentStatus = excluded.paymentStatus,
+        paymentMode = excluded.paymentMode,
         chequeNo = excluded.chequeNo, chequeIssueDate = excluded.chequeIssueDate,
         chequeClearanceDate = excluded.chequeClearanceDate,
         updatedAt = excluded.updatedAt, deletedAt = excluded.deletedAt,
@@ -574,6 +581,7 @@ function registerCustomerLedgerHandlers() {
           sign: Number(r.sign || 0),
           notes: r.notes ?? null,
           paymentStatus: r.paymentStatus ?? null,
+          paymentMode: r.paymentMode ?? null,
           chequeNo: r.chequeNo ?? null,
           chequeIssueDate: r.chequeIssueDate
             ? r.chequeIssueDate instanceof Date
@@ -622,6 +630,105 @@ function registerCustomerLedgerHandlers() {
             );
           }
         }
+      }
+    })(records);
+
+    return { success: true, upserted: records.length };
+  });
+
+  ipcMain.handle(
+    "get-dirty-cash-transactions",
+    (event, licenseId, limit = 200) => {
+      const rows = db
+        .prepare(
+          `
+      SELECT id, licenseId, kind, refId, refNo, date, amount, sign, notes,
+             createdAt, updatedAt, deletedAt, isSynced, syncedAt
+      FROM cash_transactions
+      WHERE licenseId = ?
+        AND (isSynced = 0 OR isSynced IS NULL)
+      ORDER BY updatedAt ASC
+      LIMIT ?
+    `,
+        )
+        .all(licenseId, limit);
+      return { success: true, records: rows };
+    },
+  );
+
+  ipcMain.handle(
+    "mark-cash-transactions-synced",
+    (event, ids, serverSyncedAt) => {
+      if (!Array.isArray(ids) || ids.length === 0) return { success: true };
+      const ts = serverSyncedAt || new Date().toISOString();
+      db.transaction((ids) => {
+        const stmt = db.prepare(
+          `UPDATE cash_transactions SET isSynced = 1, syncedAt = ? WHERE id = ?`,
+        );
+        ids.forEach((id) => stmt.run(ts, id));
+      })(ids);
+      return { success: true, syncedAt: ts };
+    },
+  );
+
+  ipcMain.handle("bulk-upsert-cash-transactions", (event, records) => {
+    if (!Array.isArray(records) || records.length === 0)
+      return { success: true, upserted: 0 };
+
+    const now = new Date().toISOString();
+    const upsert = db.prepare(`
+      INSERT INTO cash_transactions (
+        id, licenseId, kind, refId, refNo, date, amount, sign, notes,
+        createdAt, updatedAt, deletedAt, isSynced, syncedAt
+      ) VALUES (
+        @id, @licenseId, @kind, @refId, @refNo, @date, @amount, @sign, @notes,
+        @createdAt, @updatedAt, @deletedAt, 1, @syncedAt
+      )
+      ON CONFLICT(id) DO UPDATE SET
+        kind = excluded.kind,
+        refId = excluded.refId,
+        refNo = excluded.refNo,
+        date = excluded.date,
+        amount = excluded.amount,
+        sign = excluded.sign,
+        notes = excluded.notes,
+        updatedAt = excluded.updatedAt,
+        deletedAt = excluded.deletedAt,
+        isSynced = 1,
+        syncedAt = excluded.syncedAt
+      WHERE excluded.updatedAt > cash_transactions.updatedAt
+         OR cash_transactions.updatedAt IS NULL
+    `);
+
+    db.transaction((records) => {
+      for (const r of records) {
+        upsert.run({
+          id: r.id,
+          licenseId: r.licenseId,
+          kind: r.kind,
+          refId: r.refId ?? null,
+          refNo: r.refNo ?? null,
+          date: r.date instanceof Date ? r.date.toISOString() : r.date,
+          amount: Number(r.amount || 0),
+          sign: Number(r.sign || 0),
+          notes: r.notes ?? null,
+          createdAt:
+            r.createdAt instanceof Date
+              ? r.createdAt.toISOString()
+              : (r.createdAt ?? now),
+          updatedAt:
+            r.updatedAt instanceof Date
+              ? r.updatedAt.toISOString()
+              : (r.updatedAt ?? now),
+          deletedAt:
+            r.deletedAt instanceof Date
+              ? r.deletedAt.toISOString()
+              : (r.deletedAt ?? null),
+          syncedAt:
+            r.syncedAt instanceof Date
+              ? r.syncedAt.toISOString()
+              : (r.syncedAt ?? now),
+        });
       }
     })(records);
 
