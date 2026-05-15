@@ -85,6 +85,16 @@ import {
   webSetDefaultTransactionType,
   webGetDefaultTransactionType,
 } from "./transactionTypes";
+import {
+  webDeleteOffer,
+  webGetOffer,
+  webListActiveOffers,
+  webListOffers,
+  webListOfferTargetProducts,
+  webSaveOffer,
+  webSaveOfferTargetProducts,
+  webToggleOffer,
+} from "./offers";
 // ── purchase imports ──────────────────────────────────────────────────────────
 import {
   webListPurchases,
@@ -315,6 +325,17 @@ export const webPlatform: PlatformAPI = {
     webSetDefaultTransactionType(id, licenseId, category),
   getDefaultTransactionType: (licenseId, category) =>
     webGetDefaultTransactionType(licenseId, category),
+
+  listOffers: (licenseId, filters) => webListOffers(licenseId, filters),
+  getOffer: (id, licenseId) => webGetOffer(id, licenseId),
+  saveOffer: (payload) => webSaveOffer(payload),
+  deleteOffer: (id, licenseId) => webDeleteOffer(id, licenseId),
+  toggleOffer: (id, licenseId, isActive) =>
+    webToggleOffer(id, licenseId, isActive),
+  listActiveOffers: (licenseId, saleDateTime) =>
+    webListActiveOffers(licenseId, saleDateTime),
+  listOfferTargetProducts: (offerId) => webListOfferTargetProducts(offerId),
+  saveOfferTargetProducts: (payload) => webSaveOfferTargetProducts(payload),
 
   // ── Purchases ─────────────────────────────────────────────────────────────
   createPurchase: (

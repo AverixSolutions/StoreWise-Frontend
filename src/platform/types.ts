@@ -482,6 +482,113 @@ export type TransactionTypeSavePayload = {
 
 export type TransactionTypeMutationResult = MutationResult & { id?: string };
 
+// Offer Master types
+export type OfferType = "SPECIAL_PRICE" | "RATION" | "HOURLY_DISCOUNT";
+export type OfferApplyScope = "ALL_PRODUCTS" | "SELECTED_PRODUCTS";
+export type OfferTriggerKind = "BILL_AMOUNT" | "PRODUCT_QTY" | "UNIT_QTY";
+export type OfferTriggerScope = "ALL_PRODUCTS" | "SELECTED_PRODUCTS";
+export type OfferBenefitTarget =
+  | "SAME_ELIGIBLE_ITEMS"
+  | "SELECTED_RATION_PRODUCTS";
+export type OfferBenefitKind =
+  | "FIXED_UNIT_PRICE"
+  | "PERCENT_DISCOUNT"
+  | "AMOUNT_DISCOUNT"
+  | "FREE";
+export type OfferBenefitQtyMode =
+  | "ALL_ELIGIBLE_QTY"
+  | "QTY_ABOVE_THRESHOLD"
+  | "FIXED_QTY"
+  | "LIMITED_QTY";
+export type OfferTargetRole = "QUALIFIER" | "BENEFIT" | "BOTH";
+
+export type OfferRecord = {
+  id: string;
+  licenseId: string;
+  name: string;
+  type: OfferType;
+  isActive: number;
+  applyScope: OfferApplyScope;
+  priority: number;
+  startsAt?: string | null;
+  endsAt?: string | null;
+  timeStart?: string | null;
+  timeEnd?: string | null;
+  minQty?: number | null;
+  maxQty?: number | null;
+  fixedUnitPrice?: number | null;
+  discountPercent?: number | null;
+  discountAmount?: number | null;
+  triggerKind?: OfferTriggerKind | null;
+  triggerScope?: OfferTriggerScope | null;
+  minAmount?: number | null;
+  maxAmount?: number | null;
+  unit?: string | null;
+  benefitTarget?: OfferBenefitTarget | null;
+  benefitKind?: OfferBenefitKind | null;
+  benefitQtyMode?: OfferBenefitQtyMode | null;
+  fixedBenefitQty?: number | null;
+  maxBenefitQty?: number | null;
+  maxBenefitAmount?: number | null;
+  customerRequired?: number;
+  oncePerBill?: number;
+  notes?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
+  isSynced?: number;
+  syncedAt?: string | null;
+};
+
+export type OfferTargetProductRecord = {
+  id: string;
+  licenseId: string;
+  offerId: string;
+  productId: string;
+  targetRole: OfferTargetRole;
+  createdAt?: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
+  isSynced?: number;
+  syncedAt?: string | null;
+  productName?: string | null;
+  productCode?: string | null;
+};
+
+export type OfferSavePayload = Omit<
+  OfferRecord,
+  "id" | "createdAt" | "updatedAt" | "deletedAt" | "isSynced" | "syncedAt"
+> & {
+  id?: string;
+};
+
+export type OfferListFilters = {
+  type?: OfferType | null;
+  includeInactive?: boolean;
+  includeDeleted?: boolean;
+  q?: string;
+};
+
+export type OfferListResult = {
+  success: boolean;
+  rows: OfferRecord[];
+  error?: string;
+};
+
+export type OfferTargetListResult = {
+  success: boolean;
+  rows: OfferTargetProductRecord[];
+  error?: string;
+};
+
+export type OfferTargetSavePayload = {
+  offerId: string;
+  licenseId: string;
+  rows: Array<{ productId: string; targetRole: OfferTargetRole }>;
+};
+
+export type OfferMutationResult = MutationResult & { id?: string };
+
 // ── Purchase types ────────────────────────────────────────────────────────────
 
 export type PurchaseItemInput = {
@@ -508,6 +615,14 @@ export type PurchaseItemInput = {
   isFree?: boolean;
   batchId?: string | null;
   profitPercent?: number;
+  originalRate?: number | null;
+  originalSalePrice?: number | null;
+  appliedRate?: number | null;
+  offerId?: string | null;
+  offerName?: string | null;
+  offerType?: OfferType | string | null;
+  offerDiscountAmount?: number;
+  offerMeta?: string | null;
 };
 
 export type PurchaseCreatePayload = {
@@ -726,6 +841,7 @@ export type BulkPriceUpdate = {
 
 export type SlNoResult = {
   nextSlNo: number;
+  suggestedBillNo?: string;
 };
 
 export type HoldNoResult = {
@@ -1026,6 +1142,9 @@ export type SaleCreatePayload = {
   userId?: string;
   saleType: "CASH" | "CREDIT";
   typeId?: string | null;
+  offerSummaryJson?: string | null;
+  offerSavings?: number;
+  offerOverridesJson?: string | null;
 };
 
 export type SaleUpdatePayload = {
@@ -1043,6 +1162,9 @@ export type SaleUpdatePayload = {
     licenseId: string;
     saleType: "CASH" | "CREDIT";
     typeId?: string | null;
+    offerSummaryJson?: string | null;
+    offerSavings?: number;
+    offerOverridesJson?: string | null;
   };
   items: SaleItemInput[];
 };
@@ -1051,7 +1173,9 @@ export type CreateSaleResult = {
   success: boolean;
   saleId?: string;
   slNo?: number;
+  billNo?: string | null;
   totalAmount?: number;
+  grandAmount?: number;
   error?: string;
 };
 
@@ -1076,6 +1200,9 @@ export type SaleRow = {
   totalAmount: number;
   discount?: number;
   saleType?: string;
+  offerSummaryJson?: string | null;
+  offerSavings?: number;
+  offerOverridesJson?: string | null;
   isSynced?: number;
   deletedAt?: string | null;
   syncedAt?: string | null;
@@ -1117,6 +1244,14 @@ export type SaleItemRow = {
   lineNo?: number;
   isFree?: number;
   batchId?: string | null;
+  originalRate?: number | null;
+  originalSalePrice?: number | null;
+  appliedRate?: number | null;
+  offerId?: string | null;
+  offerName?: string | null;
+  offerType?: string | null;
+  offerDiscountAmount?: number;
+  offerMeta?: string | null;
 };
 
 export type SaleFullResult = {
@@ -1361,6 +1496,30 @@ export type PlatformAPI = {
     licenseId: string,
     category: string,
   ) => Promise<{ success: boolean; row: TransactionTypeRecord | null }>;
+
+  // Offer Master
+  listOffers?: (
+    licenseId: string,
+    filters?: OfferListFilters,
+  ) => Promise<OfferListResult>;
+  getOffer?: (id: string, licenseId?: string) => Promise<OfferRecord | null>;
+  saveOffer?: (payload: OfferSavePayload) => Promise<OfferMutationResult>;
+  deleteOffer?: (id: string, licenseId: string) => Promise<MutationResult>;
+  toggleOffer?: (
+    id: string,
+    licenseId: string,
+    isActive: boolean,
+  ) => Promise<MutationResult>;
+  listActiveOffers?: (
+    licenseId: string,
+    saleDateTime?: string,
+  ) => Promise<OfferListResult>;
+  listOfferTargetProducts?: (
+    offerId: string,
+  ) => Promise<OfferTargetListResult>;
+  saveOfferTargetProducts?: (
+    payload: OfferTargetSavePayload,
+  ) => Promise<OfferMutationResult>;
 
   // ── Purchases ───────────────────────────────────────────────────────────────
   createPurchase?: (

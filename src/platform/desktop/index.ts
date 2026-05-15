@@ -65,6 +65,16 @@ import {
   desktopGetCustomerCount,
   desktopGetCustomerDistincts,
 } from "./customers";
+import {
+  desktopDeleteOffer,
+  desktopGetOffer,
+  desktopListActiveOffers,
+  desktopListOffers,
+  desktopListOfferTargetProducts,
+  desktopSaveOffer,
+  desktopSaveOfferTargetProducts,
+  desktopToggleOffer,
+} from "./offers";
 
 import {
   desktopCreatePurchaseReturn,
@@ -576,6 +586,33 @@ export const desktopPlatform: PlatformAPI = {
       category,
     );
     return res ?? { success: false, row: null };
+  },
+
+  listOffers: (licenseId, filters) => desktopListOffers(licenseId, filters),
+  getOffer: (id, licenseId) => desktopGetOffer(id, licenseId),
+  saveOffer: async (payload) => {
+    const result = await desktopSaveOffer(payload);
+    if (result?.success) triggerDesktopSync("offer");
+    return result;
+  },
+  deleteOffer: async (id, licenseId) => {
+    const result = await desktopDeleteOffer(id, licenseId);
+    if (result?.success) triggerDesktopSync("offer");
+    return result;
+  },
+  toggleOffer: async (id, licenseId, isActive) => {
+    const result = await desktopToggleOffer(id, licenseId, isActive);
+    if (result?.success) triggerDesktopSync("offer");
+    return result;
+  },
+  listActiveOffers: (licenseId, saleDateTime) =>
+    desktopListActiveOffers(licenseId, saleDateTime),
+  listOfferTargetProducts: (offerId) =>
+    desktopListOfferTargetProducts(offerId),
+  saveOfferTargetProducts: async (payload) => {
+    const result = await desktopSaveOfferTargetProducts(payload);
+    if (result?.success) triggerDesktopSync("offerTargetProduct");
+    return result;
   },
 
   // ── Purchases ─────────────────────────────────────────────────────────────

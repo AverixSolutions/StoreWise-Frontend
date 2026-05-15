@@ -23,6 +23,8 @@ interface Props {
   onSave: () => void;
   onCancel: () => void;
   entryNo?: number;
+  billNoPreview?: string;
+  offerSavings?: number;
   requireCustomer?: boolean;
   isEditing?: boolean;
   isOpen: boolean;
@@ -47,12 +49,18 @@ export default function BillDetailsSection({
   onSave,
   onCancel,
   entryNo,
+  billNoPreview,
+  offerSavings = 0,
   requireCustomer,
   isEditing,
   isOpen,
   onToggle,
   transactionTypes,
 }: Props) {
+  const displayBillNo = isEditing
+    ? header.billNo || ""
+    : billNoPreview || header.billNo || "";
+
   // ── COLLAPSED STRIP ──────────────────────────────────────────
   if (!isOpen) {
     return (
@@ -70,7 +78,7 @@ export default function BillDetailsSection({
         >
           Bill Details
         </span>
-        {(!header.billNo || (requireCustomer && !header.customer)) && (
+        {requireCustomer && !header.customer && (
           <span
             className="w-2 h-2 rounded-full bg-rose-400 flex-shrink-0"
             title="Required fields incomplete"
@@ -197,12 +205,13 @@ export default function BillDetailsSection({
             Bill No
           </label>
           <input
-            className={inputBase}
-            value={header.billNo}
-            onChange={(e) =>
-              setHeader((s) => ({ ...s, billNo: e.target.value }))
+            className={
+              inputBase + " bg-slate-100 text-slate-500 cursor-not-allowed"
             }
-            placeholder="Enter bill number"
+            value={displayBillNo}
+            readOnly
+            disabled
+            placeholder="Auto generated"
             id="bill-details-billno"
           />
         </div>
@@ -293,6 +302,27 @@ export default function BillDetailsSection({
             </button>
           </div>
         </div>
+
+        <div>
+          <label className={labelCls}>
+            <Wallet className="w-3.5 h-3.5" />
+            Bill Discount
+          </label>
+          <input
+            className={inputBase}
+            type="number"
+            min={0}
+            step="0.01"
+            value={header.discount || 0}
+            onChange={(e) =>
+              setHeader((s) => ({
+                ...s,
+                discount: Math.max(0, Number(e.target.value || 0)),
+              }))
+            }
+            placeholder="0.00"
+          />
+        </div>
       </div>
 
       {/* Summary card */}
@@ -306,6 +336,20 @@ export default function BillDetailsSection({
             <span>Sub Total</span>
             <span className="font-medium text-slate-700">
               ₹ {Number(subTotal).toFixed(2)}
+            </span>
+          </div>
+          {offerSavings > 0 && (
+            <div className="flex justify-between text-xs text-slate-500">
+              <span>Offer savings</span>
+              <span className="font-medium text-emerald-600">
+                â‚¹ {Number(offerSavings).toFixed(2)}
+              </span>
+            </div>
+          )}
+          <div className="flex justify-between text-xs text-slate-500">
+            <span>Bill discount</span>
+            <span className="font-medium text-rose-600">
+              - â‚¹ {Number(header.discount || 0).toFixed(2)}
             </span>
           </div>
           <div className="border-t border-slate-100 pt-2 flex justify-between items-center">
@@ -324,11 +368,11 @@ export default function BillDetailsSection({
         <button
           type="button"
           onClick={onSave}
-          disabled={header.saleType === "CREDIT" && !header.customer}
+          disabled={Boolean(requireCustomer && !header.customer)}
           className={
             "flex-1 h-9 px-3 rounded-md transition-colors font-medium " +
             "inline-flex items-center justify-center gap-2 text-sm " +
-            (header.saleType === "CREDIT" && !header.customer
+            (requireCustomer && !header.customer
               ? "bg-slate-200 text-slate-400 cursor-not-allowed"
               : "bg-[#1e3a5f] text-white hover:bg-[#16304f] cursor-pointer")
           }

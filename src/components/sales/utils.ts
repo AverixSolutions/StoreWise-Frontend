@@ -98,18 +98,31 @@ export function mapItems(rows: ItemRow[]) {
       expiryDate: r.expiryDate || null,
       isFree: r.lineType === "FREE" || undefined,
       lineNo: r.lineNo ?? i + 1,
+      originalRate: r.originalRate ?? null,
+      originalSalePrice: r.originalSalePrice ?? null,
+      appliedRate: r.appliedRate ?? null,
+      offerId: r.offerId ?? null,
+      offerName: r.offerName ?? null,
+      offerType: r.offerType ?? null,
+      offerDiscountAmount: r.offerDiscountAmount ?? 0,
+      offerMeta: r.offerMeta ?? null,
     }));
 }
 
-export function validateSaleBill(header: HeaderForm, items: any[]) {
+export function validateSaleBill(
+  header: HeaderForm,
+  items: any[],
+  offerValidationWarnings: string[] = [],
+) {
   const errs: string[] = [];
   const hasLine = items.some(
     (r) => r.productId && (r.quantity ?? 0) > 0 && (r.rate ?? 0) >= 0,
   );
   if (!hasLine) errs.push("Add at least one item with quantity > 0.");
-  if (header.saleType === "CREDIT" && !header.customer) {
-    errs.push("Select a customer for CREDIT sales.");
+  if (!header.customer) {
+    errs.push("Select a customer for sales bills.");
   }
+  errs.push(...offerValidationWarnings);
   return errs;
 }
 

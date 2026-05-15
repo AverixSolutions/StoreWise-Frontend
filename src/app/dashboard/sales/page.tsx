@@ -8,10 +8,13 @@ import ItemsTableSection from "@/components/purchase/ItemsTableSection";
 import CustomerFormModal from "@/components/customers/CustomerFormModal";
 import HoldsModal from "@/components/sales/HoldsModal";
 import SalesReportsModal from "@/components/sales/SalesReportsModal";
+import SalesOffersPanel from "@/components/sales/SalesOffersPanel";
 import PromptModal from "@/components/ui/PromptModal";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import ValidationModal from "@/components/ui/ValidationModal";
 import BatchSelectModal from "@/components/purchase/BatchSelectModal";
+import { calculateOffers } from "@/components/sales/offerEngine";
+import type { OfferEngineResult } from "@/components/sales/offerEngine";
 import {
   HeaderForm,
   ItemRow,
@@ -27,10 +30,86 @@ import {
 } from "@/components/sales/utils";
 import { printSaleBill } from "@/lib/print/printSaleBill";
 import { platform } from "@/platform";
+import type { OfferRecord, OfferTargetProductRecord } from "@/platform/types";
 import { isSyncEnabled } from "@/platform/mode";
 import { canUseBarcode } from "@/lib/session/runtimeSession";
 import { SyncManager } from "@/sync/SyncManager";
 import { useSyncStatus } from "@/sync/SyncProvider";
+
+const offerClearPatch: Partial<ItemRow> = {
+  originalRate: null,
+  originalSalePrice: null,
+  appliedRate: null,
+  offerId: null,
+  offerName: null,
+  offerType: null,
+  offerDiscountAmount: 0,
+  offerMessage: null,
+  offerMeta: null,
+};
+
+function offerRowsSignature(rows: ItemRow[]) {
+  return JSON.stringify(
+    rows.map((r) => ({
+      id: r.productId,
+      q: r.quantity,
+      rate: r.rate,
+      originalRate: r.originalRate,
+      appliedRate: r.appliedRate,
+      offerId: r.offerId,
+      offerDiscountAmount: r.offerDiscountAmount,
+      billedValue: r.billedValue,
+    })),
+  );
+}
+
+function summarizeSavedOffers(rows: ItemRow[]): OfferEngineResult {
+  const map = new Map<string, any>();
+  for (const row of rows) {
+    if (!row.offerId) continue;
+    const current = map.get(row.offerId) || {
+      offerId: row.offerId,
+      offerName: row.offerName || "Saved offer",
+      offerType: row.offerType || "OFFER",
+      savings: 0,
+      rowIndexes: [],
+      message: row.offerMessage || "Saved offer snapshot",
+    };
+    current.savings = round2(
+      current.savings + Number(row.offerDiscountAmount || 0),
+    );
+    current.rowIndexes.push(Number(row.lineNo || 1) - 1);
+    map.set(row.offerId, current);
+  }
+  const appliedOffers = Array.from(map.values());
+  return {
+    rows,
+    appliedOffers,
+    eligibleOffers: [],
+    eligibleRationBenefits: [],
+    rationWarnings: [],
+    validationWarnings: [],
+    totalOfferSavings: round2(
+      appliedOffers.reduce((sum, offer) => sum + offer.savings, 0),
+    ),
+  };
+}
+
+function parseDisabledOfferIds(raw?: string | null) {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed.map(String);
+    if (Array.isArray(parsed?.disabledOfferIds)) {
+      return parsed.disabledOfferIds.map(String);
+    }
+  } catch {}
+  return [];
+}
+
+function offerOverridesJson(ids: string[]) {
+  return JSON.stringify({ disabledOfferIds: Array.from(new Set(ids)) });
+}
 
 function makeSnapshot(header: HeaderForm, rows: ItemRow[]) {
   return JSON.stringify({
@@ -50,6 +129,13 @@ function makeSnapshot(header: HeaderForm, rows: ItemRow[]) {
       mfgDate: r.mfgDate,
       expiryDate: r.expiryDate,
       lineType: r.lineType,
+      originalRate: r.originalRate,
+      appliedRate: r.appliedRate,
+      offerId: r.offerId,
+      offerName: r.offerName,
+      offerType: r.offerType,
+      offerDiscountAmount: r.offerDiscountAmount,
+      offerMeta: r.offerMeta,
     })),
   });
 }
@@ -111,9 +197,18 @@ export default function SalesPage() {
     discount: 0,
     saleType: "CASH",
     typeId: null,
+    offerSummaryJson: null,
+    offerSavings: 0,
+    offerOverridesJson: null,
   });
 
   const [rows, setRows] = useState<ItemRow[]>([createEmptyRow(1)]);
+  const [activeOffers, setActiveOffers] = useState<OfferRecord[]>([]);
+  const [offerTargets, setOfferTargets] = useState<OfferTargetProductRecord[]>(
+    [],
+  );
+  const [disabledOfferIds, setDisabledOfferIds] = useState<string[]>([]);
+  const [offersOpen, setOffersOpen] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const initialSnapshot = useRef<string | null>(null);
 
@@ -141,6 +236,8 @@ export default function SalesPage() {
     if (!isClient) return;
     pullNow("sale");
     pullNow("saleItem");
+    pullNow("offer");
+    pullNow("offerTargetProduct");
     (async () => {
       const res = await platform.getProducts(licenseId, {
         page: 1,
@@ -156,6 +253,40 @@ export default function SalesPage() {
 
   useEffect(() => {
     if (!isClient) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const res = await platform.listActiveOffers?.(licenseId, header.saleDate);
+        const offers = (((res as any)?.offers || res?.rows || []) ??
+          []) as OfferRecord[];
+        const targetGroups = await Promise.all(
+          offers.map(async (offer) => {
+            const targetRes = await platform.listOfferTargetProducts?.(offer.id);
+            return targetRes?.rows || [];
+          }),
+        );
+        const productNames = new Map(products.map((p) => [p.id, p.name]));
+        const targets = targetGroups.flat().map((target: any) => ({
+          ...target,
+          productName: target.productName || productNames.get(target.productId),
+        }));
+        if (!cancelled) {
+          setActiveOffers(offers.filter((offer) => !offer.deletedAt));
+          setOfferTargets(targets);
+        }
+      } catch (e) {
+        console.error("Failed to load active offers", e);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isClient, licenseId, header.saleDate, products]);
+
+  useEffect(() => {
+    if (!isClient) return;
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     const handler = (e: Event) => {
       const { entity } = (e as CustomEvent<{ entity: string; count: number }>)
@@ -168,13 +299,28 @@ export default function SalesPage() {
           });
         }, 150);
       }
+      if (entity === "offer" || entity === "offerTargetProduct") {
+        debounceTimer = setTimeout(async () => {
+          const res = await platform.listActiveOffers?.(licenseId, header.saleDate);
+          const offers = (((res as any)?.offers || res?.rows || []) ??
+            []) as OfferRecord[];
+          const targetGroups = await Promise.all(
+            offers.map(async (offer) => {
+              const targetRes = await platform.listOfferTargetProducts?.(offer.id);
+              return targetRes?.rows || [];
+            }),
+          );
+          setActiveOffers(offers.filter((offer) => !offer.deletedAt));
+          setOfferTargets(targetGroups.flat() as OfferTargetProductRecord[]);
+        }, 150);
+      }
     };
     window.addEventListener("kynflow:sync:updated", handler);
     return () => {
       window.removeEventListener("kynflow:sync:updated", handler);
       if (debounceTimer) clearTimeout(debounceTimer);
     };
-  }, [isClient, licenseId, editingSaleId]);
+  }, [isClient, licenseId, editingSaleId, header.saleDate]);
 
   useEffect(() => {
     loadCustomers();
@@ -261,6 +407,7 @@ export default function SalesPage() {
         product.salePrice != null && !Number.isNaN(Number(product.salePrice))
           ? Number(product.salePrice)
           : 0,
+      ...offerClearPatch,
     };
 
     // Case 1: exactly one live batch -> auto select it
@@ -413,12 +560,23 @@ export default function SalesPage() {
     );
 
   async function saveHold(title?: string) {
+    const holdHeader = {
+      ...header,
+      billNo: header.billNo || billNoPreview,
+      offerSummaryJson: JSON.stringify({
+        appliedOffers: offerResult.appliedOffers,
+        eligibleOffers: offerResult.eligibleOffers,
+        totalOfferSavings: offerResult.totalOfferSavings,
+      }),
+      offerSavings: offerResult.totalOfferSavings,
+      offerOverridesJson: offerOverridesJson(disabledOfferIds),
+    };
     const res = await platform.saveSaleHold?.({
       id: undefined,
       licenseId,
       userId,
       title: title || undefined,
-      header,
+      header: holdHeader,
       rows,
     });
     if (res?.success) {
@@ -435,7 +593,7 @@ export default function SalesPage() {
   }
 
   function handleHold() {
-    setDefaultHoldTitle(header.billNo || "");
+    setDefaultHoldTitle(header.billNo || billNoPreview || "");
     setShowTitlePrompt(true);
   }
 
@@ -468,12 +626,19 @@ export default function SalesPage() {
           (res.hold.header as any)?.entryTime ?? new Date().toISOString(),
         discount: (res.hold.header as any)?.discount ?? 0,
         saleType: (res.hold.header as any)?.saleType ?? "CASH",
+        typeId: (res.hold.header as any)?.typeId ?? null,
+        offerSummaryJson: (res.hold.header as any)?.offerSummaryJson ?? null,
+        offerSavings: Number((res.hold.header as any)?.offerSavings || 0),
+        offerOverridesJson: (res.hold.header as any)?.offerOverridesJson ?? null,
         customer,
       };
       const nextRows = res.hold.rows;
 
       setHeader(nextHeader);
       setRows(nextRows);
+      setDisabledOfferIds(
+        parseDisabledOfferIds(nextHeader.offerOverridesJson || null),
+      );
       setShowHolds(false);
 
       initialSnapshot.current = makeSnapshot(nextHeader, nextRows);
@@ -504,6 +669,10 @@ export default function SalesPage() {
       entryTime: sale.entryTime || sale.saleDate,
       discount: Number(sale.discount || 0),
       saleType: sale.saleType === "CREDIT" ? "CREDIT" : "CASH",
+      typeId: sale.typeId || null,
+      offerSummaryJson: sale.offerSummaryJson || null,
+      offerSavings: Number(sale.offerSavings || 0),
+      offerOverridesJson: sale.offerOverridesJson || null,
     } as HeaderForm;
 
     const nextRows = items.map((it: any, i: number) => ({
@@ -533,10 +702,20 @@ export default function SalesPage() {
       unitBilled: it.quantity
         ? Number(it.billedValue || 0) / Number(it.quantity || 1)
         : 0,
+      originalRate: it.originalRate ?? null,
+      originalSalePrice: it.originalSalePrice ?? null,
+      appliedRate: it.appliedRate ?? null,
+      offerId: it.offerId ?? null,
+      offerName: it.offerName ?? null,
+      offerType: it.offerType ?? null,
+      offerDiscountAmount: Number(it.offerDiscountAmount || 0),
+      offerMessage: it.offerName ? String(it.offerType || "Offer") : null,
+      offerMeta: it.offerMeta ?? null,
     }));
 
     setHeader(nextHeader);
     setRows(nextRows);
+    setDisabledOfferIds(parseDisabledOfferIds(nextHeader.offerOverridesJson));
     setEditingSaleId(id);
     setEditingSlNo(sale.slNo ?? null);
     setShowReports(false);
@@ -576,8 +755,37 @@ export default function SalesPage() {
   }
 
   const handleSave = async () => {
-    const items = mapItems(rows);
-    const errs = validateSaleBill(header, items);
+    const finalOfferResult = editingSaleId
+      ? summarizeSavedOffers(rows)
+      : calculateOffers({
+          header,
+          rows,
+          offers: activeOffers,
+          targets: offerTargets,
+          saleDateTime: header.saleDate || header.entryTime,
+          customer: header.customer,
+          disabledOfferIds,
+        });
+    const finalRows = editingSaleId ? rows : finalOfferResult.rows;
+    if (
+      !editingSaleId &&
+      offerRowsSignature(rows) !== offerRowsSignature(finalRows)
+    ) {
+      setRows(finalRows);
+    }
+    const items = mapItems(finalRows);
+    const offerSummaryJson = JSON.stringify({
+      appliedOffers: finalOfferResult.appliedOffers,
+      eligibleOffers: finalOfferResult.eligibleOffers,
+      totalOfferSavings: finalOfferResult.totalOfferSavings,
+      savedAt: new Date().toISOString(),
+    });
+    const currentOfferOverridesJson = offerOverridesJson(disabledOfferIds);
+    const errs = validateSaleBill(
+      header,
+      items,
+      finalOfferResult.validationWarnings,
+    );
     if (errs.length) {
       setValidationMsgs(errs);
       setValidationOpen(true);
@@ -597,6 +805,9 @@ export default function SalesPage() {
           saleDate: header.saleDate,
           entryTime: header.entryTime,
           discount: header.discount || 0,
+          offerSummaryJson,
+          offerSavings: finalOfferResult.totalOfferSavings,
+          offerOverridesJson: currentOfferOverridesJson,
           licenseId,
           saleType: header.saleType,
         },
@@ -640,6 +851,9 @@ export default function SalesPage() {
       saleDate: header.saleDate,
       entryTime: header.entryTime,
       discount: header.discount || 0,
+      offerSummaryJson,
+      offerSavings: finalOfferResult.totalOfferSavings,
+      offerOverridesJson: currentOfferOverridesJson,
       licenseId,
       userId,
       saleType: header.saleType,
@@ -659,10 +873,18 @@ export default function SalesPage() {
           `✅ Saved! SlNo: ${res.slNo}, Total: ${res.totalAmount}\n\nOpen print preview now?`,
         );
 
+        const savedHeader = {
+          ...header,
+          billNo: (res as any).billNo || billNoPreview,
+          offerSummaryJson,
+          offerSavings: finalOfferResult.totalOfferSavings,
+          offerOverridesJson: currentOfferOverridesJson,
+        };
+        setHeader(savedHeader);
         setEditingSaleId(res.saleId || null);
         setEditingSlNo(res.slNo ?? null);
 
-        initialSnapshot.current = makeSnapshot(header, rows);
+        initialSnapshot.current = makeSnapshot(savedHeader, finalRows);
         setIsDirty(false);
 
         await finalizeAfterSuccessfulSale({
@@ -722,6 +944,9 @@ export default function SalesPage() {
       discount: 0,
       saleType: "CASH",
       typeId: null,
+      offerSummaryJson: null,
+      offerSavings: 0,
+      offerOverridesJson: null,
     };
     const defType = transactionTypes.find(
       (t: { id: string; name: string; isDefault: number }) => t.isDefault === 1,
@@ -733,6 +958,8 @@ export default function SalesPage() {
     setRows(freshRows);
     setEditingSaleId(null);
     setEditingSlNo(null);
+    setDisabledOfferIds([]);
+    setOffersOpen(false);
 
     // Clear all modals and auxiliary state
     setShowHolds(false);
@@ -773,8 +1000,83 @@ export default function SalesPage() {
   }, [header, rows]);
 
   function updateRow(index: number, patch: Partial<ItemRow>) {
+    const shouldClearOffer =
+      "productId" in patch ||
+      "batchId" in patch ||
+      "rate" in patch ||
+      "salePrice" in patch ||
+      "lineType" in patch;
     setRows((prev) =>
-      prev.map((r, i) => (i === index ? { ...r, ...patch } : r)),
+      prev.map((r, i) =>
+        i === index
+          ? { ...r, ...(shouldClearOffer ? offerClearPatch : {}), ...patch }
+          : r,
+      ),
+    );
+  }
+
+  const billNoPreview = useMemo(() => {
+    if (editingSaleId) return header.billNo || "";
+    return String(nextEntryNo ?? 1).padStart(5, "0");
+  }, [editingSaleId, header.billNo, nextEntryNo]);
+
+  const offerResult = useMemo(() => {
+    if (editingSaleId) return summarizeSavedOffers(rows);
+    return calculateOffers({
+      header,
+      rows,
+      offers: activeOffers,
+      targets: offerTargets,
+      saleDateTime: header.saleDate || header.entryTime,
+      customer: header.customer,
+      disabledOfferIds,
+    });
+  }, [
+    editingSaleId,
+    rows,
+    header,
+    activeOffers,
+    offerTargets,
+    disabledOfferIds,
+  ]);
+
+  useEffect(() => {
+    if (editingSaleId) return;
+    if (offerRowsSignature(rows) === offerRowsSignature(offerResult.rows)) {
+      return;
+    }
+    setRows(offerResult.rows);
+  }, [editingSaleId, rows, offerResult.rows]);
+
+  function setOfferEnabledForBill(offerId: string, enabled: boolean) {
+    setDisabledOfferIds((prev) => {
+      const next = enabled
+        ? prev.filter((id) => id !== offerId)
+        : Array.from(new Set([...prev, offerId]));
+      setHeader((current) => ({
+        ...current,
+        offerOverridesJson: offerOverridesJson(next),
+      }));
+      return next;
+    });
+  }
+
+  async function addRationProductToBill(
+    productId: string,
+    suggestedQty?: number | null,
+  ) {
+    let targetIndex = rows.findIndex((row) => !row.productId);
+    if (targetIndex < 0) {
+      targetIndex = rows.length;
+      setRows((prev) => [...prev, createEmptyRow(prev.length + 1)]);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    }
+    await handleSelectProduct(targetIndex, productId);
+    const qty = Math.max(1, Number(suggestedQty || 1));
+    setRows((prev) =>
+      prev.map((row, index) =>
+        index === targetIndex ? { ...row, quantity: qty } : row,
+      ),
     );
   }
 
@@ -844,12 +1146,14 @@ export default function SalesPage() {
             grandTotal={grandTotal}
             onSave={handleSave}
             onCancel={handleCancel}
+            billNoPreview={billNoPreview}
+            offerSavings={offerResult.totalOfferSavings}
             entryNo={
               editingSaleId
                 ? (editingSlNo ?? undefined)
                 : (nextEntryNo ?? undefined)
             }
-            requireCustomer={header.saleType === "CREDIT"}
+            requireCustomer
             isEditing={Boolean(editingSaleId)}
             isOpen={billDetailsOpen}
             onToggle={() => setBillDetailsOpen((v) => !v)}
@@ -866,8 +1170,19 @@ export default function SalesPage() {
             subTotal={subTotal}
             grandTotal={grandTotal}
             headerDiscount={header.discount}
+            totalOfferSavings={offerResult.totalOfferSavings}
+            offersSlot={
+              <SalesOffersPanel
+                isOpen={offersOpen}
+                onOpenChange={setOffersOpen}
+                result={offerResult}
+                disabledOfferIds={disabledOfferIds}
+                onToggleOffer={setOfferEnabledForBill}
+                onAddRationProduct={addRationProductToBill}
+              />
+            }
             onHold={() => {
-              setDefaultHoldTitle(header.billNo || "");
+              setDefaultHoldTitle(header.billNo || billNoPreview || "");
               setShowTitlePrompt(true);
             }}
             onShowHolds={() => setShowHolds(true)}
@@ -946,6 +1261,7 @@ export default function SalesPage() {
                       !Number.isNaN(Number(batch.salePrice))
                         ? Number(batch.salePrice)
                         : r.salePrice,
+                    ...offerClearPatch,
                   },
             ),
           );

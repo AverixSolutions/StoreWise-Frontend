@@ -1,6 +1,6 @@
 // src/platform/web/idb.ts
 const DB_NAME = "kynflow-web";
-const DB_VERSION = 13; // bumped from 12
+const DB_VERSION = 14; // bumped from 13
 
 export const STORES = {
   SHOP_SETTINGS: "shop_settings",
@@ -28,6 +28,8 @@ export const STORES = {
   // ── v13: quotations ──────────────────────────────────────────────────────
   QUOTATIONS: "quotations",
   QUOTATION_ITEMS: "quotation_items",
+  OFFERS: "offers",
+  OFFER_TARGET_PRODUCTS: "offer_target_products",
 } as const;
 
 export type SyncJob = {
@@ -295,6 +297,35 @@ function openDb(): Promise<IDBDatabase> {
           itemStore.createIndex("quotationId", "quotationId", {
             unique: false,
           });
+        }
+      }
+
+      // v14 stores - offer master
+      if (oldVersion < 14) {
+        if (!db.objectStoreNames.contains(STORES.OFFERS)) {
+          const offerStore = db.createObjectStore(STORES.OFFERS, {
+            keyPath: "id",
+          });
+          offerStore.createIndex("licenseId", "licenseId", { unique: false });
+          offerStore.createIndex("licenseId_type", ["licenseId", "type"], {
+            unique: false,
+          });
+          offerStore.createIndex("licenseId_active", ["licenseId", "isActive"], {
+            unique: false,
+          });
+        }
+        if (!db.objectStoreNames.contains(STORES.OFFER_TARGET_PRODUCTS)) {
+          const targetStore = db.createObjectStore(
+            STORES.OFFER_TARGET_PRODUCTS,
+            { keyPath: "id" },
+          );
+          targetStore.createIndex("licenseId", "licenseId", { unique: false });
+          targetStore.createIndex("offerId", "offerId", { unique: false });
+          targetStore.createIndex(
+            "offerId_productId_role",
+            ["offerId", "productId", "targetRole"],
+            { unique: false },
+          );
         }
       }
     };

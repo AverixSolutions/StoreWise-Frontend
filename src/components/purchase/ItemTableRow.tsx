@@ -95,6 +95,12 @@ export default function ItemTableRow({
     { value: "VALUED", label: "Valued" },
     { value: "FREE", label: "Free" },
   ];
+  const hasOffer = Boolean(r.offerId);
+  const rowBg = hasOffer
+    ? "bg-cyan-50/70"
+    : idx % 2 === 0
+      ? "bg-white"
+      : "bg-slate-50";
 
   const goFrom = (col: import("./keyboardGrid").ColKey, dir: 1 | -1 = 1) => {
     const { rowIndex: nr, col: nc } = nextCell(
@@ -114,12 +120,10 @@ export default function ItemTableRow({
 
   return (
     <tr
-      className={`transition-all duration-200 hover:bg-blue-50/30 border-b border-gray-100 divide-x divide-gray-100 ${
-        idx % 2 === 0 ? "bg-white" : "bg-slate-50"
-      }`}
+      className={`transition-all duration-200 hover:bg-blue-50/30 border-b border-gray-100 divide-x divide-gray-100 ${rowBg}`}
     >
       {/* Sl.NO */}
-      <td className="px-2.5 py-2 sticky left-0 bg-white z-40 w-[52px] min-w-[52px] border-r border-gray-200">
+      <td className={`px-2.5 py-2 sticky left-0 ${rowBg} z-40 w-[52px] min-w-[52px] border-r border-gray-200`}>
         <div className="flex items-center justify-center">
           <span className="inline-flex items-center justify-center w-7 h-5 rounded bg-gray-100 text-gray-800 text-xs font-mono font-medium">
             {r.lineNo}
@@ -128,7 +132,7 @@ export default function ItemTableRow({
       </td>
 
       {/* Product */}
-      <td className="px-2.5 py-2 min-w-[300px] sticky [left:var(--slw)] bg-white z-40 border-r border-gray-200">
+      <td className={`px-2.5 py-2 min-w-[300px] sticky [left:var(--slw)] ${rowBg} z-40 border-r border-gray-200`}>
         <div className="w-full">
           <SearchableDropdown
             value={r.productId}
@@ -145,6 +149,18 @@ export default function ItemTableRow({
               onKeyDown: (e) => onGridKey(e as any, idx, "product"),
             }}
           />
+          {hasOffer && (
+            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+              <span className="rounded-full border border-cyan-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-cyan-700">
+                {r.offerMessage || r.offerName || "Offer Applied"}
+              </span>
+              {Number(r.offerDiscountAmount || 0) > 0 && (
+                <span className="text-[10px] font-semibold text-emerald-600">
+                  Saved ₹{round2(r.offerDiscountAmount || 0).toFixed(2)}
+                </span>
+              )}
+            </div>
+          )}
         </div>
       </td>
 
@@ -563,14 +579,14 @@ export default function ItemTableRow({
       </td>
 
       {/* Total */}
-      <td className="px-2.5 py-2 min-w-[90px] sticky [right:var(--actw)] bg-white z-40 border-l border-gray-200 text-center">
+      <td className={`px-2.5 py-2 min-w-[90px] sticky [right:var(--actw)] ${rowBg} z-40 border-l border-gray-200 text-center`}>
         <span className="inline-flex items-center px-2 py-1 rounded-md bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200/60 text-xs font-semibold">
           ₹{round2(r.billedValue || 0).toFixed(2)}
         </span>
       </td>
 
       {/* Action */}
-      <td className="px-2.5 py-2 sticky right-0 bg-white z-40 w-[56px] min-w-[56px] border-l border-gray-200">
+      <td className={`px-2.5 py-2 sticky right-0 ${rowBg} z-40 w-[56px] min-w-[56px] border-l border-gray-200`}>
         <div className="flex justify-center">
           <button
             onClick={() => onRemoveRow(idx)}

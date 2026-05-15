@@ -28,6 +28,8 @@ interface ItemsTableSectionProps {
   onRequestBatchSelect?: (rowIndex: number) => void;
   onBarcodeCommit?: (rowIndex: number) => void;
   printBarcodesSlot?: React.ReactNode;
+  offersSlot?: React.ReactNode;
+  totalOfferSavings?: number;
   onOpenMobileSheet?: () => void;
   hasMissingFields?: boolean;
   barcodeEnabled?: boolean;
@@ -51,6 +53,8 @@ export default function ItemsTableSection({
   onRequestBatchSelect,
   onBarcodeCommit,
   printBarcodesSlot,
+  offersSlot,
+  totalOfferSavings = 0,
   onOpenMobileSheet,
   hasMissingFields = false,
   barcodeEnabled = true,
@@ -88,6 +92,7 @@ export default function ItemsTableSection({
         {/* Change 1 — Responsive toolbar with wrapped buttons and hidden labels */}
         <div className="flex items-center gap-1.5 flex-wrap justify-end">
           {barcodeEnabled && printBarcodesSlot}
+          {offersSlot}
 
           <button
             onClick={onShowReports}
@@ -182,9 +187,20 @@ export default function ItemsTableSection({
               </div>
             </div>
 
+            {totalOfferSavings > 0 && (
+              <div className="hidden sm:block text-right">
+                <div className="text-[11px] text-slate-400 uppercase tracking-wide font-medium">
+                  Offer Savings
+                </div>
+                <div className="font-semibold text-emerald-600">
+                  â‚¹ {Number(totalOfferSavings ?? 0).toFixed(2)}
+                </div>
+              </div>
+            )}
+
             <div className="hidden sm:block text-right">
               <div className="text-[11px] text-slate-400 uppercase tracking-wide font-medium">
-                Discount
+                Bill Discount
               </div>
               <div className="font-semibold text-rose-500">
                 - ₹ {Number(headerDiscount ?? 0).toFixed(2)}

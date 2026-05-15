@@ -27,6 +27,10 @@ import {
   createSaleReturnItemsAdapter,
 } from "./adapters/saleReturns";
 import { createTransactionTypesAdapter } from "./adapters/transactionTypes";
+import {
+  createOfferTargetProductsAdapter,
+  createOffersAdapter,
+} from "./adapters/offers";
 
 import { createSupplierTransactionsAdapter } from "./adapters/supplierTransactions";
 import { createCustomerTransactionsAdapter } from "./adapters/customerTransactions";
@@ -47,6 +51,8 @@ export function buildAdapters(isDesktop: boolean): SyncAdapter[] {
     createUnitsAdapter(isDesktop),
     createTransactionTypesAdapter(isDesktop),
     createProductsAdapter(isDesktop),
+    createOffersAdapter(isDesktop),
+    createOfferTargetProductsAdapter(isDesktop),
     createSuppliersAdapter(isDesktop),
     createCustomersAdapter(isDesktop),
     createPurchasesAdapter(isDesktop),

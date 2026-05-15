@@ -15,6 +15,7 @@ import {
   ChevronLeft,
   Ruler,
   FileText,
+  Gift,
 } from "lucide-react";
 import { platform } from "@/platform";
 import {
@@ -30,6 +31,7 @@ import LabelPrintSettings from "@/components/master/LabelPrintSettings";
 import BrandsCategoriesManager from "@/components/master/BrandsCategoriesManager";
 import UnitsManager from "@/components/master/UnitsManager";
 import TransactionTypesManager from "@/components/master/TransactionTypesManager";
+import OfferMaster from "@/components/master/OfferMaster";
 
 type MasterSection =
   | "dashboard"
@@ -41,7 +43,8 @@ type MasterSection =
   | "tax"
   | "labelPrint"
   | "units"
-  | "transactionTypes";
+  | "transactionTypes"
+  | "offers";
 
 type SectionDef = {
   id: MasterSection;
@@ -137,6 +140,19 @@ const masterSections: SectionDef[] = [
     countText: "text-violet-700",
   },
   {
+    id: "offers",
+    title: "Offer Master",
+    shortName: "Offers",
+    description: "Special prices, ration rules and hourly discounts",
+    icon: Gift,
+    iconBg: "bg-cyan-100",
+    iconText: "text-cyan-600",
+    border: "border-cyan-200",
+    hoverBg: "hover:bg-cyan-50/60",
+    countBg: "bg-cyan-100",
+    countText: "text-cyan-700",
+  },
+  {
     id: "accounts",
     title: "Account Master",
     shortName: "Accounts",
@@ -185,6 +201,7 @@ const webSafeSections: MasterSection[] = [
   "suppliers",
   "customers",
   "transactionTypes",
+  "offers",
 ];
 
 const sectionTitles: Record<MasterSection, string> = {
@@ -198,6 +215,7 @@ const sectionTitles: Record<MasterSection, string> = {
   labelPrint: "Label Print Settings",
   units: "Units of Measure",
   transactionTypes: "Transaction Types",
+  offers: "Offer Master",
 };
 
 function MasterTile({
@@ -305,13 +323,15 @@ export default function MasterPage() {
 
         // Brands + Categories + Units + Tax + Transaction Types
         try {
-          const [brands, cats, units, taxCats, txTypes] = await Promise.all([
-            platform.listBrands(licenseId),
-            platform.listCategories(licenseId),
-            platform.listUnits(licenseId),
-            platform.listTaxCategories(licenseId),
-            platform.listAllTransactionTypes?.(licenseId),
-          ]);
+          const [brands, cats, units, taxCats, txTypes, offers] =
+            await Promise.all([
+              platform.listBrands(licenseId),
+              platform.listCategories(licenseId),
+              platform.listUnits(licenseId),
+              platform.listTaxCategories(licenseId),
+              platform.listAllTransactionTypes?.(licenseId),
+              platform.listOffers?.(licenseId, { includeInactive: true }),
+            ]);
 
           next.brandCategory =
             (brands.rows?.filter((r) => !r.deletedAt).length ?? 0) +
@@ -323,6 +343,8 @@ export default function MasterPage() {
 
           next.transactionTypes =
             txTypes?.rows?.filter((r) => !r.deletedAt).length ?? 0;
+
+          next.offers = offers?.rows?.filter((r) => !r.deletedAt).length ?? 0;
         } catch {
           // not fatal
         }
@@ -436,6 +458,8 @@ export default function MasterPage() {
             onBack={() => setCurrentSection("dashboard")}
           />
         );
+      case "offers":
+        return <OfferMaster onBack={() => setCurrentSection("dashboard")} />;
       default:
         return renderDashboard();
     }
@@ -449,7 +473,8 @@ export default function MasterPage() {
         currentSection !== "tax" &&
         currentSection !== "transactionTypes" &&
         currentSection !== "customers" &&
-        currentSection !== "suppliers" && (
+        currentSection !== "suppliers" &&
+        currentSection !== "offers" && (
           <div className="mb-4">
             <button
               type="button"

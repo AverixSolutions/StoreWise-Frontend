@@ -22,6 +22,9 @@ export type InvoiceItem = {
   taxPercent?: string | number | null;
   mrp?: number | null;
   salePrice?: number | null;
+  offerName?: string | null;
+  offerType?: string | null;
+  offerDiscountAmount?: number | null;
   amount: number;
 };
 
@@ -59,6 +62,8 @@ export type InvoiceHtmlInput = {
   items: InvoiceItem[];
   subTotal: number;
   discount: number;
+  offerSavings?: number;
+  offerSummary?: string[];
   grandTotal: number;
   notes?: string | null;
 };
@@ -174,6 +179,8 @@ export function buildInvoiceHtml(input: InvoiceHtmlInput): string {
     items,
     subTotal,
     discount,
+    offerSavings = 0,
+    offerSummary = [],
     grandTotal,
     notes,
   } = input;
@@ -231,12 +238,21 @@ export function buildInvoiceHtml(input: InvoiceHtmlInput): string {
         .filter(Boolean)
         .join("  ·  ");
 
+      const offerLine = it.offerName
+        ? `${it.offerType ? `${it.offerType}: ` : "Offer: "}${it.offerName}${
+            it.offerDiscountAmount
+              ? ` (Saved â‚¹${money(it.offerDiscountAmount)})`
+              : ""
+          }`
+        : "";
+
       return `
     <tr class="${idx % 2 === 0 ? "row-even" : "row-odd"}">
       <td class="c-no">${esc(it.lineNo)}</td>
       <td class="c-name">
         <div class="iname">${esc(it.name || "")}</div>
         ${subLine ? `<div class="isub">${esc(subLine)}</div>` : ""}
+        ${offerLine ? `<div class="isub offer-line">${esc(offerLine)}</div>` : ""}
       </td>
       <td class="c-r">${esc(it.qty)}${it.unit ? `<span class="unit"> ${esc(it.unit)}</span>` : ""}</td>
       <td class="c-r">₹${money(it.rate)}</td>
@@ -251,6 +267,9 @@ export function buildInvoiceHtml(input: InvoiceHtmlInput): string {
     notes ||
     "Thank you for your business. This is a computer-generated document.";
   const signatory = esc(shop.authorizedSignatory || "Authorized Signatory");
+  const offerSummaryHtml = offerSummary.length
+    ? `<div class="offer-summary"><b>Offers:</b> ${esc(offerSummary.join(", "))}</div>`
+    : "";
 
   // ── HTML ──────────────────────────────────────────────────────────────────
   return `<!DOCTYPE html>
@@ -408,6 +427,7 @@ html,body{
 .unit  {font-size:7.5pt;color:var(--ink-lt);}
 .iname {font-size:9pt;font-weight:600;color:var(--ink);line-height:1.3;}
 .isub  {font-size:7pt;color:var(--ink-lt);margin-top:1px;}
+.offer-line{color:#047857;font-weight:700;}
 
 /* Column borders */
 .items-tbl td{border-right:1px solid var(--rule);}
@@ -455,6 +475,15 @@ html,body{
   font-size:6.5pt;font-style:normal;font-weight:700;
   text-transform:uppercase;letter-spacing:.07em;
   color:var(--ink-lt);display:block;margin-bottom:1px;
+}
+.offer-summary{
+  margin-top:8px;
+  border:1px solid var(--rule);
+  border-radius:3px;
+  padding:6px 10px;
+  font-size:7.5pt;
+  color:#047857;
+  background:#ecfdf5;
 }
 
 /* Totals right */
@@ -618,6 +647,7 @@ html,body{
         <span class="words-lbl">Amount in Words</span>
         ${amountToWords(grandTotal)}
       </div>
+      ${offerSummaryHtml}
     </div>
 
     <!-- Right: Totals -->
@@ -628,10 +658,19 @@ html,body{
           <td class="tv">₹&nbsp;${money(subTotal)}</td>
         </tr>
         ${
+          offerSavings > 0
+            ? `
+        <tr class="tr-disc">
+          <td class="tl">Offer savings</td>
+          <td class="tv">â‚¹&nbsp;${money(offerSavings)}</td>
+        </tr>`
+            : ""
+        }
+        ${
           discount > 0
             ? `
         <tr class="tr-disc">
-          <td class="tl">Discount</td>
+          <td class="tl">Bill discount</td>
           <td class="tv">−&nbsp;₹&nbsp;${money(discount)}</td>
         </tr>`
             : ""

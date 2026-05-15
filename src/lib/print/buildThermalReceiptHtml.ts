@@ -20,6 +20,8 @@ type ReceiptItem = {
   qty: number;
   rate: number;
   total: number;
+  offerLabel?: string | null;
+  offerSavings?: number | null;
 };
 
 type ReceiptInput = {
@@ -31,6 +33,8 @@ type ReceiptInput = {
   items: ReceiptItem[];
   totalQty: number;
   subTotal: number;
+  offerSavings?: number;
+  offerSummary?: string[];
   discount?: number;
   grandTotal: number;
   notes?: string[];
@@ -81,6 +85,8 @@ export function buildThermalReceiptHtml(input: ReceiptInput) {
     items,
     totalQty,
     subTotal,
+    offerSavings = 0,
+    offerSummary = [],
     discount = 0,
     grandTotal,
     notes = [],
@@ -99,7 +105,13 @@ export function buildThermalReceiptHtml(input: ReceiptInput) {
       (it) => `
         <tr>
           <td class="c">${esc(it.lineNo)}</td>
-          <td class="l name">${esc(it.name)}</td>
+          <td class="l name">${esc(it.name)}${
+            it.offerLabel
+              ? `<div class="offer-note">${esc(it.offerLabel)}${
+                  it.offerSavings ? ` Saved ${money(it.offerSavings)}` : ""
+                }</div>`
+              : ""
+          }</td>
           <td class="c">${esc(it.qty)}</td>
           <td class="r">${money(it.rate)}</td>
           <td class="r">${money(it.total)}</td>
@@ -111,6 +123,9 @@ export function buildThermalReceiptHtml(input: ReceiptInput) {
   const notesHtml = notes
     .map((note) => `<div class="note">* ${esc(note)}</div>`)
     .join("");
+  const offerSummaryHtml = offerSummary.length
+    ? `<div class="note">* Offers: ${esc(offerSummary.join(", "))}</div>`
+    : "";
 
   return `
 <!DOCTYPE html>
@@ -218,6 +233,11 @@ export function buildThermalReceiptHtml(input: ReceiptInput) {
       font-weight: 700;
       letter-spacing: 0.2px;
     }
+    .offer-note {
+      margin-top: 2px;
+      font-size: 10px;
+      font-weight: 700;
+    }
   </style>
 </head>
 <body>
@@ -259,10 +279,20 @@ export function buildThermalReceiptHtml(input: ReceiptInput) {
           <td class="r bold">${money(subTotal)}</td>
         </tr>
         ${
+          offerSavings > 0
+            ? `
+            <tr>
+              <td colspan="4" class="right bold">Offer savings</td>
+              <td class="r bold">${money(offerSavings)}</td>
+            </tr>
+          `
+            : ""
+        }
+        ${
           discount > 0
             ? `
             <tr>
-              <td colspan="4" class="right bold">Discount</td>
+              <td colspan="4" class="right bold">Bill discount</td>
               <td class="r bold">-${money(discount)}</td>
             </tr>
           `
@@ -292,7 +322,11 @@ export function buildThermalReceiptHtml(input: ReceiptInput) {
       <div>0.00</div>
     </div>
 
-    ${notesHtml ? `<div style="margin-top:8px;">${notesHtml}</div>` : ""}
+    ${
+      notesHtml || offerSummaryHtml
+        ? `<div style="margin-top:8px;">${offerSummaryHtml}${notesHtml}</div>`
+        : ""
+    }
   </div>
 </body>
 </html>

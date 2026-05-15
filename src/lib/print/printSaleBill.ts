@@ -32,10 +32,33 @@ export async function printSaleBill(
     0,
   );
   const discount = Number(sale.discount || 0);
+  const offerSavings =
+    Number(sale.offerSavings || 0) ||
+    items.reduce(
+      (s: number, it: any) => s + Number(it.offerDiscountAmount || 0),
+      0,
+    );
   const grandTotal = Math.max(0, subTotal - discount);
   const totalQty = items.reduce(
     (s: number, it: any) => s + Number(it.quantity || 0),
     0,
+  );
+  const offerSummary: string[] = Array.from(
+    new Set<string>(
+      items
+        .filter((it: any) => it.offerId || it.offerName)
+        .map((it: any) => {
+          const label =
+            it.offerType === "SPECIAL_PRICE"
+              ? "Special Offer"
+              : it.offerType === "RATION"
+                ? "Ration Offer"
+                : it.offerType === "HOURLY_DISCOUNT"
+                  ? "Hourly Discount"
+                  : "Offer";
+          return `${label}: ${it.offerName || it.offerId}`;
+        }),
+    ),
   );
 
   // ── 3. Build HTML — thermal receipt OR full A4 invoice ────────────────────
@@ -50,11 +73,15 @@ export async function printSaleBill(
           lineNo: it.lineNo ?? i + 1,
           name: it.productName || it.name || "",
           qty: Number(it.quantity || 0),
-          rate: Number(it.salePrice ?? it.rate ?? 0),
+          rate: Number(it.appliedRate ?? it.rate ?? it.salePrice ?? 0),
           total: Number(it.billedValue || 0),
+          offerLabel: it.offerName || null,
+          offerSavings: Number(it.offerDiscountAmount || 0),
         })),
         totalQty,
         subTotal,
+        offerSavings,
+        offerSummary,
         discount,
         grandTotal,
         notes: [
@@ -89,14 +116,19 @@ export async function printSaleBill(
           expiryDate: it.expiryDate,
           qty: Number(it.quantity || 0),
           unit: it.unit,
-          rate: Number(it.salePrice ?? it.rate ?? 0),
+          rate: Number(it.appliedRate ?? it.rate ?? it.salePrice ?? 0),
           taxPercent: it.taxPercent,
           mrp: it.mrp ?? null,
           salePrice: it.salePrice ?? null,
+          offerName: it.offerName ?? null,
+          offerType: it.offerType ?? null,
+          offerDiscountAmount: Number(it.offerDiscountAmount || 0),
           amount: Number(it.billedValue || 0),
         })),
         subTotal,
         discount,
+        offerSavings,
+        offerSummary,
         grandTotal,
       });
 

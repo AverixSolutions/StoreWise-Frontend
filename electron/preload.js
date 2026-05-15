@@ -86,6 +86,35 @@ contextBridge.exposeInMainWorld("electronAPI", {
   bulkUpsertTransactionTypes: (records) =>
     ipcRenderer.invoke("txn-type:bulk-upsert", records),
 
+  // ---- Offer Master ----
+  listOffers: (licenseId, filters) =>
+    ipcRenderer.invoke("offer:list", { licenseId, filters }),
+  listActiveOffers: (licenseId, saleDateTime) =>
+    ipcRenderer.invoke("offer:list-active", { licenseId, saleDateTime }),
+  getOffer: (id, licenseId) =>
+    ipcRenderer.invoke("offer:get", { id, licenseId }),
+  saveOffer: (payload) => ipcRenderer.invoke("offer:save", payload),
+  deleteOffer: (id, licenseId) =>
+    ipcRenderer.invoke("offer:delete", { id, licenseId }),
+  toggleOffer: (id, licenseId, isActive) =>
+    ipcRenderer.invoke("offer:toggle", { id, licenseId, isActive }),
+  listOfferTargetProducts: (offerId) =>
+    ipcRenderer.invoke("offer-target:list", { offerId }),
+  saveOfferTargetProducts: (payload) =>
+    ipcRenderer.invoke("offer-target:save", payload),
+  getDirtyOffers: (licenseId, limit) =>
+    ipcRenderer.invoke("offer:get-dirty", { licenseId, limit }),
+  markOffersSynced: (ids, ts) =>
+    ipcRenderer.invoke("offer:mark-synced", { ids, ts }),
+  bulkUpsertOffers: (records) =>
+    ipcRenderer.invoke("offer:bulk-upsert", records),
+  getDirtyOfferTargetProducts: (licenseId, limit) =>
+    ipcRenderer.invoke("offer-target:get-dirty", { licenseId, limit }),
+  markOfferTargetProductsSynced: (ids, ts) =>
+    ipcRenderer.invoke("offer-target:mark-synced", { ids, ts }),
+  bulkUpsertOfferTargetProducts: (records) =>
+    ipcRenderer.invoke("offer-target:bulk-upsert", records),
+
   // Product sync
   getDirtyProducts: (licenseId, limit) =>
     ipcRenderer.invoke("get-dirty-products", licenseId, limit),

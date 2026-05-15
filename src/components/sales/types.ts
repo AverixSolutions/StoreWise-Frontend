@@ -49,6 +49,15 @@ export interface ItemRow {
   expiryDate?: string | null;
   lineType?: LineType;
   unitBilled?: number;
+  originalRate?: number | null;
+  originalSalePrice?: number | null;
+  appliedRate?: number | null;
+  offerId?: string | null;
+  offerName?: string | null;
+  offerType?: string | null;
+  offerDiscountAmount?: number;
+  offerMessage?: string | null;
+  offerMeta?: string | null;
 }
 
 export interface HeaderForm {
@@ -62,4 +71,7 @@ export interface HeaderForm {
   discount: number;
   saleType: SaleType;
   typeId?: string | null;
+  offerSummaryJson?: string | null;
+  offerSavings?: number;
+  offerOverridesJson?: string | null;
 }

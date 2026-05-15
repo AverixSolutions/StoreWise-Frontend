@@ -45,6 +45,16 @@ export interface ItemRow {
   lineType?: LineType;
   unitBilled?: number;
 
+  originalRate?: number | null;
+  originalSalePrice?: number | null;
+  appliedRate?: number | null;
+  offerId?: string | null;
+  offerName?: string | null;
+  offerType?: string | null;
+  offerDiscountAmount?: number;
+  offerMessage?: string | null;
+  offerMeta?: string | null;
+
   overrideBatchPrices?: boolean;
   forceNewBatch?: boolean;
   printBarcode?: boolean;

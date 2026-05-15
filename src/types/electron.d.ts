@@ -885,6 +885,34 @@ declare global {
         records: any[],
       ) => Promise<{ success: boolean; upserted: number }>;
 
+      listOffers?: (licenseId: string, filters?: any) => Promise<any>;
+      listActiveOffers?: (
+        licenseId: string,
+        saleDateTime?: string,
+      ) => Promise<any>;
+      getOffer?: (id: string, licenseId?: string) => Promise<any>;
+      saveOffer?: (payload: any) => Promise<any>;
+      deleteOffer?: (id: string, licenseId: string) => Promise<any>;
+      toggleOffer?: (
+        id: string,
+        licenseId: string,
+        isActive: boolean,
+      ) => Promise<any>;
+      listOfferTargetProducts?: (offerId: string) => Promise<any>;
+      saveOfferTargetProducts?: (payload: any) => Promise<any>;
+      getDirtyOffers?: (licenseId: string, limit?: number) => Promise<any>;
+      markOffersSynced?: (ids: string[], ts?: string) => Promise<any>;
+      bulkUpsertOffers?: (records: any[]) => Promise<any>;
+      getDirtyOfferTargetProducts?: (
+        licenseId: string,
+        limit?: number,
+      ) => Promise<any>;
+      markOfferTargetProductsSynced?: (
+        ids: string[],
+        ts?: string,
+      ) => Promise<any>;
+      bulkUpsertOfferTargetProducts?: (records: any[]) => Promise<any>;
+
       // Cash Transaction Sync
       getDirtyCashTransactions: (
         licenseId: string,

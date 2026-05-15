@@ -18,6 +18,9 @@ function getNextSaleSlNo(licenseId) {
   ).run(licenseId, next);
   return next;
 }
+function formatSaleBillNo(slNo) {
+  return String(slNo).padStart(5, "0");
+}
 function getNextSaleHoldNo(licenseId) {
   const seq = db
     .prepare(`SELECT lastHoldNo FROM sale_hold_sequence WHERE licenseId = ?`)
@@ -122,7 +125,7 @@ function registerSaleHandlers() {
       .prepare(
         `
       SELECT id, slNo, billNo, customerId, customerName, saleDate, entryTime,
-             totalAmount, discount, saleType, isSynced, deletedAt, syncedAt, typeId
+             totalAmount, discount, offerSavings, saleType, isSynced, deletedAt, syncedAt, typeId
       ${base}
       ORDER BY datetime(saleDate) DESC, slNo DESC
       LIMIT @limit OFFSET @offset
@@ -175,7 +178,8 @@ function registerSaleHandlers() {
     const seq = db
       .prepare(`SELECT lastSlNo FROM sale_sequence WHERE licenseId = ?`)
       .get(licenseId);
-    return { nextSlNo: seq ? seq.lastSlNo + 1 : 1 };
+    const nextSlNo = seq ? seq.lastSlNo + 1 : 1;
+    return { nextSlNo, suggestedBillNo: formatSaleBillNo(nextSlNo) };
   });
 
   // ---- create (stock ↓; customer ledger +1 on CREDIT) ----
@@ -183,6 +187,7 @@ function registerSaleHandlers() {
     const newId = header.id || uuidv4();
     const now = new Date().toISOString();
     const slNo = getNextSaleSlNo(header.licenseId);
+    const billNo = formatSaleBillNo(slNo);
 
     let totalAmount = 0;
 
@@ -190,8 +195,9 @@ function registerSaleHandlers() {
       INSERT INTO sales(
         id, slNo, userId, licenseId, typeId, customerId, customerName, billNo,
         department, debitAccount, natureOfEntry, saleDate, entryTime,
-        totalAmount, discount, saleType, createdAt, updatedAt, isSynced
-      ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+        totalAmount, discount, offerSummaryJson, offerSavings, offerOverridesJson,
+        saleType, createdAt, updatedAt, isSynced
+      ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
     `);
 
     const insItem = db.prepare(`
@@ -199,8 +205,10 @@ function registerSaleHandlers() {
         id, saleId, productId, barcode, quantity, unit, rate, mrp,
         taxPercent, taxAmount, discount, discountType, salePrice, profit,
         totalCost, billedValue, effectiveUnitValue, batchNo, mfgDate, expiryDate,
-        lineNo, isFree, batchId, createdAt, updatedAt, isSynced
-      ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+        lineNo, isFree, batchId, originalRate, originalSalePrice, appliedRate,
+        offerId, offerName, offerType, offerDiscountAmount, offerMeta,
+        createdAt, updatedAt, isSynced
+      ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
     `);
 
     const trx = db.transaction((header, items) => {
@@ -212,7 +220,7 @@ function registerSaleHandlers() {
         header.typeId || null,
         header.customerId || null,
         header.customerName || null,
-        header.billNo || null,
+        billNo,
         header.department || null,
         header.debitAccount || null,
         header.natureOfEntry || null,
@@ -220,6 +228,9 @@ function registerSaleHandlers() {
         header.entryTime || now,
         0,
         header.discount || 0,
+        header.offerSummaryJson || null,
+        Number(header.offerSavings || 0),
+        header.offerOverridesJson || null,
         header.saleType === "CASH" ? "CASH" : "CREDIT",
         now,
         now,
@@ -314,6 +325,14 @@ function registerSaleHandlers() {
           it.lineNo || idx + 1,
           it.isFree ? 1 : 0,
           batchId,
+          it.originalRate ?? null,
+          it.originalSalePrice ?? null,
+          it.appliedRate ?? null,
+          it.offerId || null,
+          it.offerName || null,
+          it.offerType || null,
+          Number(it.offerDiscountAmount || 0),
+          it.offerMeta || null,
           now,
           now,
         );
@@ -369,7 +388,7 @@ function registerSaleHandlers() {
           header.licenseId,
           header.customerId,
           newId,
-          header.billNo || null,
+          billNo,
           header.saleDate || now,
           grand,
           now,
@@ -389,7 +408,7 @@ function registerSaleHandlers() {
           uuidv4(),
           header.licenseId,
           newId,
-          header.billNo || null,
+          billNo,
           header.saleDate || now,
           grand,
           now,
@@ -399,7 +418,7 @@ function registerSaleHandlers() {
     });
 
     trx(header, items);
-    return { success: true, saleId: newId, slNo, totalAmount };
+    return { success: true, saleId: newId, slNo, billNo, totalAmount };
   });
 
   // ---- update (reverse old stock; reinsert; ledger rewrite) ----
@@ -443,6 +462,8 @@ function registerSaleHandlers() {
           billNo=@billNo, typeId=@typeId, customerId=@customerId, customerName=@customerName,
           department=@department, debitAccount=@debitAccount, natureOfEntry=@natureOfEntry,
           saleDate=@saleDate, entryTime=@entryTime, discount=@discount,
+          offerSummaryJson=@offerSummaryJson, offerSavings=@offerSavings,
+          offerOverridesJson=@offerOverridesJson,
           totalAmount=@totalAmount, saleType=@saleType,
           updatedAt=@now, isSynced=0
         WHERE id=@id
@@ -459,6 +480,9 @@ function registerSaleHandlers() {
         saleDate: header.saleDate,
         entryTime: header.entryTime || header.saleDate,
         discount: Number(header.discount || 0),
+        offerSummaryJson: header.offerSummaryJson || null,
+        offerSavings: Number(header.offerSavings || 0),
+        offerOverridesJson: header.offerOverridesJson || null,
         totalAmount,
         saleType: header.saleType === "CASH" ? "CASH" : "CREDIT",
         now,
@@ -472,12 +496,16 @@ function registerSaleHandlers() {
     id, saleId, productId, quantity, unit, rate, taxPercent, taxAmount,
     discount, discountType, salePrice, profit, totalCost, billedValue,
     barcode, mrp, batchNo, mfgDate, expiryDate, lineNo, isFree,
-    batchId, effectiveUnitValue, createdAt, updatedAt, isSynced, syncedAt
+    batchId, effectiveUnitValue, originalRate, originalSalePrice, appliedRate,
+    offerId, offerName, offerType, offerDiscountAmount, offerMeta,
+    createdAt, updatedAt, isSynced, syncedAt
   ) VALUES (
     lower(hex(randomblob(16))), @saleId, @productId, @quantity, @unit, @rate, @taxPercent, @taxAmount,
     @discount, @discountType, @salePrice, @profit, @totalCost, @billedValue,
     @barcode, @mrp, @batchNo, @mfgDate, @expiryDate, @lineNo, @isFree,
-    @batchId, @effectiveUnitValue, @now, @now, 0, NULL
+    @batchId, @effectiveUnitValue, @originalRate, @originalSalePrice, @appliedRate,
+    @offerId, @offerName, @offerType, @offerDiscountAmount, @offerMeta,
+    @now, @now, 0, NULL
   )
 `);
 
@@ -541,6 +569,14 @@ function registerSaleHandlers() {
           isFree: it.isFree ? 1 : 0,
           batchId,
           effectiveUnitValue: effUnit,
+          originalRate: it.originalRate ?? null,
+          originalSalePrice: it.originalSalePrice ?? null,
+          appliedRate: it.appliedRate ?? null,
+          offerId: it.offerId ?? null,
+          offerName: it.offerName ?? null,
+          offerType: it.offerType ?? null,
+          offerDiscountAmount: Number(it.offerDiscountAmount || 0),
+          offerMeta: it.offerMeta ?? null,
           now,
         });
 
@@ -736,7 +772,7 @@ function registerSaleHandlers() {
            debitAccount, natureOfEntry, saleType,
            typeId,
            saleDate, entryTime,
-           totalAmount, discount,
+           totalAmount, discount, offerSummaryJson, offerSavings, offerOverridesJson,
            createdAt, updatedAt, deletedAt,
            isSynced, syncedAt
     FROM sales
@@ -762,6 +798,9 @@ function registerSaleHandlers() {
            si.batchNo, si.batchId,
            si.mfgDate, si.expiryDate,
            si.lineNo, si.isFree, si.effectiveUnitValue,
+           si.originalRate, si.originalSalePrice, si.appliedRate,
+           si.offerId, si.offerName, si.offerType,
+           si.offerDiscountAmount, si.offerMeta,
            si.createdAt, si.updatedAt, si.deletedAt,
            si.isSynced, si.syncedAt
     FROM sale_items si
@@ -886,7 +925,7 @@ function registerSaleHandlers() {
       customerId, customerName, department,
       debitAccount, natureOfEntry, saleType,
       saleDate, entryTime,
-      totalAmount, discount,
+      totalAmount, discount, offerSummaryJson, offerSavings, offerOverridesJson,
       createdAt, updatedAt, deletedAt,
       isSynced, syncedAt
     ) VALUES (
@@ -894,7 +933,7 @@ function registerSaleHandlers() {
       @customerId, @customerName, @department,
       @debitAccount, @natureOfEntry, @saleType,
       @saleDate, @entryTime,
-      @totalAmount, @discount,
+      @totalAmount, @discount, @offerSummaryJson, @offerSavings, @offerOverridesJson,
       @createdAt, @updatedAt, @deletedAt,
       1, @syncedAt
     )
@@ -912,6 +951,9 @@ function registerSaleHandlers() {
       entryTime     = excluded.entryTime,
       totalAmount   = excluded.totalAmount,
       discount      = excluded.discount,
+      offerSummaryJson = excluded.offerSummaryJson,
+      offerSavings  = excluded.offerSavings,
+      offerOverridesJson = excluded.offerOverridesJson,
       updatedAt     = excluded.updatedAt,
       deletedAt     = excluded.deletedAt,
       isSynced      = 1,
@@ -943,6 +985,9 @@ function registerSaleHandlers() {
               : (r.entryTime ?? null),
           totalAmount: Number(r.totalAmount || 0),
           discount: Number(r.discount || 0),
+          offerSummaryJson: r.offerSummaryJson ?? null,
+          offerSavings: Number(r.offerSavings || 0),
+          offerOverridesJson: r.offerOverridesJson ?? null,
           createdAt:
             r.createdAt instanceof Date
               ? r.createdAt.toISOString()
@@ -998,6 +1043,8 @@ function registerSaleHandlers() {
       salePrice, profit, totalCost, billedValue,
       batchNo, batchId,
       mfgDate, expiryDate, lineNo, isFree, effectiveUnitValue,
+      originalRate, originalSalePrice, appliedRate,
+      offerId, offerName, offerType, offerDiscountAmount, offerMeta,
       createdAt, updatedAt, deletedAt, isSynced, syncedAt
     ) VALUES (
       @id, @saleId, @productId, @barcode,
@@ -1006,6 +1053,8 @@ function registerSaleHandlers() {
       @salePrice, @profit, @totalCost, @billedValue,
       @batchNo, @batchId,
       @mfgDate, @expiryDate, @lineNo, @isFree, @effectiveUnitValue,
+      @originalRate, @originalSalePrice, @appliedRate,
+      @offerId, @offerName, @offerType, @offerDiscountAmount, @offerMeta,
       @createdAt, @updatedAt, @deletedAt, 1, @syncedAt
     )
     ON CONFLICT(id) DO UPDATE SET
@@ -1028,6 +1077,14 @@ function registerSaleHandlers() {
       lineNo             = excluded.lineNo,
       isFree             = excluded.isFree,
       effectiveUnitValue = excluded.effectiveUnitValue,
+      originalRate       = excluded.originalRate,
+      originalSalePrice  = excluded.originalSalePrice,
+      appliedRate        = excluded.appliedRate,
+      offerId            = excluded.offerId,
+      offerName          = excluded.offerName,
+      offerType          = excluded.offerType,
+      offerDiscountAmount = excluded.offerDiscountAmount,
+      offerMeta          = excluded.offerMeta,
       updatedAt          = excluded.updatedAt,
       deletedAt          = excluded.deletedAt,
       isSynced           = 1,
@@ -1063,6 +1120,15 @@ function registerSaleHandlers() {
           isFree: r.isFree ? 1 : 0,
           effectiveUnitValue:
             r.effectiveUnitValue != null ? Number(r.effectiveUnitValue) : null,
+          originalRate: r.originalRate != null ? Number(r.originalRate) : null,
+          originalSalePrice:
+            r.originalSalePrice != null ? Number(r.originalSalePrice) : null,
+          appliedRate: r.appliedRate != null ? Number(r.appliedRate) : null,
+          offerId: r.offerId ?? null,
+          offerName: r.offerName ?? null,
+          offerType: r.offerType ?? null,
+          offerDiscountAmount: Number(r.offerDiscountAmount || 0),
+          offerMeta: r.offerMeta ?? null,
           createdAt:
             r.createdAt instanceof Date
               ? r.createdAt.toISOString()

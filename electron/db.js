@@ -835,6 +835,9 @@ db.prepare(
     entryTime TEXT,
     totalAmount REAL NOT NULL,
     discount REAL DEFAULT 0,
+    offerSummaryJson TEXT,
+    offerSavings REAL DEFAULT 0,
+    offerOverridesJson TEXT,
     saleType TEXT, -- CASH or CREDIT
     createdAt TEXT,
     updatedAt TEXT,
@@ -867,6 +870,10 @@ db.prepare(
   `CREATE INDEX IF NOT EXISTS idx_sales_dirty ON sales(licenseId, createdAt, syncedAt, deletedAt)`,
 ).run();
 
+addColumnIfMissing("sales", "offerSummaryJson", "TEXT");
+addColumnIfMissing("sales", "offerSavings", "REAL DEFAULT 0");
+addColumnIfMissing("sales", "offerOverridesJson", "TEXT");
+
 // Sale items
 db.prepare(
   `
@@ -896,6 +903,14 @@ db.prepare(
   isSynced INTEGER DEFAULT 0,
   syncedAt TEXT,
   deletedAt TEXT,
+  originalRate REAL,
+  originalSalePrice REAL,
+  appliedRate REAL,
+  offerId TEXT,
+  offerName TEXT,
+  offerType TEXT,
+  offerDiscountAmount REAL DEFAULT 0,
+  offerMeta TEXT,
   effectiveUnitValue REAL,
   isFree INTEGER DEFAULT 0,
   FOREIGN KEY (saleId) REFERENCES sales(id) ON DELETE CASCADE,
@@ -914,6 +929,15 @@ db.prepare(
   `CREATE INDEX IF NOT EXISTS idx_sale_items_dirty ON sale_items(saleId, updatedAt, syncedAt, deletedAt)`,
 ).run();
 
+addColumnIfMissing("sale_items", "originalRate", "REAL");
+addColumnIfMissing("sale_items", "originalSalePrice", "REAL");
+addColumnIfMissing("sale_items", "appliedRate", "REAL");
+addColumnIfMissing("sale_items", "offerId", "TEXT");
+addColumnIfMissing("sale_items", "offerName", "TEXT");
+addColumnIfMissing("sale_items", "offerType", "TEXT");
+addColumnIfMissing("sale_items", "offerDiscountAmount", "REAL DEFAULT 0");
+addColumnIfMissing("sale_items", "offerMeta", "TEXT");
+
 // Per-license sequence for sales
 db.prepare(
   `
@@ -922,6 +946,82 @@ licenseId TEXT PRIMARY KEY,
 lastSlNo INTEGER DEFAULT 0
 )
 `,
+).run();
+
+// Offer Master
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS offers (
+    id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    licenseId TEXT NOT NULL,
+    name TEXT NOT NULL,
+    type TEXT NOT NULL CHECK (type IN ('SPECIAL_PRICE','RATION','HOURLY_DISCOUNT')),
+    isActive INTEGER DEFAULT 1,
+    applyScope TEXT NOT NULL DEFAULT 'ALL_PRODUCTS' CHECK (applyScope IN ('ALL_PRODUCTS','SELECTED_PRODUCTS')),
+    priority INTEGER DEFAULT 0,
+    startsAt TEXT,
+    endsAt TEXT,
+    timeStart TEXT,
+    timeEnd TEXT,
+    minQty REAL,
+    maxQty REAL,
+    fixedUnitPrice REAL,
+    discountPercent REAL,
+    discountAmount REAL,
+    triggerKind TEXT CHECK (triggerKind IS NULL OR triggerKind IN ('BILL_AMOUNT','PRODUCT_QTY','UNIT_QTY')),
+    triggerScope TEXT CHECK (triggerScope IS NULL OR triggerScope IN ('ALL_PRODUCTS','SELECTED_PRODUCTS')),
+    minAmount REAL,
+    maxAmount REAL,
+    unit TEXT,
+    benefitTarget TEXT CHECK (benefitTarget IS NULL OR benefitTarget IN ('SAME_ELIGIBLE_ITEMS','SELECTED_RATION_PRODUCTS')),
+    benefitKind TEXT CHECK (benefitKind IS NULL OR benefitKind IN ('FIXED_UNIT_PRICE','PERCENT_DISCOUNT','AMOUNT_DISCOUNT','FREE')),
+    benefitQtyMode TEXT CHECK (benefitQtyMode IS NULL OR benefitQtyMode IN ('ALL_ELIGIBLE_QTY','QTY_ABOVE_THRESHOLD','FIXED_QTY','LIMITED_QTY')),
+    fixedBenefitQty REAL,
+    maxBenefitQty REAL,
+    maxBenefitAmount REAL,
+    customerRequired INTEGER DEFAULT 0,
+    oncePerBill INTEGER DEFAULT 1,
+    notes TEXT,
+    createdAt TEXT,
+    updatedAt TEXT,
+    deletedAt TEXT,
+    isSynced INTEGER DEFAULT 0,
+    syncedAt TEXT
+  )
+`,
+).run();
+
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_offers_license_type ON offers(licenseId, type, isActive)`,
+).run();
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_offers_dirty ON offers(licenseId, updatedAt, deletedAt)`,
+).run();
+
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS offer_target_products (
+    id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+    licenseId TEXT NOT NULL,
+    offerId TEXT NOT NULL,
+    productId TEXT NOT NULL,
+    targetRole TEXT NOT NULL CHECK (targetRole IN ('QUALIFIER','BENEFIT','BOTH')),
+    createdAt TEXT,
+    updatedAt TEXT,
+    deletedAt TEXT,
+    isSynced INTEGER DEFAULT 0,
+    syncedAt TEXT,
+    FOREIGN KEY (offerId) REFERENCES offers(id) ON DELETE CASCADE,
+    FOREIGN KEY (productId) REFERENCES products(id)
+  )
+`,
+).run();
+
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_offer_targets_offer ON offer_target_products(offerId, targetRole)`,
+).run();
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_offer_targets_license ON offer_target_products(licenseId, updatedAt, deletedAt)`,
 ).run();
 
 // --- Sales Holds (drafts)
@@ -2426,5 +2526,18 @@ if (!fixPurchasesDirtyIndexRan) {
     console.error("[db] fix_purchases_dirty_index_v1 failed:", e);
   }
 }
+
+// Re-assert additive offer columns after legacy table-rebuild migrations.
+addColumnIfMissing("sales", "offerSummaryJson", "TEXT");
+addColumnIfMissing("sales", "offerSavings", "REAL DEFAULT 0");
+addColumnIfMissing("sales", "offerOverridesJson", "TEXT");
+addColumnIfMissing("sale_items", "originalRate", "REAL");
+addColumnIfMissing("sale_items", "originalSalePrice", "REAL");
+addColumnIfMissing("sale_items", "appliedRate", "REAL");
+addColumnIfMissing("sale_items", "offerId", "TEXT");
+addColumnIfMissing("sale_items", "offerName", "TEXT");
+addColumnIfMissing("sale_items", "offerType", "TEXT");
+addColumnIfMissing("sale_items", "offerDiscountAmount", "REAL DEFAULT 0");
+addColumnIfMissing("sale_items", "offerMeta", "TEXT");
 
 module.exports = db;
