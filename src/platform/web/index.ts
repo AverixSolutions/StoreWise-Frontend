@@ -153,6 +153,20 @@ import {
   webGetCustomerDistincts,
 } from "./customers";
 
+// ── purchase return imports ───────────────────────────────────────────────────
+import {
+  webCreatePurchaseReturn,
+  webUpdatePurchaseReturn,
+  webDeletePurchaseReturn,
+  webListPurchaseReturns,
+  webGetPurchaseReturnFull,
+  webPeekNextPurchaseReturnSlNo,
+  webSavePurchaseReturnHold,
+  webListPurchaseReturnHolds,
+  webGetPurchaseReturnHold,
+  webDeletePurchaseReturnHold,
+} from "./purchaseReturns";
+
 // ── sale return imports ───────────────────────────────────────────────────────
 import {
   webCreateSaleReturn,
@@ -412,6 +426,21 @@ export const webPlatform: PlatformAPI = {
     updates: BulkPriceUpdate[],
   ): Promise<MutationResult> => webBulkUpdateProductPrices(updates),
 
+  // ── Purchase Returns ──────────────────────────────────────────────────────
+  createPurchaseReturn: (payload) => webCreatePurchaseReturn(payload),
+  updatePurchaseReturn: (payload) => webUpdatePurchaseReturn(payload),
+  deletePurchaseReturn: (id) => webDeletePurchaseReturn(id),
+  listPurchaseReturns: (licenseId, filters) =>
+    webListPurchaseReturns(licenseId, filters),
+  getPurchaseReturnFull: (id) => webGetPurchaseReturnFull(id),
+  peekNextPurchaseReturnSlNo: (licenseId) =>
+    webPeekNextPurchaseReturnSlNo(licenseId),
+  savePurchaseReturnHold: (payload) => webSavePurchaseReturnHold(payload),
+  listPurchaseReturnHolds: (licenseId, pagination) =>
+    webListPurchaseReturnHolds(licenseId, pagination),
+  getPurchaseReturnHold: (id) => webGetPurchaseReturnHold(id),
+  deletePurchaseReturnHold: (id) => webDeletePurchaseReturnHold(id),
+
   // ── Sales ─────────────────────────────────────────────────────────────────
   createSale: (sale, items) => webCreateSale(sale, items),
   updateSale: (payload) => webUpdateSale(payload),
@@ -443,7 +472,8 @@ export const webPlatform: PlatformAPI = {
   createQuotation: (header, items) => webCreateQuotation(header, items),
   updateQuotation: (payload) => webUpdateQuotation(payload),
   deleteQuotation: (id) => webDeleteQuotation(id),
-  listQuotations: (licenseId, filters) => webListQuotations(licenseId, filters ?? {}),
+  listQuotations: (licenseId, filters) =>
+    webListQuotations(licenseId, filters ?? {}),
   getQuotationFull: (id) => webGetQuotationFull(id),
   peekNextQuotationSlNo: (licenseId) => webPeekNextQuotationSlNo(licenseId),
   convertQuotationToSale: (quotationId, overrides) =>

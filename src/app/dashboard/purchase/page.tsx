@@ -1105,6 +1105,7 @@ export default function PurchasePage() {
           billNo: header.billNo || null,
           supplierId: header.supplier?.id || null,
           supplierName: header.supplier?.name || null,
+          supplier: header.supplier || null,
           department: header.department || null,
           debitAccount: header.debitAccount || null,
           natureOfEntry: header.natureOfEntry || null,

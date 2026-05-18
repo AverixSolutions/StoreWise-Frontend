@@ -1,15 +1,15 @@
 {
   "name": "kynflow",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "KYNFLOW desktop inventory and billing application by KYNSTACK",
   "author": "Krishna Kumar P S",
   "main": "electron/main.js",
   "scripts": {
-    "dev": "concurrently \"npm run dev:next\" \"npm run dev:electron\"",
-    "dev:next": "cross-env NODE_ENV=development next dev",
+    "dev": "concurrently -k \"npm run dev:next\" \"npm run dev:electron\"",
+    "dev:next": "cross-env NODE_ENV=development NODE_OPTIONS=\"--max-old-space-size=6144 --max-semi-space-size=256\" next dev",
     "dev:electron": "wait-on tcp:3000 && cross-env NODE_ENV=development electron electron/main.js",
-    "build": "next build",
+    "build": "cross-env NODE_OPTIONS=\"--max-old-space-size=6144 --max-semi-space-size=256\" next build",
     "start": "cross-env NODE_ENV=production next start",
     "dist": "npm run build && electron-builder",
     "postinstall": "electron-builder install-app-deps"

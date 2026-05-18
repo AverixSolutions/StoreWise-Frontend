@@ -1,5 +1,6 @@
 // src/sync/adapters/purchaseReturns.ts
 import type { SyncAdapter, DirtyRecord } from "../SyncEngine";
+import { STORES, idbGetAllByIndex, idbPut } from "@/platform/web/idb";
 
 // ── Desktop ───────────────────────────────────────────────────────────────────
 
@@ -73,13 +74,129 @@ async function desktopSetReturnHoldsSyncState(state: any) {
   await (window as any).electronAPI.setSyncState("purchaseReturnHold", state);
 }
 
-// ── Web stubs ─────────────────────────────────────────────────────────────────
+// ── Web: Purchase Returns ─────────────────────────────────────────────────────
 
-async function webGetDirty(_licenseId: string): Promise<DirtyRecord[]> {
-  return [];
+async function webGetDirtyReturns(licenseId: string): Promise<DirtyRecord[]> {
+  try {
+    const rows = await idbGetAllByIndex<any>(
+      STORES.PURCHASE_RETURNS,
+      "licenseId",
+      licenseId,
+    );
+    return rows.filter((r) => r.isSynced !== true && !r.syncedAt);
+  } catch {
+    return [];
+  }
 }
-async function webMarkSynced(_ids: string[], _ts: string) {}
-async function webUpsertFromServer(_records: DirtyRecord[]) {}
+
+async function webMarkReturnsSynced(ids: string[], ts: string) {
+  try {
+    for (const id of ids) {
+      const row = await (
+        await import("@/platform/web/idb")
+      ).idbGetByKey<any>(STORES.PURCHASE_RETURNS, id);
+      if (row) {
+        await idbPut(STORES.PURCHASE_RETURNS, {
+          ...row,
+          isSynced: true,
+          syncedAt: ts,
+        });
+      }
+    }
+  } catch {}
+}
+
+async function webUpsertReturnsFromServer(records: DirtyRecord[]) {
+  try {
+    for (const record of records) {
+      await idbPut(STORES.PURCHASE_RETURNS, record);
+    }
+  } catch {}
+}
+
+// ── Web: Purchase Return Items ────────────────────────────────────────────────
+
+async function webGetDirtyReturnItems(
+  licenseId: string,
+): Promise<DirtyRecord[]> {
+  try {
+    const rows = await idbGetAllByIndex<any>(
+      STORES.PURCHASE_RETURN_ITEMS,
+      "licenseId",
+      licenseId,
+    );
+    return rows.filter((r) => r.isSynced !== true && !r.syncedAt);
+  } catch {
+    return [];
+  }
+}
+
+async function webMarkReturnItemsSynced(ids: string[], ts: string) {
+  try {
+    for (const id of ids) {
+      const row = await (
+        await import("@/platform/web/idb")
+      ).idbGetByKey<any>(STORES.PURCHASE_RETURN_ITEMS, id);
+      if (row) {
+        await idbPut(STORES.PURCHASE_RETURN_ITEMS, {
+          ...row,
+          isSynced: true,
+          syncedAt: ts,
+        });
+      }
+    }
+  } catch {}
+}
+
+async function webUpsertReturnItemsFromServer(records: DirtyRecord[]) {
+  try {
+    for (const record of records) {
+      await idbPut(STORES.PURCHASE_RETURN_ITEMS, record);
+    }
+  } catch {}
+}
+
+// ── Web: Purchase Return Holds ────────────────────────────────────────────────
+
+async function webGetDirtyReturnHolds(
+  licenseId: string,
+): Promise<DirtyRecord[]> {
+  try {
+    const rows = await idbGetAllByIndex<any>(
+      STORES.PURCHASE_RETURN_HOLDS,
+      "licenseId",
+      licenseId,
+    );
+    return rows.filter((r) => r.isSynced !== true && !r.syncedAt);
+  } catch {
+    return [];
+  }
+}
+
+async function webMarkReturnHoldsSynced(ids: string[], ts: string) {
+  try {
+    for (const id of ids) {
+      const row = await (
+        await import("@/platform/web/idb")
+      ).idbGetByKey<any>(STORES.PURCHASE_RETURN_HOLDS, id);
+      if (row) {
+        await idbPut(STORES.PURCHASE_RETURN_HOLDS, {
+          ...row,
+          isSynced: true,
+          syncedAt: ts,
+        });
+      }
+    }
+  } catch {}
+}
+
+async function webUpsertReturnHoldsFromServer(records: DirtyRecord[]) {
+  try {
+    for (const record of records) {
+      await idbPut(STORES.PURCHASE_RETURN_HOLDS, record);
+    }
+  } catch {}
+}
 
 function makeWebState(key: string) {
   return {
@@ -108,11 +225,11 @@ export function createPurchaseReturnsAdapter(isDesktop: boolean): SyncAdapter {
   const ws = makeWebState("syncState:purchaseReturn");
   return {
     entity: "purchaseReturn",
-    getDirtyRecords: isDesktop ? desktopGetDirtyReturns : webGetDirty,
-    markSynced: isDesktop ? desktopMarkReturnsSynced : webMarkSynced,
+    getDirtyRecords: isDesktop ? desktopGetDirtyReturns : webGetDirtyReturns,
+    markSynced: isDesktop ? desktopMarkReturnsSynced : webMarkReturnsSynced,
     upsertFromServer: isDesktop
       ? desktopUpsertReturnsFromServer
-      : webUpsertFromServer,
+      : webUpsertReturnsFromServer,
     getSyncState: isDesktop ? desktopGetReturnsSyncState : ws.get,
     setSyncState: isDesktop ? desktopSetReturnsSyncState : ws.set,
   };
@@ -124,11 +241,15 @@ export function createPurchaseReturnItemsAdapter(
   const ws = makeWebState("syncState:purchaseReturnItem");
   return {
     entity: "purchaseReturnItem",
-    getDirtyRecords: isDesktop ? desktopGetDirtyReturnItems : webGetDirty,
-    markSynced: isDesktop ? desktopMarkReturnItemsSynced : webMarkSynced,
+    getDirtyRecords: isDesktop
+      ? desktopGetDirtyReturnItems
+      : webGetDirtyReturnItems,
+    markSynced: isDesktop
+      ? desktopMarkReturnItemsSynced
+      : webMarkReturnItemsSynced,
     upsertFromServer: isDesktop
       ? desktopUpsertReturnItemsFromServer
-      : webUpsertFromServer,
+      : webUpsertReturnItemsFromServer,
     getSyncState: isDesktop ? desktopGetReturnItemsSyncState : ws.get,
     setSyncState: isDesktop ? desktopSetReturnItemsSyncState : ws.set,
   };
@@ -140,11 +261,15 @@ export function createPurchaseReturnHoldsAdapter(
   const ws = makeWebState("syncState:purchaseReturnHold");
   return {
     entity: "purchaseReturnHold",
-    getDirtyRecords: isDesktop ? desktopGetDirtyReturnHolds : webGetDirty,
-    markSynced: isDesktop ? desktopMarkReturnHoldsSynced : webMarkSynced,
+    getDirtyRecords: isDesktop
+      ? desktopGetDirtyReturnHolds
+      : webGetDirtyReturnHolds,
+    markSynced: isDesktop
+      ? desktopMarkReturnHoldsSynced
+      : webMarkReturnHoldsSynced,
     upsertFromServer: isDesktop
       ? desktopUpsertReturnHoldsFromServer
-      : webUpsertFromServer,
+      : webUpsertReturnHoldsFromServer,
     getSyncState: isDesktop ? desktopGetReturnHoldsSyncState : ws.get,
     setSyncState: isDesktop ? desktopSetReturnHoldsSyncState : ws.set,
   };

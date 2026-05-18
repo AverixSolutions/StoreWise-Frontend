@@ -1,6 +1,6 @@
 // src/platform/web/idb.ts
 const DB_NAME = "kynflow-web";
-const DB_VERSION = 14; // bumped from 13
+const DB_VERSION = 15; // bumped from 14
 
 export const STORES = {
   SHOP_SETTINGS: "shop_settings",
@@ -30,6 +30,10 @@ export const STORES = {
   QUOTATION_ITEMS: "quotation_items",
   OFFERS: "offers",
   OFFER_TARGET_PRODUCTS: "offer_target_products",
+  // ── v15: purchase returns ────────────────────────────────────────────────
+  PURCHASE_RETURNS: "purchase_returns",
+  PURCHASE_RETURN_ITEMS: "purchase_return_items",
+  PURCHASE_RETURN_HOLDS: "purchase_return_holds",
 } as const;
 
 export type SyncJob = {
@@ -310,9 +314,13 @@ function openDb(): Promise<IDBDatabase> {
           offerStore.createIndex("licenseId_type", ["licenseId", "type"], {
             unique: false,
           });
-          offerStore.createIndex("licenseId_active", ["licenseId", "isActive"], {
-            unique: false,
-          });
+          offerStore.createIndex(
+            "licenseId_active",
+            ["licenseId", "isActive"],
+            {
+              unique: false,
+            },
+          );
         }
         if (!db.objectStoreNames.contains(STORES.OFFER_TARGET_PRODUCTS)) {
           const targetStore = db.createObjectStore(
@@ -324,6 +332,61 @@ function openDb(): Promise<IDBDatabase> {
           targetStore.createIndex(
             "offerId_productId_role",
             ["offerId", "productId", "targetRole"],
+            { unique: false },
+          );
+        }
+      }
+
+      // v15 stores — purchase returns, purchase_return_items, purchase_return_holds
+      if (oldVersion < 15) {
+        // Purchase returns (headers)
+        if (!db.objectStoreNames.contains(STORES.PURCHASE_RETURNS)) {
+          const returnStore = db.createObjectStore(STORES.PURCHASE_RETURNS, {
+            keyPath: "id",
+          });
+          returnStore.createIndex("licenseId", "licenseId", { unique: false });
+          returnStore.createIndex(
+            "licenseId_returnDate",
+            ["licenseId", "returnDate"],
+            { unique: false },
+          );
+          returnStore.createIndex(
+            "licenseId_supplierId",
+            ["licenseId", "supplierId"],
+            { unique: false },
+          );
+          returnStore.createIndex(
+            "licenseId_deletedAt",
+            ["licenseId", "deletedAt"],
+            { unique: false },
+          );
+        }
+
+        // Purchase return items
+        if (!db.objectStoreNames.contains(STORES.PURCHASE_RETURN_ITEMS)) {
+          const itemStore = db.createObjectStore(STORES.PURCHASE_RETURN_ITEMS, {
+            keyPath: "id",
+          });
+          itemStore.createIndex("licenseId", "licenseId", { unique: false });
+          itemStore.createIndex("purchaseReturnId", "purchaseReturnId", {
+            unique: false,
+          });
+          itemStore.createIndex(
+            "licenseId_purchaseReturnId",
+            ["licenseId", "purchaseReturnId"],
+            { unique: false },
+          );
+        }
+
+        // Purchase return holds
+        if (!db.objectStoreNames.contains(STORES.PURCHASE_RETURN_HOLDS)) {
+          const holdStore = db.createObjectStore(STORES.PURCHASE_RETURN_HOLDS, {
+            keyPath: "id",
+          });
+          holdStore.createIndex("licenseId", "licenseId", { unique: false });
+          holdStore.createIndex(
+            "licenseId_createdAt",
+            ["licenseId", "createdAt"],
             { unique: false },
           );
         }

@@ -706,8 +706,8 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
         billNo: header.billNo || null,
         typeId: header.typeId || null,
         purchaseBatchNo,
-        supplierId: header.supplier?.id || null,
-        supplierName: header.supplier?.name || null,
+        supplierId: header.supplierId || header.supplier?.id || null,
+        supplierName: header.supplierName || header.supplier?.name || null,
         department: header.department || null,
         debitAccount: header.debitAccount || null,
         natureOfEntry: header.natureOfEntry || null,
@@ -864,7 +864,10 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
       ).run({ licenseId, refId: id });
 
       // Insert new ledger entry based on purchase type
-      if (header.purchaseType === "CREDIT" && header.supplier?.id) {
+      if (
+        header.purchaseType === "CREDIT" &&
+        (header.supplierId || header.supplier?.id)
+      ) {
         db.prepare(
           `
           INSERT INTO supplier_transactions
@@ -873,7 +876,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
         `,
         ).run(
           licenseId,
-          header.supplier?.id,
+          header.supplierId || header.supplier?.id,
           id,
           header.billNo || null,
           header.purchaseDate || now,
