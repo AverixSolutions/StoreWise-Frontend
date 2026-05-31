@@ -92,6 +92,9 @@ export async function runPush(
         `/api/sync/${adapter.entity}/push`,
         {
           method: "POST",
+          headers: {
+            "x-license-id": licenseId,
+          },
           body: JSON.stringify({ licenseId, records: batch }),
         },
         token,
@@ -149,7 +152,12 @@ export async function runPull(
 
       const data = await apiFetch(
         `/api/sync/${adapter.entity}/pull?${params.toString()}`,
-        { method: "GET" },
+        {
+          method: "GET",
+          headers: {
+            "x-license-id": licenseId,
+          },
+        },
         token,
       );
 

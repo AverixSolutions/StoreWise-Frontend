@@ -9,6 +9,7 @@ import {
   IndianRupee,
   RotateCcw,
   ArrowRight,
+  PackageSearch,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { platform } from "@/platform";
@@ -17,47 +18,124 @@ import PurchaseReportsModal from "@/components/purchase/PurchaseReportsModal";
 import PurchaseReturnReportsModal from "@/components/purchase-return/PurchaseReturnReportsModal";
 import SalesReportsModal from "@/components/sales/SalesReportsModal";
 import SalesReturnReportsModal from "@/components/sales-return/SalesReturnReportsModal";
+import ItemWiseReportModal from "@/components/products/ItemWiseReportModal";
 
 type SimpleOption = { id: string; name: string };
 
-const reportCards = [
+type ReportCard = {
+  id: "purchase" | "purchase-return" | "sales" | "sales-return" | "items";
+  title: string;
+  shortName: string;
+  description: string;
+  icon: any;
+  iconBg: string;
+  iconText: string;
+  border: string;
+  hoverBg: string;
+};
+
+const reportCards: ReportCard[] = [
   {
-    id: "purchase" as const,
+    id: "purchase",
     title: "Purchase Reports",
+    shortName: "Purchase",
     description: "Bills, supplier-wise, date ranges, tax splits and more.",
     icon: ShoppingCart,
-    accent: "from-emerald-400 to-emerald-600",
-    glow: "rgba(52,211,153,0.15)",
-    border: "rgba(52,211,153,0.2)",
+    iconBg: "bg-emerald-100",
+    iconText: "text-emerald-600",
+    border: "border-emerald-300",
+    hoverBg: "hover:bg-emerald-50/50",
   },
   {
-    id: "purchase-return" as const,
+    id: "purchase-return",
     title: "Purchase Returns",
+    shortName: "Purchase Returns",
     description: "Returns by supplier, item, and period; credit notes etc.",
     icon: RotateCcw,
-    accent: "from-cyan-400 to-cyan-600",
-    glow: "rgba(34,211,238,0.15)",
-    border: "rgba(34,211,238,0.2)",
+    iconBg: "bg-cyan-100",
+    iconText: "text-cyan-600",
+    border: "border-cyan-300",
+    hoverBg: "hover:bg-cyan-50/50",
   },
   {
-    id: "sales" as const,
+    id: "sales",
     title: "Sales Reports",
+    shortName: "Sales",
     description: "Bills, customer-wise, item-wise, tax, discounts and more.",
     icon: IndianRupee,
-    accent: "from-violet-400 to-violet-600",
-    glow: "rgba(167,139,250,0.15)",
-    border: "rgba(167,139,250,0.2)",
+    iconBg: "bg-violet-100",
+    iconText: "text-violet-600",
+    border: "border-violet-300",
+    hoverBg: "hover:bg-violet-50/50",
   },
   {
-    id: "sales-return" as const,
+    id: "sales-return",
     title: "Sales Returns",
+    shortName: "Sales Returns",
     description: "Customer returns, refunds, adjustments, period summaries.",
     icon: RefreshCcw,
-    accent: "from-rose-400 to-rose-600",
-    glow: "rgba(251,113,133,0.15)",
-    border: "rgba(251,113,133,0.2)",
+    iconBg: "bg-rose-100",
+    iconText: "text-rose-600",
+    border: "border-rose-300",
+    hoverBg: "hover:bg-rose-50/50",
+  },
+  {
+    id: "items",
+    title: "Item Wise Report",
+    shortName: "Item Wise",
+    description: "Products, stock, pricing, category, brand and tax details.",
+    icon: PackageSearch,
+    iconBg: "bg-sky-100",
+    iconText: "text-sky-600",
+    border: "border-sky-300",
+    hoverBg: "hover:bg-sky-50/50",
   },
 ];
+
+function ReportTile({
+  card,
+  loading,
+  onClick,
+}: {
+  card: ReportCard;
+  loading: boolean;
+  onClick: () => void;
+}) {
+  const Icon = card.icon;
+  return (
+    <motion.button
+      type="button"
+      whileHover={loading ? {} : { y: -2 }}
+      whileTap={loading ? {} : { scale: 0.985 }}
+      disabled={loading}
+      onClick={onClick}
+      className={`group w-full rounded-[22px] border bg-white p-4 text-left shadow-[0_4px_14px_rgba(15,23,42,0.06)] transition-all duration-200 ${
+        loading
+          ? "cursor-not-allowed opacity-50"
+          : `cursor-pointer ${card.border} ${card.hoverBg} hover:shadow-[0_10px_28px_rgba(15,23,42,0.10)]`
+      }`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${card.iconBg} ${card.iconText}`}
+        >
+          <Icon className="h-4 w-4" />
+        </div>
+        <ArrowRight
+          className={`mt-0.5 h-4 w-4 shrink-0 text-slate-300 transition-all duration-200 group-hover:translate-x-0.5 group-hover:${card.iconText}`}
+        />
+      </div>
+      <div className="mt-3.5">
+        <h3 className="text-sm font-semibold tracking-[-0.02em] text-slate-900">
+          {card.shortName}
+        </h3>
+        <p className="mt-1 text-xs leading-5 text-slate-500">
+          {card.description}
+        </p>
+      </div>
+    </motion.button>
+  );
+}
 
 export default function ReportPage() {
   const router = useRouter();
@@ -75,6 +153,7 @@ export default function ReportPage() {
   const [openPurchaseReturn, setOpenPurchaseReturn] = useState(false);
   const [openSales, setOpenSales] = useState(false);
   const [openSalesReturn, setOpenSalesReturn] = useState(false);
+  const [openItems, setOpenItems] = useState(false);
 
   const [opening, setOpening] = useState<{
     kind: "purchase" | "purchase-return" | "sales" | "sales-return";
@@ -154,17 +233,18 @@ export default function ReportPage() {
     })();
   }, [licenseId]);
 
-  const openHandlers = {
+  const openHandlers: Record<ReportCard["id"], () => void> = {
     purchase: () => setOpenPurchase(true),
     "purchase-return": () => setOpenPurchaseReturn(true),
     sales: () => setOpenSales(true),
     "sales-return": () => setOpenSalesReturn(true),
+    items: () => setOpenItems(true),
   };
 
   return (
-    <main className="">
-      {/* Hero banner — identical pattern to master page */}
-      <section className="relative overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(135deg,#0a1324_0%,#101a31_58%,#16213d_100%)] px-5 py-4 text-white shadow-[0_8px_20px_rgba(7,12,24,0.10)] md:px-6 md:py-5 mb-5">
+    <div className="flex h-full min-h-0 flex-col gap-4 overflow-hidden pb-10 md:pb-0">
+      {/* Hero banner */}
+      <section className="relative overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(135deg,#0a1324_0%,#101a31_58%,#16213d_100%)] px-5 py-4 text-white shadow-[0_8px_20px_rgba(7,12,24,0.10)] md:px-6 md:py-5">
         <div className="pointer-events-none absolute -left-10 top-0 h-28 w-28 rounded-full bg-cyan-400/10 blur-3xl" />
         <div className="pointer-events-none absolute right-0 top-0 h-28 w-28 rounded-full bg-fuchsia-500/10 blur-3xl" />
         <div className="relative">
@@ -181,56 +261,28 @@ export default function ReportPage() {
         </div>
       </section>
 
-      {/* Cards container — identical to master tiles container */}
-      <section className="rounded-[26px] border border-slate-200 bg-slate-50/70 p-4 shadow-[0_6px_18px_rgba(15,23,42,0.04)] md:p-5">
-        <div className="mb-4">
-          <div className="mb-2 inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-            Report Sections
+      {/* Tiles container */}
+      <section className="flex-1 min-h-0 rounded-[26px] border border-slate-200 bg-slate-50/70 p-3 shadow-[0_6px_18px_rgba(15,23,42,0.04)] md:p-5">
+        <div className="flex h-full min-h-0 flex-col gap-4">
+          <div>
+            <div className="mb-2 inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+              Report Sections
+            </div>
+            <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-900">
+              Select a report to view
+            </h2>
           </div>
-          <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-900">
-            Select a report to view
-          </h2>
-        </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          {reportCards.map((card) => {
-            const Icon = card.icon;
-            return (
-              <motion.button
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            {reportCards.map((card) => (
+              <ReportTile
                 key={card.id}
-                type="button"
-                whileHover={loading ? {} : { y: -2 }}
-                whileTap={loading ? {} : { scale: 0.985 }}
-                disabled={loading}
+                card={card}
+                loading={loading}
                 onClick={openHandlers[card.id]}
-                className={`group w-full rounded-[20px] border bg-white p-4 text-left shadow-[0_2px_10px_rgba(15,23,42,0.05)] transition-all duration-200 ${
-                  loading
-                    ? "cursor-not-allowed opacity-50"
-                    : "cursor-pointer hover:shadow-[0_8px_24px_rgba(15,23,42,0.09)]"
-                }`}
-                style={{
-                  borderColor: loading ? undefined : card.border,
-                }}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div
-                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${card.accent} text-white`}
-                  >
-                    <Icon className="h-4 w-4" />
-                  </div>
-                  <ArrowRight className="mt-0.5 h-4 w-4 shrink-0 text-slate-300 transition-all duration-200 group-hover:translate-x-0.5 group-hover:text-slate-600" />
-                </div>
-                <div className="mt-3.5">
-                  <h3 className="text-sm font-semibold tracking-[-0.02em] text-slate-900">
-                    {card.title}
-                  </h3>
-                  <p className="mt-1 text-xs leading-5 text-slate-500">
-                    {card.description}
-                  </p>
-                </div>
-              </motion.button>
-            );
-          })}
+              />
+            ))}
+          </div>
         </div>
       </section>
 
@@ -279,6 +331,14 @@ export default function ReportPage() {
           openingId={opening?.kind === "sales-return" ? opening.id : undefined}
         />
       )}
-    </main>
+
+      {openItems && (
+        <ItemWiseReportModal
+          isOpen={openItems}
+          onClose={() => setOpenItems(false)}
+          licenseId={licenseId}
+        />
+      )}
+    </div>
   );
 }

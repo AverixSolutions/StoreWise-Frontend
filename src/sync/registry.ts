@@ -1,6 +1,9 @@
 // src/sync/registry.ts
 import type { SyncAdapter } from "./SyncEngine";
-import { createProductsAdapter } from "./adapters/products";
+import {
+  createProductsAdapter,
+  createProductBatchesAdapter,
+} from "./adapters/products";
 import { createSuppliersAdapter } from "./adapters/suppliers";
 import { createCategoriesAdapter } from "./adapters/categories";
 import { createBrandsAdapter } from "./adapters/brands";
@@ -51,6 +54,7 @@ export function buildAdapters(isDesktop: boolean): SyncAdapter[] {
     createUnitsAdapter(isDesktop),
     createTransactionTypesAdapter(isDesktop),
     createProductsAdapter(isDesktop),
+    createProductBatchesAdapter(isDesktop),
     createOffersAdapter(isDesktop),
     createOfferTargetProductsAdapter(isDesktop),
     createSuppliersAdapter(isDesktop),
