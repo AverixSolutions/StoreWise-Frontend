@@ -1855,6 +1855,11 @@ export type PlatformAPI = {
       saleDate?: string;
     },
   ) => Promise<ConvertQuotationResult>;
+
+  markQuotationConverted?: (
+    quotationId: string,
+    saleId: string,
+  ) => Promise<MutationResult>;
 };
 
 // ── Quotation types ───────────────────────────────────────────────────────────
@@ -1946,6 +1951,8 @@ export type QuotationRow = {
   status: QuotationStatus;
   notes?: string | null;
   convertedSaleId?: string | null;
+  convertedSaleBillNo?: string | null;
+  convertedSaleSlNo?: number | null;
   itemCount?: number;
   isSynced?: number;
   deletedAt?: string | null;

@@ -62,3 +62,10 @@ export async function desktopConvertQuotationToSale(
 ): Promise<ConvertQuotationResult> {
   return api().convertQuotationToSale(quotationId, overrides ?? {});
 }
+
+export async function desktopMarkQuotationConverted(
+  quotationId: string,
+  saleId: string,
+): Promise<MutationResult> {
+  return api().markQuotationConverted(quotationId, saleId);
+}

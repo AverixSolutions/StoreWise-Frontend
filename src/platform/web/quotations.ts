@@ -243,3 +243,22 @@ export async function webConvertQuotationToSale(
     return { success: false, error: String(err?.message || err) };
   }
 }
+
+export async function webMarkQuotationConverted(
+  quotationId: string,
+  saleId: string,
+): Promise<MutationResult> {
+  try {
+    const res = await apiFetch<MutationResult>(
+      `/api/quotations/${quotationId}/mark-converted`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ saleId }),
+      },
+    );
+    if (res.success) triggerQuotationPull();
+    return res;
+  } catch (err: any) {
+    return { success: false, error: String(err?.message || err) };
+  }
+}

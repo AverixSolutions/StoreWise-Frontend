@@ -949,6 +949,10 @@ declare global {
       ) => Promise<{ success: boolean; upserted: number }>;
 
       // Quotation sync
+      markQuotationConverted: (
+        quotationId: string,
+        saleId: string,
+      ) => Promise<{ success: boolean; error?: string }>;
       getDirtyQuotations: (
         licenseId: string,
         limit?: number,

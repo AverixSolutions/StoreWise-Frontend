@@ -189,6 +189,7 @@ import {
   webUpdateQuotation,
   webDeleteQuotation,
   webConvertQuotationToSale,
+  webMarkQuotationConverted,
   webPeekNextQuotationSlNo,
 } from "./quotations";
 
@@ -478,6 +479,8 @@ export const webPlatform: PlatformAPI = {
   peekNextQuotationSlNo: (licenseId) => webPeekNextQuotationSlNo(licenseId),
   convertQuotationToSale: (quotationId, overrides) =>
     webConvertQuotationToSale(quotationId, overrides),
+  markQuotationConverted: (quotationId, saleId) =>
+    webMarkQuotationConverted(quotationId, saleId),
 
   // ── Print ─────────────────────────────────────────────────────────────────
   getPrinters: async () => [],

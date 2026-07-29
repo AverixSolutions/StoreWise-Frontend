@@ -97,6 +97,7 @@ import {
   desktopGetQuotationFull,
   desktopPeekNextQuotationSlNo,
   desktopConvertQuotationToSale,
+  desktopMarkQuotationConverted,
 } from "./quotations";
 
 import {
@@ -755,6 +756,8 @@ export const desktopPlatform: PlatformAPI = {
   peekNextQuotationSlNo: (licenseId) => desktopPeekNextQuotationSlNo(licenseId),
   convertQuotationToSale: (quotationId, overrides) =>
     desktopConvertQuotationToSale(quotationId, overrides),
+  markQuotationConverted: (quotationId, saleId) =>
+    desktopMarkQuotationConverted(quotationId, saleId),
 
   // ── Print ─────────────────────────────────────────────────────────────────
   getPrinters: async () => {
