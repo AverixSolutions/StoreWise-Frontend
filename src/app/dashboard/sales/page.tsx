@@ -1,7 +1,8 @@
 // src/app/dashboard/sales/page.tsx
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { X } from "lucide-react";
 import SalesNavigation from "@/components/sales/SalesNavigation";
 import BillDetailsSection from "@/components/sales/BillDetailsSection";
 import ItemsTableSection from "@/components/purchase/ItemsTableSection";
@@ -30,7 +31,11 @@ import {
 } from "@/components/sales/utils";
 import { printSaleBill } from "@/lib/print/printSaleBill";
 import { platform } from "@/platform";
-import type { OfferRecord, OfferTargetProductRecord } from "@/platform/types";
+import type {
+  OfferRecord,
+  OfferTargetProductRecord,
+  QuotationRow,
+} from "@/platform/types";
 import { isSyncEnabled } from "@/platform/mode";
 import { canUseBarcode } from "@/lib/session/runtimeSession";
 import { SyncManager } from "@/sync/SyncManager";
@@ -109,6 +114,40 @@ function parseDisabledOfferIds(raw?: string | null) {
 
 function offerOverridesJson(ids: string[]) {
   return JSON.stringify({ disabledOfferIds: Array.from(new Set(ids)) });
+}
+
+function formatQuotationDate(value?: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("en-IN");
+}
+
+function getQuotationGrandTotal(row: QuotationRow) {
+  return Math.max(0, Number(row.totalAmount || 0) - Number(row.discount || 0));
+}
+
+function formatQuotationOption(row: QuotationRow) {
+  const no =
+    row.quotationNo ||
+    (row.slNo != null ? `QT-${String(row.slNo).padStart(4, "0")}` : row.id);
+  const customer = row.customerName || "No customer";
+  const date = formatQuotationDate(row.quotationDate);
+  const amount = getQuotationGrandTotal(row).toLocaleString("en-IN", {
+    minimumFractionDigits: 2,
+  });
+  return [no, customer, date, `Rs. ${amount}`].filter(Boolean).join(" | ");
+}
+
+function toSaleTaxPercent(value: unknown): ItemRow["taxPercent"] {
+  const tax = String(value || "NT");
+  return ["NT", "P5", "P12", "P18", "P28"].includes(tax)
+    ? (tax as ItemRow["taxPercent"])
+    : "NT";
+}
+
+function toDiscountType(value: unknown): ItemRow["discountType"] {
+  return value === "PCT" ? "PCT" : "ABS";
 }
 
 function makeSnapshot(header: HeaderForm, rows: ItemRow[]) {
@@ -211,6 +250,25 @@ export default function SalesPage() {
   const [offersOpen, setOffersOpen] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const initialSnapshot = useRef<string | null>(null);
+  const initialQuotationParamLoaded = useRef(false);
+
+  const [quotationOptions, setQuotationOptions] = useState<QuotationRow[]>([]);
+  const [quotationOptionsLoading, setQuotationOptionsLoading] = useState(false);
+  const [quotationLoadingId, setQuotationLoadingId] = useState<string | null>(
+    null,
+  );
+  const [sourceQuotationId, setSourceQuotationId] = useState<string | null>(
+    null,
+  );
+  const [sourceQuotationNo, setSourceQuotationNo] = useState<string | null>(
+    null,
+  );
+  const [quotationWarning, setQuotationWarning] = useState<string | null>(null);
+  const [pendingQuotationId, setPendingQuotationId] = useState<string | null>(
+    null,
+  );
+  const [quotationReplaceConfirmOpen, setQuotationReplaceConfirmOpen] =
+    useState(false);
 
   const [showHolds, setShowHolds] = useState(false);
   const [showReports, setShowReports] = useState(false);
@@ -242,16 +300,62 @@ export default function SalesPage() {
     }
   }
 
+  const loadQuotationOptions = useCallback(async () => {
+    if (!isClient || !licenseId || !platform.listQuotations) return;
+    setQuotationOptionsLoading(true);
+    try {
+      const [draftRes, sentRes] = await Promise.all([
+        platform.listQuotations(licenseId, {
+          status: "DRAFT",
+          page: 1,
+          pageSize: 5000,
+        }),
+        platform.listQuotations(licenseId, {
+          status: "SENT",
+          page: 1,
+          pageSize: 5000,
+        }),
+      ]);
+
+      const byId = new Map<string, QuotationRow>();
+      for (const row of [...(draftRes?.rows || []), ...(sentRes?.rows || [])]) {
+        if (
+          row?.id &&
+          !row.deletedAt &&
+          (row.status === "DRAFT" || row.status === "SENT")
+        ) {
+          byId.set(row.id, row);
+        }
+      }
+
+      setQuotationOptions(
+        Array.from(byId.values()).sort((a, b) => {
+          const bd = new Date(b.quotationDate || 0).getTime();
+          const ad = new Date(a.quotationDate || 0).getTime();
+          if (bd !== ad) return bd - ad;
+          return Number(b.slNo || 0) - Number(a.slNo || 0);
+        }),
+      );
+    } catch (e) {
+      console.error("Failed to load quotation options", e);
+      setQuotationOptions([]);
+    } finally {
+      setQuotationOptionsLoading(false);
+    }
+  }, [isClient, licenseId]);
+
   useEffect(() => {
     if (!isClient) return;
     pullNow("sale");
     pullNow("saleItem");
     pullNow("offer");
     pullNow("offerTargetProduct");
+    pullNow("quotation");
+    pullNow("quotationItem");
     (async () => {
       const res = await platform.getProducts(licenseId, {
         page: 1,
-        pageSize: 200,
+        pageSize: 5000,
       });
       setProducts(res.products);
     })();
@@ -260,6 +364,10 @@ export default function SalesPage() {
       setNextEntryNo(res?.nextSlNo ?? 1);
     })();
   }, [licenseId, isClient]);
+
+  useEffect(() => {
+    loadQuotationOptions();
+  }, [loadQuotationOptions]);
 
   useEffect(() => {
     if (!isClient) return;
@@ -334,13 +442,24 @@ export default function SalesPage() {
           setOfferTargets(targetGroups.flat() as OfferTargetProductRecord[]);
         }, 150);
       }
+      if (entity === "quotation" || entity === "quotationItem") {
+        debounceTimer = setTimeout(() => {
+          loadQuotationOptions();
+        }, 150);
+      }
     };
     window.addEventListener("kynflow:sync:updated", handler);
     return () => {
       window.removeEventListener("kynflow:sync:updated", handler);
       if (debounceTimer) clearTimeout(debounceTimer);
     };
-  }, [isClient, licenseId, editingSaleId, header.saleDate]);
+  }, [
+    isClient,
+    licenseId,
+    editingSaleId,
+    header.saleDate,
+    loadQuotationOptions,
+  ]);
 
   useEffect(() => {
     loadCustomers();
@@ -367,25 +486,302 @@ export default function SalesPage() {
     });
   }, [licenseId, isClient]);
 
-  const loadCustomers = async () => {
+  const loadCustomers = async (): Promise<Customer[]> => {
     const res = await platform.listCustomers?.(licenseId, {
       q: "",
       page: 1,
       pageSize: 100,
     });
-    setCustomers(
-      (res?.customers ?? []).map((c) => ({
-        id: c.id,
-        name: c.name,
-        mobile: c.phone ?? null,
-        gstin: c.gstin ?? null,
-        address:
-          [c.addressLine1, c.addressLine2, c.city, c.state]
-            .filter(Boolean)
-            .join(", ") || null,
-      })),
-    );
+    const mapped = (res?.customers ?? []).map((c) => ({
+      id: c.id,
+      name: c.name,
+      mobile: c.phone ?? null,
+      gstin: c.gstin ?? null,
+      address:
+        [c.addressLine1, c.addressLine2, c.city, c.state]
+          .filter(Boolean)
+          .join(", ") || null,
+    }));
+    setCustomers(mapped);
+    return mapped;
   };
+
+  function showValidation(messages: string[]) {
+    setValidationMsgs(messages);
+    setValidationOpen(true);
+  }
+
+  function clearLoadedQuotationSource() {
+    setSourceQuotationId(null);
+    setSourceQuotationNo(null);
+    setQuotationWarning(null);
+  }
+
+  async function retryQuotationLink() {
+    if (!sourceQuotationId || !editingSaleId) return;
+
+    if (!platform.markQuotationConverted) {
+      const message =
+        "Quotation linking is not available in this runtime. The sale is already saved; do not create another sale for this quotation.";
+      setQuotationWarning(message);
+      showValidation([message]);
+      return;
+    }
+
+    setQuotationLoadingId(sourceQuotationId);
+    try {
+      const result = await platform.markQuotationConverted(
+        sourceQuotationId,
+        editingSaleId,
+      );
+      if (!result?.success) {
+        throw new Error(result?.error || "Quotation status update failed.");
+      }
+
+      if (isSyncEnabled()) {
+        SyncManager.pushEntity("quotation").catch(() => {});
+      }
+
+      clearLoadedQuotationSource();
+      void loadQuotationOptions();
+      alert("Quotation linked to the saved sale.");
+    } catch (error: any) {
+      const message =
+        error?.message ||
+        "Quotation linking failed. The sale is already saved; do not create another sale for this quotation.";
+      setQuotationWarning(message);
+      showValidation([
+        "The sale is already saved.",
+        message,
+        "Retry the quotation link instead of creating another sale.",
+      ]);
+    } finally {
+      setQuotationLoadingId(null);
+    }
+  }
+
+  async function loadQuotationIntoSales(quotationId: string) {
+    if (!platform.getQuotationFull) {
+      showValidation(["Quotation loading is not available in this runtime."]);
+      return;
+    }
+
+    if (editingSaleId) {
+      showValidation(["Start a new bill before loading a quotation."]);
+      return;
+    }
+
+    setQuotationLoadingId(quotationId);
+    setQuotationWarning(null);
+
+    try {
+      const res = await platform.getQuotationFull(quotationId);
+      if (!res?.success || !res.quotation) {
+        showValidation([res?.error || "Quotation not found."]);
+        return;
+      }
+
+      const quotation = res.quotation as any;
+      const quotationStatus = String(quotation.status || "");
+      if (!["DRAFT", "SENT"].includes(quotationStatus)) {
+        const message =
+          quotationStatus === "CONVERTED"
+            ? "This quotation has already been converted."
+            : quotationStatus === "EXPIRED"
+              ? "Expired quotations cannot be loaded into Sales."
+              : "Only draft or sent quotations can be loaded into Sales.";
+        showValidation([message]);
+        return;
+      }
+
+      const quotationItems = (res.items || []).filter(
+        (item: any) => item?.productId && !item.deletedAt,
+      );
+      const hasValidItem = quotationItems.some(
+        (item: any) => Number(item.quantity || 0) > 0,
+      );
+      if (!quotationItems.length || !hasValidItem) {
+        showValidation(["Selected quotation has no valid items to load."]);
+        return;
+      }
+
+      let customerPool = customers;
+      if (quotation.customerId && customerPool.length === 0) {
+        customerPool = await loadCustomers();
+      }
+
+      const customer = quotation.customerId
+        ? customerPool.find((c) => c.id === quotation.customerId) || {
+            id: quotation.customerId,
+            name: quotation.customerName || quotation.customerId,
+          }
+        : null;
+
+      const productById = new Map(products.map((p) => [p.id, p]));
+      const unresolvedProductIds = Array.from(
+        new Set<string>(
+          quotationItems
+            .map((item: any) => String(item.productId || ""))
+            .filter(
+              (productId: string) =>
+                productId && !productById.has(productId),
+            ),
+        ),
+      );
+
+      if (unresolvedProductIds.length > 0) {
+        const resolvedProducts = await Promise.all(
+          unresolvedProductIds.map(async (productId) => {
+            try {
+              return await platform.getProduct(productId);
+            } catch {
+              return null;
+            }
+          }),
+        );
+
+        const hydratedProducts = resolvedProducts.filter(
+          (product): product is NonNullable<typeof product> => Boolean(product),
+        );
+
+        for (const product of hydratedProducts) {
+          productById.set(product.id, product);
+        }
+
+        if (hydratedProducts.length > 0) {
+          setProducts((current) => {
+            const merged = new Map(current.map((product) => [product.id, product]));
+            for (const product of hydratedProducts) {
+              merged.set(product.id, product);
+            }
+            return Array.from(merged.values());
+          });
+        }
+      }
+
+      const missingProductItems = quotationItems.filter(
+        (item: any) => !productById.has(item.productId),
+      );
+      if (missingProductItems.length > 0) {
+        const missingLabels = missingProductItems
+          .slice(0, 5)
+          .map(
+            (item: any) =>
+              item.productName || item.productCode || item.productId,
+          );
+
+        showValidation([
+          "Quotation cannot be loaded because one or more products are missing from the current catalog.",
+          `Missing: ${missingLabels.join(", ")}`,
+          "Restore or sync these products, then open the quotation again.",
+        ]);
+        return;
+      }
+
+      const nextRows = quotationItems.map((item: any, index: number) => {
+        const product = productById.get(item.productId);
+        return calcRow({
+          lineNo: item.lineNo ?? index + 1,
+          productId: item.productId,
+          code: item.productCode || product?.code || "",
+          barcode: item.barcode ?? "",
+          name: item.productName || product?.name || item.productId,
+          unit: (item.unit || product?.unit || "NOS") as ItemRow["unit"],
+          rate: Number(item.rate) || 0,
+          quantity: Number(item.quantity) || 0,
+          mrp: item.mrp ?? null,
+          taxPercent: toSaleTaxPercent(item.taxPercent),
+          discountType: toDiscountType(item.discountType),
+          discount: Number(item.discount) || 0,
+          profitPercent: 0,
+          salePrice: item.salePrice ?? null,
+          profit: item.profit ?? null,
+          totalCost: Number(item.totalCost) || 0,
+          billedValue: Number(item.billedValue) || 0,
+          batchId: item.batchId ?? null,
+          batchNo: item.batchNo ?? null,
+          purchaseBatchNo: item.purchaseBatchNo ?? item.batchNo ?? null,
+          mfgDate: item.mfgDate ?? null,
+          expiryDate: item.expiryDate ?? null,
+          lineType: item.isFree ? "FREE" : "VALUED",
+          unitBilled: 0,
+          ...offerClearPatch,
+        });
+      });
+
+      const now = new Date().toISOString();
+      const quotationNo =
+        quotation.quotationNo ||
+        (quotation.slNo != null
+          ? `QT-${String(quotation.slNo).padStart(4, "0")}`
+          : quotation.id || quotationId);
+      const nextHeader: HeaderForm = {
+        billNo: "",
+        customer,
+        department: quotation.department || "",
+        debitAccount: quotation.debitAccount || "",
+        natureOfEntry: quotation.natureOfEntry || "",
+        saleDate: now,
+        entryTime: now,
+        discount: Number(quotation.discount || 0),
+        saleType: header.saleType || "CASH",
+        typeId: header.typeId ?? null,
+        offerSummaryJson: null,
+        offerSavings: 0,
+        offerOverridesJson: null,
+      };
+
+      initialSnapshot.current = makeSnapshot(header, rows);
+      setHeader(nextHeader);
+      setRows(nextRows);
+      setEditingSaleId(null);
+      setEditingSlNo(null);
+      setDisabledOfferIds([]);
+      setOffersOpen(false);
+      setSourceQuotationId(quotation.id || quotationId);
+      setSourceQuotationNo(quotationNo);
+      setQuotationWarning(null);
+      setIsDirty(true);
+    } catch (err: any) {
+      showValidation([
+        err?.message || "Failed to load the selected quotation into Sales.",
+      ]);
+    } finally {
+      setQuotationLoadingId(null);
+    }
+  }
+
+  function requestLoadQuotation(quotationId: string) {
+    if (!quotationId || quotationId === sourceQuotationId) return;
+    if (editingSaleId) {
+      showValidation(["Start a new bill before loading a quotation."]);
+      return;
+    }
+    if (isDirty) {
+      setPendingQuotationId(quotationId);
+      setQuotationReplaceConfirmOpen(true);
+      return;
+    }
+    void loadQuotationIntoSales(quotationId);
+  }
+
+  useEffect(() => {
+    if (
+      !isClient ||
+      initialQuotationParamLoaded.current ||
+      typeof window === "undefined"
+    ) {
+      return;
+    }
+
+    const quotationId = new URLSearchParams(window.location.search).get(
+      "quotationId",
+    );
+    if (!quotationId) return;
+
+    initialQuotationParamLoaded.current = true;
+    requestLoadQuotation(quotationId);
+  }, [isClient]);
 
   const handleSelectProduct = async (rowIndex: number, productId: string) => {
     const product = await platform.getProduct(productId);
@@ -661,6 +1057,7 @@ export default function SalesPage() {
         parseDisabledOfferIds(nextHeader.offerOverridesJson || null),
       );
       setShowHolds(false);
+      clearLoadedQuotationSource();
 
       initialSnapshot.current = makeSnapshot(nextHeader, nextRows);
       setIsDirty(false);
@@ -740,6 +1137,7 @@ export default function SalesPage() {
     setEditingSaleId(id);
     setEditingSlNo(sale.slNo ?? null);
     setShowReports(false);
+    clearLoadedQuotationSource();
 
     initialSnapshot.current = makeSnapshot(nextHeader, nextRows);
     setIsDirty(false);
@@ -831,6 +1229,7 @@ export default function SalesPage() {
           offerOverridesJson: currentOfferOverridesJson,
           licenseId,
           saleType: header.saleType,
+          typeId: header.typeId ?? null,
         },
         items,
       };
@@ -878,17 +1277,70 @@ export default function SalesPage() {
       licenseId,
       userId,
       saleType: header.saleType,
+      typeId: header.typeId ?? null,
     };
     try {
       const res = await platform.createSale?.(sale, items);
 
       if (res?.success) {
+        let quotationMarkedConverted = false;
+        let quotationMarkError = "";
+        if (sourceQuotationId) {
+          if (!res.saleId) {
+            quotationMarkError =
+              "Sale was saved, but no sale id was returned for quotation linking.";
+          } else if (!platform.markQuotationConverted) {
+            quotationMarkError =
+              "Sale was saved, but quotation status update is not available in this runtime.";
+          } else {
+            for (
+              let attempt = 1;
+              attempt <= 3 && !quotationMarkedConverted;
+              attempt += 1
+            ) {
+              try {
+                const markRes = await platform.markQuotationConverted(
+                  sourceQuotationId,
+                  res.saleId,
+                );
+                if (markRes?.success) {
+                  quotationMarkedConverted = true;
+                  quotationMarkError = "";
+                } else {
+                  quotationMarkError =
+                    markRes?.error || "Quotation status update failed.";
+                }
+              } catch (err: any) {
+                quotationMarkError =
+                  err?.message || "Quotation status update failed.";
+              }
+
+              if (!quotationMarkedConverted && attempt < 3) {
+                await new Promise((resolve) =>
+                  setTimeout(resolve, attempt * 250),
+                );
+              }
+            }
+          }
+        }
+
         if (isSyncEnabled()) {
           SyncManager.pushEntity("sale").catch(() => {});
           SyncManager.pushEntity("saleItem").catch(() => {});
           SyncManager.pushEntity("customerTransaction").catch(() => {});
           SyncManager.pushEntity("cashTransaction").catch(() => {});
           SyncManager.pushEntity("product").catch(() => {});
+          if (sourceQuotationId && quotationMarkedConverted) {
+            SyncManager.pushEntity("quotation").catch(() => {});
+            SyncManager.pushEntity("quotationItem").catch(() => {});
+          }
+        }
+        if (sourceQuotationId && !quotationMarkedConverted) {
+          const warning =
+            "The sale is already saved, but the quotation link failed. Do not create another sale for this quotation. Use Retry link." +
+            (quotationMarkError ? ` ${quotationMarkError}` : "");
+          setQuotationWarning(warning);
+          alert(warning);
         }
         const shouldPrint = confirm(
           `✅ Saved! SlNo: ${res.slNo}, Total: ${res.totalAmount}\n\nOpen print preview now?`,
@@ -904,6 +1356,10 @@ export default function SalesPage() {
         setHeader(savedHeader);
         setEditingSaleId(res.saleId || null);
         setEditingSlNo(res.slNo ?? null);
+        if (quotationMarkedConverted) {
+          clearLoadedQuotationSource();
+          void loadQuotationOptions();
+        }
 
         initialSnapshot.current = makeSnapshot(savedHeader, finalRows);
         setIsDirty(false);
@@ -981,6 +1437,7 @@ export default function SalesPage() {
     setEditingSlNo(null);
     setDisabledOfferIds([]);
     setOffersOpen(false);
+    clearLoadedQuotationSource();
 
     // Clear all modals and auxiliary state
     setShowHolds(false);
@@ -994,6 +1451,8 @@ export default function SalesPage() {
     setLeaveOpen(false);
     setPendingPath(null);
     setCancelConfirmOpen(false);
+    setPendingQuotationId(null);
+    setQuotationReplaceConfirmOpen(false);
 
     initialSnapshot.current = makeSnapshot(freshHeader, freshRows);
     setIsDirty(false);
@@ -1112,10 +1571,59 @@ export default function SalesPage() {
 
   if (!isClient) return null;
 
+  const quotationSelector = (
+    <div className="flex min-w-0 items-center gap-1.5">
+      <select
+        value={sourceQuotationId || ""}
+        disabled={
+          quotationOptionsLoading ||
+          Boolean(quotationLoadingId) ||
+          Boolean(editingSaleId)
+        }
+        onChange={(e) => requestLoadQuotation(e.target.value)}
+        title={
+          editingSaleId
+            ? "Start a new bill before loading a quotation"
+            : "Load quotation into this sales bill"
+        }
+        className="h-8 w-[160px] rounded-lg border border-white/15 bg-white/10 px-2 text-xs font-medium text-white outline-none transition focus:border-cyan-300 sm:w-[260px] lg:w-[340px] disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        <option className="text-slate-900" value="">
+          {quotationOptionsLoading
+            ? "Loading quotations..."
+            : "Load quotation..."}
+        </option>
+        {quotationOptions.map((quotation) => (
+          <option
+            className="text-slate-900"
+            key={quotation.id}
+            value={quotation.id}
+          >
+            {formatQuotationOption(quotation)}
+          </option>
+        ))}
+      </select>
+      {sourceQuotationId && (
+        <button
+          type="button"
+          onClick={clearLoadedQuotationSource}
+          title="Clear loaded quotation source"
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/15 bg-white/10 text-white/75 transition hover:bg-white/15 hover:text-white"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      )}
+    </div>
+  );
+
   return (
     <div className="flex h-screen flex-col bg-kyn-bg text-kyn-text">
-      <SalesNavigation onNavigate={tryNavigate} title="Sales" />
-      <div className="flex-1 min-h-0 overflow-hidden p-0">
+      <SalesNavigation
+        onNavigate={tryNavigate}
+        title="Sales"
+        rightSlot={quotationSelector}
+      />
+      <div className="flex flex-1 min-h-0 flex-col overflow-hidden p-0">
         {editingSaleId && (
           <div className="px-4 py-2 border-b border-kyn-border bg-kyn-surface flex items-center gap-3">
             <span className="text-sm text-kyn-text-muted">Saved bill open</span>
@@ -1146,10 +1654,44 @@ export default function SalesPage() {
             </button>
           </div>
         )}
+        {sourceQuotationId && (
+          <div className="border-b border-sky-200 bg-sky-50 px-4 py-2 text-sm text-sky-900">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-medium">
+                Loaded from quotation {sourceQuotationNo || sourceQuotationId}
+              </span>
+              {editingSaleId ? (
+                <button
+                  type="button"
+                  onClick={() => void retryQuotationLink()}
+                  disabled={quotationLoadingId === sourceQuotationId}
+                  className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-white px-2.5 py-1 text-xs font-medium text-amber-700 transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {quotationLoadingId === sourceQuotationId
+                    ? "Retrying..."
+                    : "Retry link"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={clearLoadedQuotationSource}
+                  className="inline-flex items-center gap-1 rounded-md border border-sky-200 bg-white px-2.5 py-1 text-xs font-medium text-sky-700 transition hover:bg-sky-100"
+                >
+                  <X className="h-3.5 w-3.5" />
+                  Clear source
+                </button>
+              )}
+            </div>
+            {quotationWarning && (
+              <div className="mt-1 text-xs text-amber-700">
+                {quotationWarning}
+              </div>
+            )}
+          </div>
+        )}
         <div
           className={[
-            "grid overflow-hidden transition-all duration-200",
-            editingSaleId ? "h-[calc(100%-41px)]" : "h-full",
+            "grid flex-1 min-h-0 overflow-hidden transition-all duration-200",
             "grid-cols-1",
             billDetailsOpen
               ? "md:grid-cols-[240px_1fr] lg:grid-cols-[300px_1fr]"
@@ -1307,6 +1849,24 @@ export default function SalesPage() {
         onConfirm={(v) => {
           setShowTitlePrompt(false);
           saveHold(v.trim());
+        }}
+      />
+
+      <ConfirmModal
+        isOpen={quotationReplaceConfirmOpen}
+        title="Replace current bill?"
+        message="Loading this quotation will replace the current sales bill fields and items."
+        confirmText="Load quotation"
+        cancelText="Keep current bill"
+        onConfirm={() => {
+          const id = pendingQuotationId;
+          setQuotationReplaceConfirmOpen(false);
+          setPendingQuotationId(null);
+          if (id) void loadQuotationIntoSales(id);
+        }}
+        onCancel={() => {
+          setQuotationReplaceConfirmOpen(false);
+          setPendingQuotationId(null);
         }}
       />
 

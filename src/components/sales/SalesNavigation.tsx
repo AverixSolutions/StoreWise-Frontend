@@ -1,6 +1,7 @@
 // src/components/sales/SalesNavigation.tsx
 "use client";
 
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import { ArrowLeft, Wifi, WifiOff } from "lucide-react";
@@ -8,11 +9,13 @@ import { ArrowLeft, Wifi, WifiOff } from "lucide-react";
 interface SalesNavigationProps {
   onNavigate: (path: string) => void;
   title?: string;
+  rightSlot?: ReactNode;
 }
 
 export default function SalesNavigation({
   onNavigate,
   title,
+  rightSlot,
 }: SalesNavigationProps) {
   const pathname = usePathname();
 
@@ -56,22 +59,26 @@ export default function SalesNavigation({
           {inferredTitle}
         </h1>
 
-        {/* Online/Offline pill */}
-        <div
-          className={
-            "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium " +
-            (online
-              ? "bg-emerald-500/20 text-emerald-300 border border-emerald-400/30"
-              : "bg-amber-500/20 text-amber-300 border border-amber-400/30")
-          }
-          title={online ? "Online" : "Offline"}
-        >
-          {online ? (
-            <Wifi className="w-3.5 h-3.5" />
-          ) : (
-            <WifiOff className="w-3.5 h-3.5" />
-          )}
-          <span>{online ? "Online" : "Offline"}</span>
+        <div className="flex min-w-0 items-center justify-end gap-2">
+          {rightSlot && <div className="min-w-0">{rightSlot}</div>}
+
+          {/* Online/Offline pill */}
+          <div
+            className={
+              "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium shrink-0 " +
+              (online
+                ? "bg-emerald-500/20 text-emerald-300 border border-emerald-400/30"
+                : "bg-amber-500/20 text-amber-300 border border-amber-400/30")
+            }
+            title={online ? "Online" : "Offline"}
+          >
+            {online ? (
+              <Wifi className="w-3.5 h-3.5" />
+            ) : (
+              <WifiOff className="w-3.5 h-3.5" />
+            )}
+            <span>{online ? "Online" : "Offline"}</span>
+          </div>
         </div>
       </div>
       {/* Brand gradient separator */}

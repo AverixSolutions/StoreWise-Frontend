@@ -8,7 +8,8 @@ export async function printQuotation(
   overrides?: { preview?: boolean },
 ) {
   const res = await platform.getQuotationFull?.(quotationId);
-  if (!res?.success) throw new Error((res as any)?.error || "Failed to load quotation");
+  if (!res?.success)
+    throw new Error((res as any)?.error || "Failed to load quotation");
 
   const { quotation, items } = res as any;
   const shop = await getShopProfile();
@@ -23,7 +24,7 @@ export async function printQuotation(
   const html = buildInvoiceHtml({
     shop,
     document: {
-      title: "QUOTATION / PROFORMA INVOICE",
+      title: "QUOTATION INVOICE",
       entryNo: quotation.quotationNo ?? quotation.slNo,
       billNo: quotation.quotationNo,
       date: quotation.quotationDate,

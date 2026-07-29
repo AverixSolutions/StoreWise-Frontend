@@ -22,6 +22,32 @@ function formatQuotationNo(slNo) {
   return `QT-${String(slNo).padStart(4, "0")}`;
 }
 
+function attachConvertedSaleDetails(row) {
+  if (!row || !row.convertedSaleId) {
+    return {
+      ...row,
+      convertedSaleBillNo: null,
+      convertedSaleSlNo: null,
+    };
+  }
+
+  const sale = db
+    .prepare(
+      `SELECT billNo, slNo
+       FROM sales
+       WHERE id = ?
+         AND COALESCE(deletedAt,'') = ''
+       LIMIT 1`,
+    )
+    .get(row.convertedSaleId);
+
+  return {
+    ...row,
+    convertedSaleBillNo: sale?.billNo || null,
+    convertedSaleSlNo: sale?.slNo ?? null,
+  };
+}
+
 function getItemsForQuotation(quotationId) {
   return db
     .prepare(
@@ -129,7 +155,12 @@ function registerQuotationHandlers() {
       total,
       page,
       pageSize,
-      rows: rows.map((r) => ({ ...r, itemCount: itemCounts[r.id] || 0 })),
+      rows: rows.map((r) =>
+        attachConvertedSaleDetails({
+          ...r,
+          itemCount: itemCounts[r.id] || 0,
+        }),
+      ),
     };
   });
 
@@ -147,7 +178,11 @@ function registerQuotationHandlers() {
          ORDER BY COALESCE(qi.lineNo,0), qi.createdAt`,
       )
       .all(id);
-    return { success: true, quotation: q, items };
+    return {
+      success: true,
+      quotation: attachConvertedSaleDetails(q),
+      items,
+    };
   });
 
   // ── peek next slno ────────────────────────────────────────────────────────
@@ -219,7 +254,9 @@ function registerQuotationHandlers() {
           it.discountType === "PCT"
             ? totalCost * (Math.max(0, Math.min(100, it.discount)) / 100)
             : Number(it.discount) || 0;
-        const billedValue = it.isFree ? 0 : Math.max(0, totalCost - discountAbs);
+        const billedValue = it.isFree
+          ? 0
+          : Math.max(0, totalCost - discountAbs);
         const effUnit = it.isFree ? 0 : qty > 0 ? billedValue / qty : 0;
 
         totalAmount += billedValue;
@@ -262,7 +299,13 @@ function registerQuotationHandlers() {
 
     try {
       const { slNo, quotationNo, totalAmount } = trx(header, items);
-      return { success: true, quotationId: newId, slNo, quotationNo, totalAmount };
+      return {
+        success: true,
+        quotationId: newId,
+        slNo,
+        quotationNo,
+        totalAmount,
+      };
     } catch (e) {
       return { success: false, error: String(e.message || e) };
     }
@@ -395,197 +438,281 @@ function registerQuotationHandlers() {
   });
 
   // ── convert to sale ───────────────────────────────────────────────────────
-  ipcMain.handle("quotation:convert-to-sale", (evt, quotationId, overrides = {}) => {
-    const trx = db.transaction(() => {
-      const quot = db
-        .prepare(`SELECT * FROM quotations WHERE id=?`)
-        .get(quotationId);
-      if (!quot) throw new Error("Quotation not found");
-      if (quot.status === "CONVERTED")
-        throw new Error("Already converted");
-      if (quot.status === "EXPIRED")
-        throw new Error("Cannot convert an expired quotation");
+  ipcMain.handle("quotation:mark-converted", (evt, quotationId, saleId) => {
+    if (!quotationId) return { success: false, error: "quotationId required" };
+    if (!saleId) return { success: false, error: "saleId required" };
 
-      const quotItems = db
+    const markConverted = db.transaction(() => {
+      const existing = db
         .prepare(
-          `SELECT * FROM quotation_items
-           WHERE quotationId=? AND COALESCE(deletedAt,'')=''
-           ORDER BY lineNo`,
+          `SELECT id, licenseId, status, convertedSaleId, deletedAt
+           FROM quotations
+           WHERE id=?`,
         )
-        .all(quotationId);
+        .get(quotationId);
+
+      if (!existing || existing.deletedAt) {
+        throw new Error("Quotation not found");
+      }
+
+      if (existing.status === "CONVERTED") {
+        if (existing.convertedSaleId === saleId) {
+          return {
+            success: true,
+            quotationId,
+            convertedSaleId: saleId,
+          };
+        }
+        throw new Error("Quotation is already converted to another sale");
+      }
+
+      if (!["DRAFT", "SENT"].includes(existing.status)) {
+        throw new Error("Only draft or sent quotations can be converted");
+      }
+
+      const sale = db
+        .prepare(
+          `SELECT id
+           FROM sales
+           WHERE id=?
+             AND licenseId=?
+             AND COALESCE(deletedAt,'') = ''
+           LIMIT 1`,
+        )
+        .get(saleId, existing.licenseId);
+
+      if (!sale) {
+        throw new Error("Sale not found for this quotation license");
+      }
 
       const now = new Date().toISOString();
-      const saleId = uuidv4();
+      const result = db
+        .prepare(
+          `UPDATE quotations
+           SET status='CONVERTED',
+               convertedSaleId=?,
+               updatedAt=?,
+               isSynced=0,
+               syncedAt=NULL
+           WHERE id=?
+             AND status IN ('DRAFT','SENT')
+             AND COALESCE(deletedAt,'') = ''`,
+        )
+        .run(saleId, now, quotationId);
 
-      // ── next sale slno ──
-      const saleSeq = db
-        .prepare(`SELECT lastSlNo FROM sale_sequence WHERE licenseId=?`)
-        .get(quot.licenseId);
-      const saleSlNo = saleSeq ? saleSeq.lastSlNo + 1 : 1;
-      db.prepare(
-        `INSERT INTO sale_sequence (licenseId, lastSlNo) VALUES (?,?)
+      if (result.changes !== 1) {
+        throw new Error("Quotation conversion state changed; refresh and retry");
+      }
+
+      return {
+        success: true,
+        quotationId,
+        convertedSaleId: saleId,
+      };
+    });
+
+    try {
+      return markConverted();
+    } catch (e) {
+      return { success: false, error: String(e.message || e) };
+    }
+  });
+
+  ipcMain.handle(
+    "quotation:convert-to-sale",
+    (evt, quotationId, overrides = {}) => {
+      const trx = db.transaction(() => {
+        const quot = db
+          .prepare(`SELECT * FROM quotations WHERE id=?`)
+          .get(quotationId);
+        if (!quot) throw new Error("Quotation not found");
+        if (quot.status === "CONVERTED") throw new Error("Already converted");
+        if (quot.status === "EXPIRED")
+          throw new Error("Cannot convert an expired quotation");
+
+        const quotItems = db
+          .prepare(
+            `SELECT * FROM quotation_items
+           WHERE quotationId=? AND COALESCE(deletedAt,'')=''
+           ORDER BY lineNo`,
+          )
+          .all(quotationId);
+
+        const now = new Date().toISOString();
+        const saleId = uuidv4();
+
+        // ── next sale slno ──
+        const saleSeq = db
+          .prepare(`SELECT lastSlNo FROM sale_sequence WHERE licenseId=?`)
+          .get(quot.licenseId);
+        const saleSlNo = saleSeq ? saleSeq.lastSlNo + 1 : 1;
+        db.prepare(
+          `INSERT INTO sale_sequence (licenseId, lastSlNo) VALUES (?,?)
          ON CONFLICT(licenseId) DO UPDATE SET lastSlNo = excluded.lastSlNo`,
-      ).run(quot.licenseId, saleSlNo);
+        ).run(quot.licenseId, saleSlNo);
 
-      const saleBillNo = overrides.billNo || null;
-      const saleType = overrides.saleType || "CASH";
+        const saleBillNo = overrides.billNo || null;
+        const saleType = overrides.saleType || "CASH";
 
-      db.prepare(
-        `INSERT INTO sales(
+        db.prepare(
+          `INSERT INTO sales(
            id, slNo, userId, licenseId, customerId, customerName, billNo,
            department, debitAccount, natureOfEntry, saleDate, entryTime,
            totalAmount, discount, saleType, createdAt, updatedAt, isSynced
          ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)`,
-      ).run(
-        saleId,
-        saleSlNo,
-        quot.userId,
-        quot.licenseId,
-        quot.customerId,
-        quot.customerName,
-        saleBillNo,
-        quot.department,
-        quot.debitAccount,
-        quot.natureOfEntry,
-        overrides.saleDate || quot.quotationDate,
-        now,
-        0,
-        Number(quot.discount || 0),
-        saleType,
-        now,
-        now,
-      );
+        ).run(
+          saleId,
+          saleSlNo,
+          quot.userId,
+          quot.licenseId,
+          quot.customerId,
+          quot.customerName,
+          saleBillNo,
+          quot.department,
+          quot.debitAccount,
+          quot.natureOfEntry,
+          overrides.saleDate || quot.quotationDate,
+          now,
+          0,
+          Number(quot.discount || 0),
+          saleType,
+          now,
+          now,
+        );
 
-      let totalAmount = 0;
+        let totalAmount = 0;
 
-      for (const it of quotItems) {
-        const qty = Number(it.quantity || 0);
-        const billedValue = Number(it.billedValue || 0);
-        totalAmount += billedValue;
-        const effUnit = qty > 0 ? billedValue / qty : 0;
+        for (const it of quotItems) {
+          const qty = Number(it.quantity || 0);
+          const billedValue = Number(it.billedValue || 0);
+          totalAmount += billedValue;
+          const effUnit = qty > 0 ? billedValue / qty : 0;
 
-        db.prepare(
-          `INSERT INTO sale_items(
+          db.prepare(
+            `INSERT INTO sale_items(
              id, saleId, productId, barcode, quantity, unit, rate, mrp,
              taxPercent, taxAmount, discount, discountType, salePrice, profit,
              totalCost, billedValue, effectiveUnitValue, batchNo, batchId,
              mfgDate, expiryDate, lineNo, isFree, createdAt, updatedAt, isSynced
            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)`,
-        ).run(
-          uuidv4(),
-          saleId,
-          it.productId,
-          it.barcode,
-          qty,
-          it.unit,
-          it.rate,
-          it.mrp,
-          it.taxPercent,
-          it.taxAmount,
-          it.discount,
-          it.discountType,
-          it.salePrice,
-          it.profit,
-          it.totalCost,
-          billedValue,
-          effUnit,
-          it.batchNo,
-          it.batchId,
-          it.mfgDate,
-          it.expiryDate,
-          it.lineNo,
-          it.isFree,
-          now,
-          now,
-        );
+          ).run(
+            uuidv4(),
+            saleId,
+            it.productId,
+            it.barcode,
+            qty,
+            it.unit,
+            it.rate,
+            it.mrp,
+            it.taxPercent,
+            it.taxAmount,
+            it.discount,
+            it.discountType,
+            it.salePrice,
+            it.profit,
+            it.totalCost,
+            billedValue,
+            effUnit,
+            it.batchNo,
+            it.batchId,
+            it.mfgDate,
+            it.expiryDate,
+            it.lineNo,
+            it.isFree,
+            now,
+            now,
+          );
 
-        // deduct stock
-        if (!it.isFree && qty > 0) {
-          if (it.batchId) {
-            const batchRow = db
-              .prepare(`SELECT stock FROM product_batches WHERE id=?`)
-              .get(it.batchId);
-            if (!batchRow) throw new Error(`Batch not found: ${it.batchId}`);
-            if (Number(batchRow.stock || 0) < qty) {
-              throw new Error(
-                `Insufficient stock for product ${it.productId}. Available: ${batchRow.stock}, Required: ${qty}`,
-              );
-            }
-            bumpBatchAndProductStock({
-              batchId: it.batchId,
-              productId: it.productId,
-              deltaQty: -qty,
-            });
-          } else {
-            db.prepare(
-              `UPDATE products
+          // deduct stock
+          if (!it.isFree && qty > 0) {
+            if (it.batchId) {
+              const batchRow = db
+                .prepare(`SELECT stock FROM product_batches WHERE id=?`)
+                .get(it.batchId);
+              if (!batchRow) throw new Error(`Batch not found: ${it.batchId}`);
+              if (Number(batchRow.stock || 0) < qty) {
+                throw new Error(
+                  `Insufficient stock for product ${it.productId}. Available: ${batchRow.stock}, Required: ${qty}`,
+                );
+              }
+              bumpBatchAndProductStock({
+                batchId: it.batchId,
+                productId: it.productId,
+                deltaQty: -qty,
+              });
+            } else {
+              db.prepare(
+                `UPDATE products
                SET stock = COALESCE(stock,0) - ?, updatedAt=?, isSynced=0, syncedAt=NULL
                WHERE id=?`,
-            ).run(qty, now, it.productId);
+              ).run(qty, now, it.productId);
+            }
           }
         }
-      }
 
-      db.prepare(
-        `UPDATE sales SET totalAmount=?, discount=? WHERE id=?`,
-      ).run(totalAmount, Number(quot.discount || 0), saleId);
+        db.prepare(`UPDATE sales SET totalAmount=?, discount=? WHERE id=?`).run(
+          totalAmount,
+          Number(quot.discount || 0),
+          saleId,
+        );
 
-      // customer ledger entry for credit sales
-      if (saleType !== "CASH" && quot.customerId) {
-        const grand = Math.max(0, totalAmount - Number(quot.discount || 0));
-        db.prepare(
-          `INSERT INTO customer_transactions
+        // customer ledger entry for credit sales
+        if (saleType !== "CASH" && quot.customerId) {
+          const grand = Math.max(0, totalAmount - Number(quot.discount || 0));
+          db.prepare(
+            `INSERT INTO customer_transactions
            (id, licenseId, customerId, kind, refId, refNo, date, amount, sign, notes, createdAt, updatedAt, isSynced)
            VALUES(?,?,?,'SALE',?,?,?,?,1,'Sale (from quotation)',?,?,0)`,
-        ).run(
-          uuidv4(),
-          quot.licenseId,
-          quot.customerId,
-          saleId,
-          saleBillNo,
-          overrides.saleDate || quot.quotationDate,
-          grand,
-          now,
-          now,
-        );
-      }
+          ).run(
+            uuidv4(),
+            quot.licenseId,
+            quot.customerId,
+            saleId,
+            saleBillNo,
+            overrides.saleDate || quot.quotationDate,
+            grand,
+            now,
+            now,
+          );
+        }
 
-      if (saleType === "CASH") {
-        const grand = Math.max(0, totalAmount - Number(quot.discount || 0));
-        db.prepare(
-          `INSERT INTO cash_transactions
+        if (saleType === "CASH") {
+          const grand = Math.max(0, totalAmount - Number(quot.discount || 0));
+          db.prepare(
+            `INSERT INTO cash_transactions
            (id, licenseId, kind, refId, refNo, date, amount, sign, notes, createdAt, updatedAt, isSynced)
            VALUES(?,?, 'SALE', ?, ?, ?, ?, 1, ?, ?, ?, 0)`,
-        ).run(
-          uuidv4(),
-          quot.licenseId,
-          saleId,
-          saleBillNo,
-          overrides.saleDate || quot.quotationDate,
-          grand,
-          `Sale (Cash, from quotation ${quot.quotationNo || quot.slNo})`,
-          now,
-          now,
-        );
-      }
+          ).run(
+            uuidv4(),
+            quot.licenseId,
+            saleId,
+            saleBillNo,
+            overrides.saleDate || quot.quotationDate,
+            grand,
+            `Sale (Cash, from quotation ${quot.quotationNo || quot.slNo})`,
+            now,
+            now,
+          );
+        }
 
-      // mark quotation converted
-      db.prepare(
-        `UPDATE quotations
+        // mark quotation converted
+        db.prepare(
+          `UPDATE quotations
          SET status='CONVERTED', convertedSaleId=?, updatedAt=?, isSynced=0
          WHERE id=?`,
-      ).run(saleId, now, quotationId);
+        ).run(saleId, now, quotationId);
 
-      return { saleId, saleSlNo, totalAmount };
-    });
+        return { saleId, saleSlNo, totalAmount };
+      });
 
-    try {
-      const { saleId, saleSlNo, totalAmount } = trx();
-      return { success: true, saleId, saleSlNo, totalAmount };
-    } catch (e) {
-      return { success: false, error: String(e.message || e) };
-    }
-  });
+      try {
+        const { saleId, saleSlNo, totalAmount } = trx();
+        return { success: true, saleId, saleSlNo, totalAmount };
+      } catch (e) {
+        return { success: false, error: String(e.message || e) };
+      }
+    },
+  );
 
   ipcMain.handle("quotation:get-dirty", (evt, licenseId, limit = 200) => {
     const rows = db
@@ -619,12 +746,10 @@ function registerQuotationHandlers() {
     return { success: true, syncedAt: ts };
   });
 
-  ipcMain.handle(
-    "quotation:get-dirty-items",
-    (evt, licenseId, limit = 500) => {
-      const rows = db
-        .prepare(
-          `
+  ipcMain.handle("quotation:get-dirty-items", (evt, licenseId, limit = 500) => {
+    const rows = db
+      .prepare(
+        `
       SELECT qi.id, qi.quotationId, qi.productId, qi.barcode,
              qi.quantity, qi.unit, qi.rate, qi.mrp,
              qi.taxPercent, qi.taxAmount,
@@ -643,11 +768,10 @@ function registerQuotationHandlers() {
       ORDER BY qi.updatedAt ASC
       LIMIT ?
     `,
-        )
-        .all(licenseId, limit);
-      return { success: true, records: rows };
-    },
-  );
+      )
+      .all(licenseId, limit);
+    return { success: true, records: rows };
+  });
 
   ipcMain.handle("quotation:mark-items-synced", (evt, ids, serverSyncedAt) => {
     if (!Array.isArray(ids) || ids.length === 0) return { success: true };

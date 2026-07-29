@@ -1,13 +1,17 @@
 // src/app/dashboard/quotation/page.tsx
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { platform } from "@/platform";
 import QuotationsTable from "@/components/quotations/QuotationsTable";
 import QuotationFormModal from "@/components/quotations/QuotationFormModal";
 import QuotationViewModal from "@/components/quotations/QuotationViewModal";
-import { FileText } from "lucide-react";
+import CustomerFormModal from "@/components/customers/CustomerFormModal";
+import { ArrowLeft, FileText, Plus } from "lucide-react";
 
 export default function QuotationPage() {
+  const router = useRouter();
+
   const licenseId =
     typeof window !== "undefined"
       ? (localStorage.getItem("licenseId") ?? "")
@@ -17,18 +21,31 @@ export default function QuotationPage() {
     Array<{ id: string; name: string }>
   >([]);
   const [showForm, setShowForm] = useState(false);
+  const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [viewId, setViewId] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  useEffect(() => {
+  const loadCustomers = useCallback(async () => {
     if (!licenseId) return;
-    platform.listCustomers?.(licenseId, {}).then((res) => {
-      setCustomers(
-        (res?.customers || []).map((c: any) => ({ id: c.id, name: c.name })),
-      );
+
+    const res = await platform.listCustomers?.(licenseId, {
+      q: "",
+      page: 1,
+      pageSize: 500,
     });
+
+    setCustomers(
+      (res?.customers || []).map((c: any) => ({
+        id: c.id,
+        name: c.name,
+      })),
+    );
   }, [licenseId]);
+
+  useEffect(() => {
+    loadCustomers();
+  }, [loadCustomers]);
 
   const handleNew = useCallback(() => {
     setEditId(null);
@@ -56,36 +73,53 @@ export default function QuotationPage() {
     setRefreshKey((k) => k + 1);
   }, []);
 
-  const handleConverted = useCallback((_saleId: string) => {
-    setViewId(null);
-    setRefreshKey((k) => k + 1);
-  }, []);
-
   return (
     <>
-      {/* ── Hero — matches Settings / other dashboard pages ── */}
+      {/* ── Hero ── */}
       <section className="relative overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(135deg,#0a1324_0%,#101a31_58%,#16213d_100%)] px-5 py-5 text-white shadow-[0_8px_20px_rgba(7,12,24,0.10)] md:px-6 mb-5">
         <div className="pointer-events-none absolute -left-10 top-0 h-28 w-28 rounded-full bg-cyan-400/10 blur-3xl" />
         <div className="pointer-events-none absolute right-0 top-0 h-28 w-28 rounded-full bg-sky-500/10 blur-3xl" />
 
-        <div className="relative">
-          <div className="mb-3 inline-flex items-center rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/70">
-            KYNFLOW • QUOTATIONS
+        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <div className="mb-3 inline-flex items-center rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/70">
+              KYNFLOW • QUOTATIONS
+            </div>
+            <h1 className="text-2xl font-semibold tracking-[-0.04em] text-white md:text-[28px]">
+              Quotations &{" "}
+              <span className="kyn-brand-text">proforma invoices.</span>
+            </h1>
+            <p className="mt-2 text-sm text-slate-400">
+              Create, send and load quotations into the Sales workflow.
+            </p>
           </div>
-          <h1 className="text-2xl font-semibold tracking-[-0.04em] text-white md:text-[28px]">
-            Quotations &{" "}
-            <span className="kyn-brand-text">proforma invoices.</span>
-          </h1>
-          <p className="mt-2 text-sm text-slate-400">
-            Create, send and convert quotations to sales in one click.
-          </p>
+
+          <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
+            <button
+              type="button"
+              onClick={() => router.push("/dashboard/entries")}
+              className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-50 cursor-pointer"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back
+            </button>
+
+            <button
+              type="button"
+              onClick={handleNew}
+              className="inline-flex items-center gap-2 rounded-2xl border border-white/15 bg-white/[0.07] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-white/[0.12] cursor-pointer"
+            >
+              <Plus className="h-4 w-4" />
+              New Quotation
+            </button>
+          </div>
         </div>
       </section>
 
       <QuotationsTable
         licenseId={licenseId}
-        onNew={handleNew}
         onView={handleView}
+        onEdit={handleEdit}
         refreshKey={refreshKey}
       />
 
@@ -99,14 +133,22 @@ export default function QuotationPage() {
         editId={editId}
         onSaved={handleSaved}
         customers={customers}
+        onAddCustomer={() => setShowCustomerModal(true)}
+      />
+
+      <CustomerFormModal
+        isOpen={showCustomerModal}
+        onClose={() => setShowCustomerModal(false)}
+        onSuccess={() => {
+          setShowCustomerModal(false);
+          loadCustomers();
+        }}
       />
 
       <QuotationViewModal
         isOpen={!!viewId}
         onClose={() => setViewId(null)}
         quotationId={viewId}
-        licenseId={licenseId}
-        onConvertSuccess={handleConverted}
         onEdit={handleEdit}
         onDeleted={handleDeleted}
       />

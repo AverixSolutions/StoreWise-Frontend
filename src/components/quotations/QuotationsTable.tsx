@@ -4,13 +4,19 @@ import { useCallback, useEffect, useState } from "react";
 import {
   FileText,
   Search,
-  Plus,
   ChevronLeft,
   ChevronRight,
   Loader2,
+  Eye,
+  Pencil,
+  ArrowRight,
+  Printer,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { platform } from "@/platform";
 import type { QuotationRow } from "@/platform/types";
+import Dropdown from "@/components/ui/Dropdown";
+import { printQuotation } from "@/lib/print/printQuotation";
 
 const STATUS_BADGE: Record<
   string,
@@ -38,19 +44,44 @@ const STATUS_BADGE: Record<
   },
 };
 
+const STATUS_OPTIONS = [
+  { value: "", label: "All Statuses" },
+  { value: "DRAFT", label: "Draft" },
+  { value: "SENT", label: "Sent" },
+  { value: "CONVERTED", label: "Converted" },
+  { value: "EXPIRED", label: "Expired" },
+];
+
 interface Props {
   licenseId: string;
-  onNew: () => void;
   onView: (id: string) => void;
+  onEdit?: (id: string) => void;
   refreshKey?: number;
+}
+
+function getConvertedSaleLabel(row: QuotationRow) {
+  const saleBillNo = row.convertedSaleBillNo;
+  const saleSlNo = row.convertedSaleSlNo;
+
+  if (!row.convertedSaleId && row.status !== "CONVERTED") return "";
+
+  if (saleBillNo) return `Sale ${saleBillNo}`;
+  if (saleSlNo != null) return `Sale #${String(saleSlNo).padStart(5, "0")}`;
+
+  return "Converted to Sale";
+}
+
+function canOpenInSales(row: QuotationRow) {
+  return row.status === "DRAFT" || row.status === "SENT";
 }
 
 export default function QuotationsTable({
   licenseId,
-  onNew,
   onView,
+  onEdit,
   refreshKey,
 }: Props) {
+  const router = useRouter();
   const [rows, setRows] = useState<QuotationRow[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -60,6 +91,7 @@ export default function QuotationsTable({
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [loading, setLoading] = useState(false);
+  const [printingId, setPrintingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -96,16 +128,27 @@ export default function QuotationsTable({
 
   const totalPages = Math.ceil(total / pageSize);
 
+  async function handlePrint(id: string) {
+    setPrintingId(id);
+    try {
+      await printQuotation(id, { preview: true });
+    } catch (err: any) {
+      alert(err?.message || "Print failed");
+    } finally {
+      setPrintingId(null);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4">
       {/* ── Toolbar ── */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2 flex-wrap">
+      <div className="rounded-[18px] border border-slate-200 bg-white/85 p-3 shadow-sm">
+        <div className="grid grid-cols-1 gap-2 lg:grid-cols-[minmax(280px,2fr)_minmax(180px,1fr)_minmax(150px,1fr)_minmax(150px,1fr)]">
           {/* Search */}
-          <div className="relative">
-            <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400 pointer-events-none" />
+          <div className="relative min-w-0">
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
-              className="h-9 pl-9 pr-3 text-sm border border-slate-200 rounded-xl bg-white outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 w-56 transition shadow-sm"
+              className="h-[38px] w-full rounded-2xl border border-slate-200 bg-white py-2 pl-10 pr-3 text-sm text-slate-800 shadow-sm outline-none placeholder:text-slate-400 transition focus:border-cyan-400/60 focus:ring-4 focus:ring-cyan-400/10"
               placeholder="Search quotation or customer…"
               value={q}
               onChange={(e) => setQ(e.target.value)}
@@ -113,72 +156,72 @@ export default function QuotationsTable({
           </div>
 
           {/* Status filter */}
-          <select
-            className="h-9 px-3 text-sm border border-slate-200 rounded-xl bg-white outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 transition shadow-sm"
+          <Dropdown
             value={status}
-            onChange={(e) => setStatus(e.target.value)}
-          >
-            <option value="">All Statuses</option>
-            <option value="DRAFT">Draft</option>
-            <option value="SENT">Sent</option>
-            <option value="CONVERTED">Converted</option>
-            <option value="EXPIRED">Expired</option>
-          </select>
+            onChange={setStatus}
+            options={STATUS_OPTIONS}
+            placeholder="All Statuses"
+            buttonClassName="!h-[38px] !rounded-2xl !border-slate-200 !bg-white !px-3.5 !py-0 !text-sm !shadow-sm focus:!border-cyan-400/60 focus:!ring-4 focus:!ring-cyan-400/10"
+            menuClassName="rounded-xl"
+            optionClassName="!text-sm"
+          />
 
-          {/* Date range */}
+          {/* Date From */}
           <input
             type="date"
-            className="h-9 px-3 text-sm border border-slate-200 rounded-xl bg-white outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 transition shadow-sm"
+            className="h-[38px] w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-sm outline-none transition focus:border-cyan-400/60 focus:ring-4 focus:ring-cyan-400/10"
             value={dateFrom}
             onChange={(e) => setDateFrom(e.target.value)}
           />
-          <span className="text-slate-400 text-sm">to</span>
+
+          {/* Date To */}
           <input
             type="date"
-            className="h-9 px-3 text-sm border border-slate-200 rounded-xl bg-white outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 transition shadow-sm"
+            className="h-[38px] w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-sm outline-none transition focus:border-cyan-400/60 focus:ring-4 focus:ring-cyan-400/10"
             value={dateTo}
             onChange={(e) => setDateTo(e.target.value)}
           />
         </div>
-
-        {/* New button — matches other pages' CTA style */}
-        <button
-          onClick={onNew}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white rounded-xl transition cursor-pointer shadow-[0_4px_14px_rgba(32,183,255,0.25)] bg-gradient-to-r from-[#20b7ff] to-[#6a8fff] hover:opacity-90"
-        >
-          <Plus className="w-4 h-4" />
-          New Quotation
-        </button>
       </div>
 
       {/* ── Table card ── */}
       <div className="overflow-x-auto rounded-[20px] border border-slate-200 bg-white shadow-[0_2px_10px_rgba(15,23,42,0.05)]">
         <table className="w-full text-sm border-collapse">
           <thead>
-            <tr className="border-b border-slate-100 text-slate-400 text-xs uppercase tracking-widest">
-              <th className="px-4 py-3 text-left w-32 font-semibold">
+            <tr className="bg-[linear-gradient(135deg,#07101f_0%,#0f1a31_58%,#17213c_100%)]">
+              <th className="px-4 py-3 text-left w-32 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80">
                 Quotation No
               </th>
-              <th className="px-4 py-3 text-left w-28 font-semibold">Date</th>
-              <th className="px-4 py-3 text-left font-semibold">Customer</th>
-              <th className="px-4 py-3 text-right w-32 font-semibold">
+              <th className="px-4 py-3 text-left w-28 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80">
+                Date
+              </th>
+              <th className="px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80">
+                Customer
+              </th>
+              <th className="px-4 py-3 text-right w-32 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80">
                 Amount
               </th>
-              <th className="px-4 py-3 text-center w-28 font-semibold">
+              <th className="px-4 py-3 text-center w-28 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80">
                 Status
+              </th>
+              <th className="px-4 py-3 text-left w-40 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80">
+                Sale
+              </th>
+              <th className="px-4 py-3 text-right w-44 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80">
+                Actions
               </th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={5} className="px-4 py-12 text-center">
+                <td colSpan={7} className="px-4 py-12 text-center">
                   <Loader2 className="w-5 h-5 animate-spin text-slate-300 mx-auto" />
                 </td>
               </tr>
             ) : rows.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-16 text-center">
+                <td colSpan={7} className="px-4 py-16 text-center">
                   <div className="flex flex-col items-center gap-2 text-slate-400">
                     <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
                       <FileText className="w-7 h-7 text-slate-300" />
@@ -200,11 +243,16 @@ export default function QuotationsTable({
                   0,
                   Number(row.totalAmount || 0) - Number(row.discount || 0),
                 );
+                const saleLabel = getConvertedSaleLabel(row);
+
                 return (
                   <tr
                     key={row.id}
-                    className="border-b border-slate-100 last:border-0 hover:bg-sky-50/40 cursor-pointer transition-colors"
-                    onClick={() => onView(row.id)}
+                    className={`border-b border-slate-100 last:border-0 transition-colors hover:bg-slate-50/80 ${
+                      row.status === "CONVERTED"
+                        ? "bg-emerald-50/20"
+                        : "bg-white"
+                    }`}
                   >
                     <td className="px-4 py-3 font-semibold text-slate-800 tracking-tight">
                       {row.quotationNo ??
@@ -237,6 +285,71 @@ export default function QuotationsTable({
                         />
                         {badge.label}
                       </span>
+                    </td>
+                    <td className="px-4 py-3 text-left">
+                      {row.status === "CONVERTED" ? (
+                        <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+                          {saleLabel}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-slate-300">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end gap-1">
+                        {/* View */}
+                        <button
+                          type="button"
+                          onClick={() => onView(row.id)}
+                          title="View"
+                          className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
+                        >
+                          <Eye className="h-3 w-3" />
+                        </button>
+
+                        {/* Print */}
+                        <button
+                          type="button"
+                          onClick={() => handlePrint(row.id)}
+                          disabled={printingId === row.id}
+                          title="Print"
+                          className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-indigo-600 transition hover:border-indigo-200 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {printingId === row.id ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Printer className="h-3 w-3" />
+                          )}
+                        </button>
+
+                        {/* Open in Sales */}
+                        {canOpenInSales(row) && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              router.push(
+                                `/dashboard/sales?quotationId=${encodeURIComponent(row.id)}`,
+                              )
+                            }
+                            title="Open in Sales"
+                            className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-emerald-600 transition hover:border-emerald-200 hover:bg-emerald-50"
+                          >
+                            <ArrowRight className="h-3 w-3" />
+                          </button>
+                        )}
+
+                        {/* Edit */}
+                        {onEdit && row.status !== "CONVERTED" && (
+                          <button
+                            type="button"
+                            onClick={() => onEdit(row.id)}
+                            title="Edit"
+                            className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-cyan-600 transition hover:border-cyan-200 hover:bg-cyan-50"
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );

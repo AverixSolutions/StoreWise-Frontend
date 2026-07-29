@@ -1,6 +1,7 @@
 // src/components/quotations/QuotationViewModal.tsx
 "use client";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   X,
   Printer,
@@ -22,8 +23,6 @@ interface Props {
   isOpen: boolean;
   onClose: () => void;
   quotationId: string | null;
-  licenseId: string;
-  onConvertSuccess: (saleId: string) => void;
   onEdit: (id: string) => void;
   onDeleted: () => void;
 }
@@ -54,43 +53,38 @@ const STATUS_BADGE: Record<
   },
 };
 
+function getConvertedSaleLabel(quotation: any) {
+  if (!quotation) return "";
+
+  if (quotation.convertedSaleBillNo) {
+    return `Sale ${quotation.convertedSaleBillNo}`;
+  }
+
+  if (quotation.convertedSaleSlNo != null) {
+    return `Sale ${String(quotation.convertedSaleSlNo).padStart(5, "0")}`;
+  }
+
+  return "Converted sale";
+}
+
 export default function QuotationViewModal({
   isOpen,
   onClose,
   quotationId,
-  licenseId,
-  onConvertSuccess,
   onEdit,
   onDeleted,
 }: Props) {
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [quotation, setQuotation] = useState<any>(null);
   const [items, setItems] = useState<any[]>([]);
-  const [converting, setConverting] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [convertOverrides, setConvertOverrides] = useState<{
-    show: boolean;
-    billNo: string;
-    saleType: "CASH" | "CREDIT";
-    saleDate: string;
-  }>({
-    show: false,
-    billNo: "",
-    saleType: "CASH",
-    saleDate: new Date().toISOString().slice(0, 10),
-  });
 
   useEffect(() => {
     if (!isOpen || !quotationId) return;
     setLoading(true);
     setConfirmDelete(false);
-    setConvertOverrides({
-      show: false,
-      billNo: "",
-      saleType: "CASH",
-      saleDate: new Date().toISOString().slice(0, 10),
-    });
     platform
       .getQuotationFull?.(quotationId)
       .then((res) => {
@@ -101,36 +95,6 @@ export default function QuotationViewModal({
       })
       .finally(() => setLoading(false));
   }, [isOpen, quotationId]);
-
-  async function handleConvert() {
-    if (!quotationId) return;
-    setConverting(true);
-    try {
-      const res = await platform.convertQuotationToSale?.(quotationId, {
-        billNo: convertOverrides.billNo || null,
-        saleType: convertOverrides.saleType,
-        saleDate: new Date(convertOverrides.saleDate).toISOString(),
-      });
-      if (!res?.success) {
-        alert((res as any)?.error || "Conversion failed");
-        return;
-      }
-      if (isSyncEnabled()) {
-        SyncManager.pushEntity("sale").catch(() => {});
-        SyncManager.pushEntity("saleItem").catch(() => {});
-        SyncManager.pushEntity("quotation").catch(() => {});
-        SyncManager.pushEntity("quotationItem").catch(() => {});
-        SyncManager.pushEntity("customerTransaction").catch(() => {});
-        SyncManager.pushEntity("cashTransaction").catch(() => {});
-        SyncManager.pushEntity("product").catch(() => {});
-      }
-      onConvertSuccess((res as any).saleId);
-    } catch (err: any) {
-      alert(err.message || "Conversion failed");
-    } finally {
-      setConverting(false);
-    }
-  }
 
   async function handleDelete() {
     if (!quotationId) return;
@@ -162,16 +126,27 @@ export default function QuotationViewModal({
     }
   }
 
+  function handleOpenInSales() {
+    if (!quotationId) return;
+    onClose();
+    router.push(
+      `/dashboard/sales?quotationId=${encodeURIComponent(quotationId)}`,
+    );
+  }
+
   if (!isOpen) return null;
 
   const badge = STATUS_BADGE[quotation?.status] ?? STATUS_BADGE["DRAFT"];
   const isConverted = quotation?.status === "CONVERTED";
+  const canOpenInSales =
+    quotation?.status === "DRAFT" || quotation?.status === "SENT";
   const subTotal = items.reduce(
     (s: number, it: any) => s + Number(it.billedValue || 0),
     0,
   );
   const discountAmt = Number(quotation?.discount || 0);
   const grandTotal = Math.max(0, subTotal - discountAmt);
+  const convertedSaleLabel = getConvertedSaleLabel(quotation);
 
   return (
     <div
@@ -260,6 +235,29 @@ export default function QuotationViewModal({
                   </div>
                 ))}
               </div>
+
+              {isConverted && (
+                <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <div className="flex items-center gap-2 text-sm font-semibold text-emerald-800">
+                        <CheckCircle className="h-4 w-4" />
+                        This quotation has been converted to a sale
+                      </div>
+                      <p className="mt-1 text-xs text-emerald-700">
+                        This is now a locked quotation record linked to{" "}
+                        <span className="font-semibold">
+                          {convertedSaleLabel}
+                        </span>
+                        .
+                      </p>
+                    </div>
+                    <span className="inline-flex w-fit items-center rounded-full bg-white px-3 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                      {convertedSaleLabel}
+                    </span>
+                  </div>
+                </div>
+              )}
 
               {quotation?.notes && (
                 <div className="mb-4 p-3 rounded-xl bg-amber-50 border border-amber-200 text-sm text-amber-800">
@@ -351,90 +349,6 @@ export default function QuotationViewModal({
                 </div>
               </div>
 
-              {/* Convert override form */}
-              {convertOverrides.show && !isConverted && (
-                <div className="mt-4 p-4 rounded-xl border border-slate-200 bg-slate-50/70">
-                  <h3 className="text-sm font-semibold text-slate-800 mb-3">
-                    Convert to Sale
-                  </h3>
-                  <div className="grid grid-cols-3 gap-3">
-                    <div>
-                      <label className="text-xs font-semibold text-slate-500 mb-1 block uppercase tracking-wide">
-                        Bill No (optional)
-                      </label>
-                      <input
-                        className="w-full h-9 px-3 text-sm border border-slate-200 rounded-lg bg-white outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 transition"
-                        value={convertOverrides.billNo}
-                        onChange={(e) =>
-                          setConvertOverrides((prev) => ({
-                            ...prev,
-                            billNo: e.target.value,
-                          }))
-                        }
-                        placeholder="Auto"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs font-semibold text-slate-500 mb-1 block uppercase tracking-wide">
-                        Sale Type
-                      </label>
-                      <select
-                        className="w-full h-9 px-3 text-sm border border-slate-200 rounded-lg bg-white outline-none focus:border-sky-400 transition"
-                        value={convertOverrides.saleType}
-                        onChange={(e) =>
-                          setConvertOverrides((prev) => ({
-                            ...prev,
-                            saleType: e.target.value as "CASH" | "CREDIT",
-                          }))
-                        }
-                      >
-                        <option value="CASH">Cash</option>
-                        <option value="CREDIT">Credit</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-xs font-semibold text-slate-500 mb-1 block uppercase tracking-wide">
-                        Sale Date
-                      </label>
-                      <input
-                        type="date"
-                        className="w-full h-9 px-3 text-sm border border-slate-200 rounded-lg bg-white outline-none focus:border-sky-400 transition"
-                        value={convertOverrides.saleDate}
-                        onChange={(e) =>
-                          setConvertOverrides((prev) => ({
-                            ...prev,
-                            saleDate: e.target.value,
-                          }))
-                        }
-                      />
-                    </div>
-                  </div>
-                  <div className="flex gap-2 mt-3">
-                    <button
-                      onClick={handleConvert}
-                      disabled={converting}
-                      className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition disabled:opacity-60 cursor-pointer"
-                    >
-                      {converting && (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      )}
-                      Confirm Convert
-                    </button>
-                    <button
-                      onClick={() =>
-                        setConvertOverrides((prev) => ({
-                          ...prev,
-                          show: false,
-                        }))
-                      }
-                      className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg transition cursor-pointer"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              )}
-
               {/* Delete confirm */}
               {confirmDelete && (
                 <div className="mt-4 p-4 rounded-xl border border-rose-200 bg-rose-50">
@@ -494,23 +408,23 @@ export default function QuotationViewModal({
               )}
             </div>
 
-            {!isConverted ? (
+            {canOpenInSales ? (
               <button
-                onClick={() =>
-                  setConvertOverrides((prev) => ({
-                    ...prev,
-                    show: !prev.show,
-                  }))
-                }
+                onClick={handleOpenInSales}
                 className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition cursor-pointer shadow-[0_4px_12px_rgba(5,150,105,0.25)]"
               >
                 <ArrowRight className="w-4 h-4" />
-                Convert to Sale
+                Open in Sales
               </button>
-            ) : (
+            ) : isConverted ? (
               <span className="flex items-center gap-1.5 text-sm text-emerald-700 font-medium">
                 <CheckCircle className="w-4 h-4" />
-                Converted to Sale
+                {convertedSaleLabel}
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5 text-sm text-rose-600 font-medium">
+                <XCircle className="w-4 h-4" />
+                Expired
               </span>
             )}
           </div>

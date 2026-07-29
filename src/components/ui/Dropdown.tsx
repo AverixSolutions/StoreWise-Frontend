@@ -16,6 +16,9 @@ interface DropdownProps {
   placeholder?: string;
   required?: boolean;
   className?: string;
+  buttonClassName?: string;
+  menuClassName?: string;
+  optionClassName?: string;
   error?: boolean;
   onEnter?: () => void;
 }
@@ -29,6 +32,9 @@ const Dropdown = forwardRef<HTMLButtonElement, DropdownProps>(
       placeholder = "Select an option",
       required = false,
       className = "",
+      buttonClassName = "",
+      menuClassName = "",
+      optionClassName = "",
       error = false,
       onEnter,
     },
@@ -157,7 +163,7 @@ const Dropdown = forwardRef<HTMLButtonElement, DropdownProps>(
               width: menuPosition.width,
               zIndex: 9999,
             }}
-            className="overflow-hidden rounded-[14px] border border-slate-200 bg-white shadow-[0_16px_40px_rgba(3,10,24,0.12)]"
+            className={`overflow-hidden rounded-[14px] border border-slate-200 bg-white shadow-[0_16px_40px_rgba(3,10,24,0.12)] ${menuClassName}`}
           >
             <div className="max-h-60 overflow-y-auto">
               {options.map((option, idx) => (
@@ -176,7 +182,7 @@ const Dropdown = forwardRef<HTMLButtonElement, DropdownProps>(
                       : value === option.value
                         ? "bg-cyan-50 font-medium text-cyan-800"
                         : "text-slate-700 hover:bg-slate-50"
-                  }`}
+                  } ${optionClassName}`}
                 >
                   {option.label}
                 </button>
@@ -208,7 +214,7 @@ const Dropdown = forwardRef<HTMLButtonElement, DropdownProps>(
             error
               ? "border-rose-300 focus:border-rose-400 focus:ring-rose-400/10"
               : "border-slate-200 focus:border-cyan-400/60 focus:ring-cyan-400/10"
-          }`}
+          } ${buttonClassName}`}
         >
           <span
             className={selectedOption ? "text-slate-900" : "text-slate-400"}

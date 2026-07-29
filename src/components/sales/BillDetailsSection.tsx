@@ -279,10 +279,21 @@ export default function BillDetailsSection({
                   const cust = customers.find((c) => c.id === val);
                   setHeader((s) => ({ ...s, customer: cust || null }));
                 }}
-                options={customers.map((c) => ({
-                  value: c.id,
-                  label: c.name,
-                }))}
+                options={[
+                  ...(header.customer &&
+                  !customers.some((c) => c.id === header.customer?.id)
+                    ? [
+                        {
+                          value: header.customer.id,
+                          label: header.customer.name || header.customer.id,
+                        },
+                      ]
+                    : []),
+                  ...customers.map((c) => ({
+                    value: c.id,
+                    label: c.name,
+                  })),
+                ]}
                 placeholder="Select customer..."
                 controlClassName="h-9 text-sm px-2"
                 inputClassName="h-9 text-sm"

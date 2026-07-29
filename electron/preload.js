@@ -499,6 +499,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   deleteQuotation: (id) => ipcRenderer.invoke("quotation:delete", id),
   convertQuotationToSale: (quotationId, overrides) =>
     ipcRenderer.invoke("quotation:convert-to-sale", quotationId, overrides),
+  markQuotationConverted: (quotationId, saleId) =>
+    ipcRenderer.invoke("quotation:mark-converted", quotationId, saleId),
   peekNextQuotationSlNo: (licenseId) =>
     ipcRenderer.invoke("quotation:peek-next-slno", licenseId),
 

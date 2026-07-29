@@ -1,9 +1,21 @@
 // src/components/quotations/QuotationFormModal.tsx
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { X, Plus, Trash2, Search, Loader2 } from "lucide-react";
+import {
+  X,
+  Plus,
+  Trash2,
+  Search,
+  Loader2,
+  PackageCheck,
+  FileText,
+  Maximize2,
+  Minimize2,
+} from "lucide-react";
+import SearchableDropdown from "@/components/ui/SearchableDropdown";
+import Dropdown from "@/components/ui/Dropdown";
 import { platform } from "@/platform";
-import type { QuotationRow, QuotationItemRow } from "@/platform/types";
+import type { QuotationItemRow } from "@/platform/types";
 import { isSyncEnabled } from "@/platform/mode";
 import { SyncManager } from "@/sync/SyncManager";
 
@@ -43,6 +55,7 @@ interface Product {
   salePrice?: number | null;
   mrp?: number | null;
   barcode?: string | null;
+  stock?: number | null;
 }
 
 function taxToNum(t: TaxPct): number {
@@ -87,6 +100,20 @@ function emptyRow(lineNo: number): ItemRow {
   };
 }
 
+function getStockBadgeClass(stock?: number | null) {
+  const qty = Number(stock || 0);
+
+  if (qty <= 0) {
+    return "border-rose-200 bg-rose-50 text-rose-600";
+  }
+
+  if (qty <= 5) {
+    return "border-amber-200 bg-amber-50 text-amber-600";
+  }
+
+  return "border-emerald-200 bg-emerald-50 text-emerald-600";
+}
+
 interface Props {
   isOpen: boolean;
   onClose: () => void;
@@ -94,6 +121,7 @@ interface Props {
   editId?: string | null;
   onSaved: () => void;
   customers: Array<{ id: string; name: string }>;
+  onAddCustomer?: () => void;
 }
 
 export default function QuotationFormModal({
@@ -103,8 +131,10 @@ export default function QuotationFormModal({
   editId,
   onSaved,
   customers,
+  onAddCustomer,
 }: Props) {
   const isEditing = !!editId;
+  const [isMaximized, setIsMaximized] = useState(true);
 
   const [quotationNo, setQuotationNo] = useState("");
   const [customerId, setCustomerId] = useState("");
@@ -145,7 +175,7 @@ export default function QuotationFormModal({
   useEffect(() => {
     if (!isOpen) return;
     platform
-      .getFilteredProducts?.(licenseId, {}, { page: 1, pageSize: 500 })
+      .getFilteredProducts?.(licenseId, {}, { page: 1, pageSize: 5000 })
       .then((r) => setProducts((r?.products || []) as Product[]));
   }, [isOpen, licenseId]);
 
@@ -223,9 +253,9 @@ export default function QuotationFormModal({
     if (!el) return;
     const rect = el.getBoundingClientRect();
     setDropdownPos({
-      top: rect.bottom + window.scrollY + 4,
-      left: rect.left + window.scrollX,
-      width: Math.max(rect.width, 288),
+      top: rect.bottom + 4,
+      left: rect.left,
+      width: Math.max(rect.width, 320),
     });
   }, [openSearchIdx]);
 
@@ -381,344 +411,491 @@ export default function QuotationFormModal({
 
   if (!isOpen) return null;
 
-  const TAX_OPTIONS: TaxPct[] = ["NT", "P5", "P12", "P18", "P28"];
+  const STATUS_OPTIONS = [
+    { value: "DRAFT", label: "Draft" },
+    { value: "SENT", label: "Sent" },
+    { value: "EXPIRED", label: "Expired" },
+  ];
+
+  const UNIT_OPTIONS = [
+    { value: "NOS", label: "NOS" },
+    { value: "KG", label: "KG" },
+    { value: "LTR", label: "LTR" },
+    { value: "MTR", label: "MTR" },
+  ];
+
+  const TAX_OPTIONS = [
+    { value: "NT", label: "0%" },
+    { value: "P5", label: "5%" },
+    { value: "P12", label: "12%" },
+    { value: "P18", label: "18%" },
+    { value: "P28", label: "28%" },
+  ];
+
+  const DISCOUNT_TYPE_OPTIONS = [
+    { value: "ABS", label: "₹" },
+    { value: "PCT", label: "%" },
+  ];
+
+  const panelSizeClass = isMaximized
+    ? "h-[calc(100dvh-16px)] w-[calc(100vw-16px)] rounded-[24px]"
+    : "h-[88dvh] w-[min(1180px,calc(100vw-32px))] rounded-[24px]";
 
   const inputCls =
-    "h-9 px-3 text-sm border border-slate-200 rounded-lg bg-white outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 w-full transition";
+    "h-[38px] w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-800 shadow-sm outline-none transition focus:border-cyan-400/60 focus:ring-4 focus:ring-cyan-400/10";
+
+  const tableInputCls =
+    "h-8 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-800 shadow-sm outline-none transition focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/10";
+
+  const tableDropdownBtnCls =
+    "!h-8 !rounded-lg !border-slate-200 !bg-white !px-2 !py-0 !text-xs !shadow-sm focus:!border-cyan-400/60 focus:!ring-2 focus:!ring-cyan-400/10";
 
   return (
     <>
-      {/* ── Full-screen modal ── */}
-      <div className="fixed inset-0 z-[60] flex flex-col bg-white">
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3 border-b border-white/10 bg-[linear-gradient(135deg,#0a1324_0%,#0f1e38_60%,#16213d_100%)] text-white shrink-0">
-          <div className="flex items-center gap-3">
-            <h2 className="text-base font-semibold tracking-tight">
-              {isEditing ? "Edit Quotation" : "New Quotation"}
-            </h2>
-            {quotationNo && (
-              <span className="px-2.5 py-0.5 rounded-full bg-white/15 text-xs font-medium text-white/90 border border-white/10">
-                {quotationNo}
-              </span>
-            )}
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-white/10 transition cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+      {/* ── Modal ── */}
+      <div
+        className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-950/55 p-2 backdrop-blur-md sm:p-4"
+        onMouseDown={onClose}
+      >
+        <div
+          className={`flex flex-col overflow-hidden border border-white/20 bg-[linear-gradient(180deg,rgba(255,255,255,0.99),rgba(248,250,252,0.99))] shadow-[0_24px_90px_rgba(2,6,23,0.32)] transition-[width,height,border-radius,box-shadow] duration-200 ${panelSizeClass}`}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="relative shrink-0 overflow-hidden bg-[linear-gradient(135deg,#07101f_0%,#0f1a31_58%,#17213c_100%)] px-3 py-1.5 text-white sm:px-4">
+            <div className="pointer-events-none absolute -left-8 top-0 h-24 w-24 rounded-full bg-cyan-400/15 blur-2xl" />
+            <div className="pointer-events-none absolute right-0 top-0 h-24 w-24 rounded-full bg-fuchsia-500/15 blur-2xl" />
 
-        {/* Form body */}
-        <div className="flex-1 overflow-y-auto">
-          {/* Header fields */}
-          <div className="border-b border-slate-100 bg-slate-50/70 px-4 py-3">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div>
-                <label className="text-xs font-semibold text-slate-500 mb-1 block uppercase tracking-wide">
-                  Quotation No
-                </label>
-                <input
-                  className={inputCls}
-                  value={quotationNo}
-                  onChange={(e) => setQuotationNo(e.target.value)}
-                  placeholder="Auto"
-                />
+            <div className="relative flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <div className="hidden shrink-0 items-center gap-1.5 sm:flex">
+                  <span className="h-2.5 w-2.5 rounded-full bg-rose-400/90" />
+                  <span className="h-2.5 w-2.5 rounded-full bg-amber-300/90" />
+                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-400/90" />
+                </div>
+
+                <div className="flex min-w-0 items-center gap-2 px-1 py-1">
+                  <FileText className="h-3.5 w-3.5 shrink-0 text-cyan-200" />
+                  <span className="truncate text-[13px] font-semibold tracking-[-0.02em] text-white">
+                    {isEditing ? "Edit Quotation" : "New Quotation"}
+                  </span>
+                  {quotationNo && (
+                    <span className="hidden rounded-full border border-white/10 bg-white/10 px-2 py-0.5 font-mono text-[10px] font-semibold text-white/70 sm:inline-flex">
+                      {quotationNo}
+                    </span>
+                  )}
+                </div>
               </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-500 mb-1 block uppercase tracking-wide">
-                  Date
-                </label>
-                <input
-                  type="date"
-                  className={inputCls}
-                  value={quotationDate}
-                  onChange={(e) => setQuotationDate(e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-500 mb-1 block uppercase tracking-wide">
-                  Customer
-                </label>
-                <select
-                  className={inputCls}
-                  value={customerId}
-                  onChange={(e) => selectCustomer(e.target.value)}
+
+              <div className="flex shrink-0 items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setIsMaximized((value) => !value)}
+                  className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/15 bg-white/10 text-white transition hover:bg-white/20"
+                  title={isMaximized ? "Restore window" : "Maximize window"}
                 >
-                  <option value="">— None —</option>
-                  {customers.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-500 mb-1 block uppercase tracking-wide">
-                  Status
-                </label>
-                <select
-                  className={inputCls}
-                  value={status}
-                  onChange={(e) =>
-                    setStatus(e.target.value as "DRAFT" | "SENT" | "EXPIRED")
-                  }
+                  {isMaximized ? (
+                    <Minimize2 className="h-3 w-3" />
+                  ) : (
+                    <Maximize2 className="h-3 w-3" />
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/15 bg-white/10 text-white transition hover:bg-rose-500/80"
+                  title="Close"
                 >
-                  <option value="DRAFT">Draft</option>
-                  <option value="SENT">Sent</option>
-                  <option value="EXPIRED">Expired</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-500 mb-1 block uppercase tracking-wide">
-                  Department
-                </label>
-                <input
-                  className={inputCls}
-                  value={department}
-                  onChange={(e) => setDepartment(e.target.value)}
-                  placeholder="Optional"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-500 mb-1 block uppercase tracking-wide">
-                  Header Discount (₹)
-                </label>
-                <input
-                  type="number"
-                  className={inputCls}
-                  value={discount}
-                  onChange={(e) => setDiscount(Number(e.target.value) || 0)}
-                  min={0}
-                />
-              </div>
-              <div className="col-span-2">
-                <label className="text-xs font-semibold text-slate-500 mb-1 block uppercase tracking-wide">
-                  Notes
-                </label>
-                <input
-                  className={inputCls}
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Validity, terms, remarks…"
-                />
+                  <X className="h-3 w-3" />
+                </button>
               </div>
             </div>
           </div>
 
-          {/* Items table — overflow-visible so dropdown isn't clipped */}
-          <div className="px-2 py-2 overflow-x-auto">
-            <table className="w-full text-sm border-collapse min-w-[800px]">
-              <thead>
-                <tr className="bg-slate-50 text-slate-400 text-xs uppercase tracking-widest border-b border-slate-100">
-                  <th className="px-2 py-2 text-left w-8 font-semibold">#</th>
-                  <th className="px-2 py-2 text-left font-semibold">Product</th>
-                  <th className="px-2 py-2 text-right w-16 font-semibold">
-                    Qty
-                  </th>
-                  <th className="px-2 py-2 text-left w-20 font-semibold">
-                    Unit
-                  </th>
-                  <th className="px-2 py-2 text-right w-24 font-semibold">
-                    Rate
-                  </th>
-                  <th className="px-2 py-2 text-left w-16 font-semibold">
-                    Tax%
-                  </th>
-                  <th className="px-2 py-2 text-right w-28 font-semibold">
-                    Discount
-                  </th>
-                  <th className="px-2 py-2 text-right w-24 font-semibold">
-                    Total
-                  </th>
-                  <th className="w-8" />
-                </tr>
-              </thead>
-              {/* No overflow-hidden here — dropdown needs to escape */}
-              <tbody>
-                {rows.map((row, idx) => {
-                  const q = productSearch[idx] ?? "";
-                  const filtered = filteredProducts(q);
-                  return (
-                    <tr
-                      key={idx}
-                      className="border-b border-slate-100 hover:bg-slate-50/60"
+          {/* Form body */}
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-slate-50/80 px-3 py-3 sm:px-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+            {/* Header fields */}
+            <section className="rounded-[18px] border border-slate-200 bg-white/85 p-3 shadow-sm">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-slate-500 mb-1 block uppercase tracking-wide">
+                    Quotation No
+                  </label>
+                  <input
+                    className={inputCls}
+                    value={quotationNo}
+                    onChange={(e) => setQuotationNo(e.target.value)}
+                    placeholder="Auto"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-500 mb-1 block uppercase tracking-wide">
+                    Date
+                  </label>
+                  <input
+                    type="date"
+                    className={inputCls}
+                    value={quotationDate}
+                    onChange={(e) => setQuotationDate(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-500 mb-1 block uppercase tracking-wide">
+                    Customer
+                  </label>
+                  <div className="flex gap-2">
+                    <div className="min-w-0 flex-1">
+                      <SearchableDropdown
+                        value={customerId}
+                        onChange={selectCustomer}
+                        options={customers.map((c) => ({
+                          value: c.id,
+                          label: c.name,
+                        }))}
+                        placeholder="Select customer..."
+                        autoOpenOnFocus={false}
+                        buttonProps={{
+                          className:
+                            "h-[38px] w-full rounded-2xl border border-slate-200 bg-white px-3.5 text-sm text-slate-800 shadow-sm focus:border-cyan-400/60 focus:ring-4 focus:ring-cyan-400/10",
+                        }}
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={onAddCustomer}
+                      className="inline-flex h-[38px] w-[42px] shrink-0 items-center justify-center rounded-2xl border border-slate-800 bg-slate-950 text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                      title="Add new customer"
+                      disabled={!onAddCustomer}
                     >
-                      <td className="px-2 py-1.5 text-slate-400 text-xs text-center">
-                        {idx + 1}
-                      </td>
-                      <td className="px-2 py-1.5">
-                        {/* Input — no relative wrapper, position tracked via ref + portal */}
-                        <div className="relative">
-                          <input
-                            ref={(el) => {
-                              inputRefs.current[idx] = el;
-                            }}
-                            className="w-full h-8 px-2 pr-7 text-sm border border-slate-200 rounded-lg bg-white outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 transition"
-                            placeholder="Search product…"
-                            value={openSearchIdx === idx ? q : row.name || ""}
-                            onChange={(e) => {
-                              setProductSearch((prev) => ({
-                                ...prev,
-                                [idx]: e.target.value,
-                              }));
-                              setOpenSearchIdx(idx);
-                            }}
-                            onFocus={() => setOpenSearchIdx(idx)}
-                          />
-                          <Search className="absolute right-2 top-2 w-3.5 h-3.5 text-slate-300 pointer-events-none" />
-                        </div>
-                      </td>
-                      <td className="px-2 py-1.5">
-                        <input
-                          type="number"
-                          className="w-full h-8 px-2 text-sm border border-slate-200 rounded-lg bg-white outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 transition text-right"
-                          value={row.quantity || ""}
-                          onChange={(e) =>
-                            updateRow(idx, {
-                              quantity: Number(e.target.value) || 0,
-                            })
-                          }
-                          min={0}
-                        />
-                      </td>
-                      <td className="px-2 py-1.5">
-                        <select
-                          className="h-8 px-1.5 text-sm border border-slate-200 rounded-lg bg-white outline-none focus:border-sky-400 w-full transition"
-                          value={row.unit}
-                          onChange={(e) =>
-                            updateRow(idx, { unit: e.target.value })
-                          }
-                        >
-                          {["NOS", "KG", "LTR", "MTR"].map((u) => (
-                            <option key={u} value={u}>
-                              {u}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="px-2 py-1.5">
-                        <input
-                          type="number"
-                          className="w-full h-8 px-2 text-sm border border-slate-200 rounded-lg bg-white outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 transition text-right"
-                          value={row.rate || ""}
-                          onChange={(e) =>
-                            updateRow(idx, {
-                              rate: Number(e.target.value) || 0,
-                            })
-                          }
-                          min={0}
-                          step={0.01}
-                        />
-                      </td>
-                      <td className="px-2 py-1.5">
-                        <select
-                          className="h-8 px-1 text-sm border border-slate-200 rounded-lg bg-white outline-none focus:border-sky-400 w-full transition"
-                          value={row.taxPercent}
-                          onChange={(e) =>
-                            updateRow(idx, {
-                              taxPercent: e.target.value as TaxPct,
-                            })
-                          }
-                        >
-                          {TAX_OPTIONS.map((t) => (
-                            <option key={t} value={t}>
-                              {t === "NT" ? "0%" : `${t.replace("P", "")}%`}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="px-2 py-1.5">
-                        <div className="flex gap-1">
-                          <input
-                            type="number"
-                            className="w-full h-8 px-2 text-sm border border-slate-200 rounded-lg bg-white outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100 transition text-right"
-                            value={row.discount || ""}
-                            onChange={(e) =>
-                              updateRow(idx, {
-                                discount: Number(e.target.value) || 0,
-                              })
-                            }
-                            min={0}
-                            step={0.01}
-                          />
-                          <select
-                            className="h-8 px-1 text-xs border border-slate-200 rounded-lg bg-white outline-none focus:border-sky-400 transition"
-                            value={row.discountType}
-                            onChange={(e) =>
-                              updateRow(idx, {
-                                discountType: e.target.value as DiscountType,
-                              })
-                            }
-                          >
-                            <option value="ABS">₹</option>
-                            <option value="PCT">%</option>
-                          </select>
-                        </div>
-                      </td>
-                      <td className="px-2 py-1.5 text-right font-semibold text-slate-800 tabular-nums">
-                        ₹{(row.billedValue || 0).toFixed(2)}
-                      </td>
-                      <td className="px-2 py-1.5">
-                        <button
-                          onClick={() => removeRow(idx)}
-                          className="p-1 rounded-lg hover:bg-rose-50 text-slate-300 hover:text-rose-500 transition cursor-pointer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </td>
+                      <Plus className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-500 mb-1 block uppercase tracking-wide">
+                    Status
+                  </label>
+                  <Dropdown
+                    value={status}
+                    onChange={(value) =>
+                      setStatus(value as "DRAFT" | "SENT" | "EXPIRED")
+                    }
+                    options={STATUS_OPTIONS}
+                    placeholder="Status"
+                    buttonClassName="!h-[38px] !rounded-2xl !border-slate-200 !bg-white !px-3.5 !py-0 !text-sm !shadow-sm focus:!border-cyan-400/60 focus:!ring-4 focus:!ring-cyan-400/10"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-500 mb-1 block uppercase tracking-wide">
+                    Department
+                  </label>
+                  <input
+                    className={inputCls}
+                    value={department}
+                    onChange={(e) => setDepartment(e.target.value)}
+                    placeholder="Optional"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-500 mb-1 block uppercase tracking-wide">
+                    Header Discount (₹)
+                  </label>
+                  <input
+                    type="number"
+                    className={inputCls}
+                    value={discount}
+                    onChange={(e) => setDiscount(Number(e.target.value) || 0)}
+                    min={0}
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="text-xs font-semibold text-slate-500 mb-1 block uppercase tracking-wide">
+                    Notes
+                  </label>
+                  <input
+                    className={inputCls}
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Validity, terms, remarks…"
+                  />
+                </div>
+              </div>
+            </section>
+
+            {/* Items table */}
+            <section className="overflow-hidden rounded-[18px] border border-slate-200 bg-white shadow-sm">
+              <div className="overflow-auto">
+                <table className="w-full min-w-[980px] border-collapse text-sm">
+                  <thead className="sticky top-0 z-10">
+                    <tr className="border-b border-slate-800 bg-[linear-gradient(135deg,#07101f_0%,#0f1a31_58%,#17213c_100%)]">
+                      <th className="w-10 px-3 py-2 text-left text-[11px] font-bold uppercase tracking-[0.12em] text-slate-300">
+                        #
+                      </th>
+                      <th className="min-w-[280px] px-3 py-2 text-left text-[11px] font-bold uppercase tracking-[0.12em] text-slate-300">
+                        Product
+                      </th>
+                      <th className="w-20 px-3 py-2 text-right text-[11px] font-bold uppercase tracking-[0.12em] text-slate-300">
+                        Stock
+                      </th>
+                      <th className="w-20 px-3 py-2 text-right text-[11px] font-bold uppercase tracking-[0.12em] text-slate-300">
+                        Qty
+                      </th>
+                      <th className="w-24 px-3 py-2 text-left text-[11px] font-bold uppercase tracking-[0.12em] text-slate-300">
+                        Unit
+                      </th>
+                      <th className="w-28 px-3 py-2 text-right text-[11px] font-bold uppercase tracking-[0.12em] text-slate-300">
+                        Rate
+                      </th>
+                      <th className="w-24 px-3 py-2 text-left text-[11px] font-bold uppercase tracking-[0.12em] text-slate-300">
+                        Tax
+                      </th>
+                      <th className="w-36 px-3 py-2 text-right text-[11px] font-bold uppercase tracking-[0.12em] text-slate-300">
+                        Discount
+                      </th>
+                      <th className="w-28 px-3 py-2 text-right text-[11px] font-bold uppercase tracking-[0.12em] text-slate-300">
+                        Total
+                      </th>
+                      <th className="w-10 px-2 py-2" />
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody>
+                    {rows.map((row, idx) => {
+                      const q = productSearch[idx] ?? "";
+                      const selectedProduct = row.productId
+                        ? products.find((p) => p.id === row.productId)
+                        : null;
+                      const availableStock = Number(
+                        selectedProduct?.stock || 0,
+                      );
+                      return (
+                        <tr
+                          key={idx}
+                          className="border-b border-slate-100 hover:bg-slate-50/60"
+                        >
+                          {/* # */}
+                          <td className="px-3 py-1.5 text-center align-middle text-xs text-slate-400">
+                            {idx + 1}
+                          </td>
 
-            <button
-              onClick={addRow}
-              className="mt-2 ml-2 flex items-center gap-1.5 px-3 py-1.5 text-sm text-sky-500 hover:bg-sky-50 rounded-lg transition cursor-pointer font-medium"
-            >
-              <Plus className="w-4 h-4" />
-              Add Row
-            </button>
+                          {/* Product */}
+                          <td className="px-3 py-1.5 align-middle">
+                            <div className="relative">
+                              <input
+                                ref={(el) => {
+                                  inputRefs.current[idx] = el;
+                                }}
+                                className={`${tableInputCls} pr-7 text-left`}
+                                placeholder="Search product…"
+                                value={
+                                  openSearchIdx === idx ? q : row.name || ""
+                                }
+                                onChange={(e) => {
+                                  setProductSearch((prev) => ({
+                                    ...prev,
+                                    [idx]: e.target.value,
+                                  }));
+                                  setOpenSearchIdx(idx);
+                                }}
+                                onFocus={() => setOpenSearchIdx(idx)}
+                              />
+                              <Search className="absolute right-2 top-2 h-3.5 w-3.5 pointer-events-none text-slate-300" />
+                            </div>
+                          </td>
+
+                          {/* Stock */}
+                          <td className="px-3 py-1.5 text-right align-middle">
+                            {row.productId ? (
+                              <span
+                                className={`inline-flex h-6 items-center justify-center rounded-full border px-2 font-mono text-[11px] font-bold ${getStockBadgeClass(
+                                  availableStock,
+                                )}`}
+                                title={
+                                  row.quantity > availableStock &&
+                                  availableStock > 0
+                                    ? "Quoted quantity is higher than current stock"
+                                    : availableStock <= 0
+                                      ? "No current stock"
+                                      : "Available stock"
+                                }
+                              >
+                                {availableStock}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-slate-300">—</span>
+                            )}
+                          </td>
+
+                          {/* Qty */}
+                          <td className="px-3 py-1.5 align-middle">
+                            <input
+                              type="number"
+                              className={`${tableInputCls} text-right`}
+                              value={row.quantity || ""}
+                              onChange={(e) =>
+                                updateRow(idx, {
+                                  quantity: Number(e.target.value) || 0,
+                                })
+                              }
+                              min={0}
+                            />
+                          </td>
+
+                          {/* Unit */}
+                          <td className="px-3 py-1.5 align-middle">
+                            <Dropdown
+                              value={row.unit}
+                              onChange={(value) =>
+                                updateRow(idx, { unit: value })
+                              }
+                              options={UNIT_OPTIONS}
+                              placeholder="Unit"
+                              buttonClassName={tableDropdownBtnCls}
+                              menuClassName="rounded-xl"
+                              optionClassName="!px-3 !py-2 !text-xs"
+                            />
+                          </td>
+
+                          {/* Rate */}
+                          <td className="px-3 py-1.5 align-middle">
+                            <input
+                              type="number"
+                              className={`${tableInputCls} text-right`}
+                              value={row.rate || ""}
+                              onChange={(e) =>
+                                updateRow(idx, {
+                                  rate: Number(e.target.value) || 0,
+                                })
+                              }
+                              min={0}
+                              step={0.01}
+                            />
+                          </td>
+
+                          {/* Tax */}
+                          <td className="px-3 py-1.5 align-middle">
+                            <Dropdown
+                              value={row.taxPercent}
+                              onChange={(value) =>
+                                updateRow(idx, {
+                                  taxPercent: value as TaxPct,
+                                })
+                              }
+                              options={TAX_OPTIONS}
+                              placeholder="Tax"
+                              buttonClassName={tableDropdownBtnCls}
+                              menuClassName="rounded-xl"
+                              optionClassName="!px-3 !py-2 !text-xs"
+                            />
+                          </td>
+
+                          {/* Discount */}
+                          <td className="px-3 py-1.5 align-middle">
+                            <div className="flex gap-1">
+                              <input
+                                type="number"
+                                className={`${tableInputCls} text-right`}
+                                value={row.discount || ""}
+                                onChange={(e) =>
+                                  updateRow(idx, {
+                                    discount: Number(e.target.value) || 0,
+                                  })
+                                }
+                                min={0}
+                                step={0.01}
+                              />
+                              <Dropdown
+                                value={row.discountType}
+                                onChange={(value) =>
+                                  updateRow(idx, {
+                                    discountType: value as DiscountType,
+                                  })
+                                }
+                                options={DISCOUNT_TYPE_OPTIONS}
+                                placeholder="Type"
+                                buttonClassName="!h-8 !w-14 !rounded-lg !border-slate-200 !bg-white !px-2 !py-0 !text-xs !shadow-sm focus:!border-cyan-400/60 focus:!ring-2 focus:!ring-cyan-400/10"
+                                menuClassName="rounded-xl"
+                                optionClassName="!px-3 !py-2 !text-xs"
+                              />
+                            </div>
+                          </td>
+
+                          {/* Total */}
+                          <td className="px-3 py-1.5 text-right align-middle font-semibold tabular-nums text-slate-800">
+                            ₹{(row.billedValue || 0).toFixed(2)}
+                          </td>
+
+                          {/* Delete */}
+                          <td className="px-2 py-1.5 align-middle">
+                            <button
+                              onClick={() => removeRow(idx)}
+                              className="p-1 rounded-lg hover:bg-rose-50 text-slate-300 hover:text-rose-500 transition cursor-pointer"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="px-3 py-2">
+                <button
+                  onClick={addRow}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-cyan-600 hover:bg-cyan-50 rounded-lg transition cursor-pointer"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add Row
+                </button>
+              </div>
+            </section>
           </div>
-        </div>
 
-        {/* Footer */}
-        <div className="shrink-0 border-t border-slate-100 bg-white px-4 py-3 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-4 text-sm text-slate-600">
-            <span>
-              Subtotal:{" "}
-              <strong className="text-slate-800">₹{subTotal.toFixed(2)}</strong>
-            </span>
-            {discount > 0 && (
-              <span className="text-rose-500 font-medium">
-                − ₹{discount.toFixed(2)}
-              </span>
-            )}
-            <span className="font-semibold text-slate-900 text-base">
-              Total: ₹{grandTotal.toFixed(2)}
-            </span>
-          </div>
+          {/* Footer */}
+          <div className="shrink-0 border-t border-slate-200 bg-white/95 px-4 py-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-4 text-sm text-slate-600">
+                <span>
+                  Subtotal:{" "}
+                  <strong className="text-slate-800">
+                    ₹{subTotal.toFixed(2)}
+                  </strong>
+                </span>
+                {discount > 0 && (
+                  <span className="font-medium text-rose-500">
+                    − ₹{discount.toFixed(2)}
+                  </span>
+                )}
+                <span className="text-base font-semibold text-slate-900">
+                  Total: ₹{grandTotal.toFixed(2)}
+                </span>
+              </div>
 
-          <div className="flex items-center gap-2">
-            {errors.length > 0 && (
-              <span className="text-xs text-rose-500">{errors.join(" ")}</span>
-            )}
-            <button
-              onClick={onClose}
-              className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg transition cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="flex items-center gap-2 px-5 py-2 text-sm font-semibold text-white bg-gradient-to-r from-[#20b7ff] to-[#6a8fff] rounded-lg hover:opacity-90 transition disabled:opacity-60 cursor-pointer shadow-[0_4px_14px_rgba(32,183,255,0.25)]"
-            >
-              {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-              {isEditing ? "Update" : "Save"} Quotation
-            </button>
+              <div className="flex items-center gap-2">
+                {errors.length > 0 && (
+                  <span className="text-xs text-rose-500">
+                    {errors.join(" ")}
+                  </span>
+                )}
+                <button
+                  onClick={onClose}
+                  className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="flex items-center gap-2 px-5 py-2 text-sm font-semibold text-white bg-gradient-to-r from-[#20b7ff] to-[#6a8fff] rounded-lg hover:opacity-90 transition disabled:opacity-60 cursor-pointer shadow-[0_4px_14px_rgba(32,183,255,0.25)]"
+                >
+                  {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {isEditing ? "Update" : "Save"} Quotation
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -745,15 +922,28 @@ export default function QuotationFormModal({
                 <button
                   key={p.id}
                   type="button"
-                  className="w-full text-left px-3 py-2.5 text-sm hover:bg-sky-50 flex items-center justify-between cursor-pointer border-b border-slate-50 last:border-0 transition-colors"
+                  className="w-full cursor-pointer border-b border-slate-50 px-3 py-2.5 text-left text-sm transition-colors last:border-0 hover:bg-sky-50"
                   onMouseDown={() => selectProduct(openSearchIdx, p)}
                 >
-                  <span className="font-medium text-slate-800 truncate">
-                    {p.name}
-                  </span>
-                  <span className="text-xs text-slate-400 ml-2 shrink-0 font-mono">
-                    {p.code}
-                  </span>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate font-medium text-slate-800">
+                        {p.name}
+                      </p>
+                      <p className="mt-0.5 font-mono text-[11px] text-slate-400">
+                        {p.code}
+                      </p>
+                    </div>
+
+                    <span
+                      className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${getStockBadgeClass(
+                        p.stock,
+                      )}`}
+                    >
+                      <PackageCheck className="h-3 w-3" />
+                      Stock {Number(p.stock || 0)}
+                    </span>
+                  </div>
                 </button>
               ))}
             </div>
