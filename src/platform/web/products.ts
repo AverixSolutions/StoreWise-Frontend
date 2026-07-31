@@ -223,8 +223,10 @@ export async function webCreateProduct(
     }
     // ─────────────────────────────────────────────────────────────────────
 
+    const productRecord = { ...product };
+    delete productRecord.rates;
     const record: WebProduct = {
-      ...product,
+      ...productRecord,
       id,
       shortCode,
       imagePath: product.imagePath ?? null,
@@ -265,9 +267,11 @@ export async function webUpdateProduct(
       excludeProductId: productId,
     });
 
+    const productRecord = { ...product };
+    delete productRecord.rates;
     await idbPut(STORES.PRODUCTS, {
       ...existing,
-      ...product,
+      ...productRecord,
       id: productId,
       shortCode,
       imagePath:

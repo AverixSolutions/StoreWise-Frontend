@@ -106,6 +106,17 @@ export function mapItems(rows: ItemRow[]) {
       offerType: r.offerType ?? null,
       offerDiscountAmount: r.offerDiscountAmount ?? 0,
       offerMeta: r.offerMeta ?? null,
+      rateTypeId: r.rateTypeId ?? null,
+      rateTypeCode: r.rateTypeCode ?? null,
+      rateTypeName: r.rateTypeName ?? null,
+      rateSource: r.rateSource ?? "LEGACY",
+      rateConfigured:
+        r.rateSource !== "MASTER" ||
+        Boolean(
+          r.availableRates?.find(
+            (rate) => rate.rateTypeId === r.rateTypeId,
+          )?.configured,
+        ),
     }));
 }
 
@@ -121,6 +132,17 @@ export function validateSaleBill(
   if (!hasLine) errs.push("Add at least one item with quantity > 0.");
   if (!header.customer) {
     errs.push("Select a customer for sales bills.");
+  }
+  for (const [index, row] of items.entries()) {
+    if (
+      row.productId &&
+      row.rateSource === "MASTER" &&
+      (!row.rateTypeId ||
+        !Number.isFinite(Number(row.rate)) ||
+        row.rateConfigured === false)
+    ) {
+      errs.push(`Line ${index + 1}: the selected named rate is not configured.`);
+    }
   }
   errs.push(...offerValidationWarnings);
   return errs;

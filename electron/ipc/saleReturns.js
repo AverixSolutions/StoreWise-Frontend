@@ -267,6 +267,10 @@ function insertSaleReturnItems({
       appliedQty,
       overQty,
       null,
+      it.rateTypeId || null,
+      it.rateTypeCode || null,
+      it.rateTypeName || null,
+      it.rateSource || "LEGACY",
       now,
       now,
     );
@@ -335,8 +339,9 @@ function registerSaleReturnHandlers() {
         taxAmount, discount, discountType, salePrice, profit, totalCost, billedValue,
         effectiveUnitValue, batchNo, mfgDate, expiryDate, lineNo,
         appliedQuantity, overReturnQuantity, overReturnReason,
+        rateTypeId, rateTypeCode, rateTypeName, rateSource,
         createdAt, updatedAt, isSynced
-      ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+      ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
     `);
 
     const trx = db.transaction((header, items) => {
@@ -406,8 +411,9 @@ function registerSaleReturnHandlers() {
         taxAmount, discount, discountType, salePrice, profit, totalCost, billedValue,
         effectiveUnitValue, batchNo, mfgDate, expiryDate, lineNo,
         appliedQuantity, overReturnQuantity, overReturnReason,
+        rateTypeId, rateTypeCode, rateTypeName, rateSource,
         createdAt, updatedAt, isSynced
-      ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+      ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
     `);
 
     const trx = db.transaction(() => {
@@ -652,6 +658,8 @@ function registerSaleReturnHandlers() {
              sri.taxPercent, sri.taxAmount,
              sri.discount, sri.discountType,
              sri.salePrice, sri.profit, sri.totalCost, sri.billedValue,
+             sri.rateTypeId, sri.rateTypeCode, sri.rateTypeName,
+             COALESCE(sri.rateSource, 'LEGACY') AS rateSource,
              sri.effectiveUnitValue,
              sri.batchNo, sri.batchId,
              sri.mfgDate, sri.expiryDate,
@@ -808,6 +816,7 @@ function registerSaleReturnHandlers() {
         effectiveUnitValue, batchNo, batchId,
         mfgDate, expiryDate, lineNo,
         appliedQuantity, overReturnQuantity, overReturnReason,
+        rateTypeId, rateTypeCode, rateTypeName, rateSource,
         createdAt, updatedAt, deletedAt, isSynced, syncedAt
       ) VALUES (
         @id, @returnId, @productId, @barcode,
@@ -817,6 +826,7 @@ function registerSaleReturnHandlers() {
         @effectiveUnitValue, @batchNo, @batchId,
         @mfgDate, @expiryDate, @lineNo,
         @appliedQuantity, @overReturnQuantity, @overReturnReason,
+        @rateTypeId, @rateTypeCode, @rateTypeName, @rateSource,
         @createdAt, @updatedAt, @deletedAt, 1, @syncedAt
       )
       ON CONFLICT(id) DO UPDATE SET
@@ -841,6 +851,10 @@ function registerSaleReturnHandlers() {
         appliedQuantity      = excluded.appliedQuantity,
         overReturnQuantity   = excluded.overReturnQuantity,
         overReturnReason     = excluded.overReturnReason,
+        rateTypeId           = excluded.rateTypeId,
+        rateTypeCode         = excluded.rateTypeCode,
+        rateTypeName         = excluded.rateTypeName,
+        rateSource           = excluded.rateSource,
         updatedAt            = excluded.updatedAt,
         deletedAt            = excluded.deletedAt,
         isSynced             = 1,
@@ -878,6 +892,10 @@ function registerSaleReturnHandlers() {
           appliedQuantity: Number(r.appliedQuantity || 0),
           overReturnQuantity: Number(r.overReturnQuantity || 0),
           overReturnReason: r.overReturnReason ?? null,
+          rateTypeId: r.rateTypeId ?? null,
+          rateTypeCode: r.rateTypeCode ?? null,
+          rateTypeName: r.rateTypeName ?? null,
+          rateSource: r.rateSource ?? "LEGACY",
           createdAt:
             r.createdAt instanceof Date
               ? r.createdAt.toISOString()

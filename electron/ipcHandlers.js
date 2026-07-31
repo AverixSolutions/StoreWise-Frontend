@@ -21,6 +21,7 @@ const { registerBrandHandlers } = require("./ipc/brands");
 const { registerUnitHandlers } = require("./ipc/units");
 const { registerTransactionTypeHandlers } = require("./ipc/transactionTypes");
 const { registerOfferHandlers } = require("./ipc/offers");
+const { registerRateHandlers } = require("./ipc/rates");
 const {
   registerSupplierLedgerSyncHandlers,
 } = require("./ipc/supplierLedgerSync");
@@ -36,6 +37,7 @@ function registerAllHandlers() {
   registerUnitHandlers();
   registerTransactionTypeHandlers();
   registerOfferHandlers();
+  registerRateHandlers();
   registerProductSyncHandlers();
   registerMaintenanceHandlers();
   registerBarcodeHandlers();

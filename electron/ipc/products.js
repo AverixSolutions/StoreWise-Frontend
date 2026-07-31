@@ -229,6 +229,59 @@ function bumpBatchAndProductStock({ batchId, productId, deltaQty }) {
   rebuildProductStock(productId);
 }
 
+function saveEmbeddedProductRates({ licenseId, productId, rates, now }) {
+  if (!Array.isArray(rates)) return;
+  const rateTypes = db
+    .prepare(
+      `SELECT id FROM rate_types WHERE licenseId=? AND deletedAt IS NULL`,
+    )
+    .all(licenseId);
+  const allowedIds = new Set(rateTypes.map((rate) => rate.id));
+  for (const value of rates) {
+    const rateTypeId = String(value.rateTypeId || "").trim();
+    if (!allowedIds.has(rateTypeId)) {
+      throw new Error("Selling rate does not belong to this license");
+    }
+    const amount =
+      value.amount == null || value.amount === "" ? null : Number(value.amount);
+    if (amount != null && (!Number.isFinite(amount) || amount < 0)) {
+      throw new Error("Selling rates must be non-negative numbers");
+    }
+    const existing = db
+      .prepare(
+        `SELECT id FROM product_rates WHERE productId=? AND rateTypeId=? LIMIT 1`,
+      )
+      .get(productId, rateTypeId);
+    if (amount == null) {
+      if (existing) {
+        db.prepare(
+          `UPDATE product_rates
+           SET deletedAt=?, updatedAt=?, isSynced=0, syncedAt=NULL
+           WHERE id=?`,
+        ).run(now, now, existing.id);
+      }
+      continue;
+    }
+    db.prepare(
+      `INSERT INTO product_rates (
+         id, licenseId, productId, rateTypeId, amount, createdAt, updatedAt,
+         deletedAt, isSynced, syncedAt
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 0, NULL)
+       ON CONFLICT(id) DO UPDATE SET
+         amount=excluded.amount, deletedAt=NULL, updatedAt=excluded.updatedAt,
+         isSynced=0, syncedAt=NULL`,
+    ).run(
+      existing?.id || `pr:${productId}:${rateTypeId}`,
+      licenseId,
+      productId,
+      rateTypeId,
+      amount,
+      now,
+      now,
+    );
+  }
+}
+
 function registerProductHandlers() {
   ipcMain.handle("get-next-code", (event, licenseId) => {
     const seq = db
@@ -259,6 +312,7 @@ function registerProductHandlers() {
     const finalImageFileName =
       savedImage?.imageFileName ?? product.imageFileName ?? null;
 
+    const createTx = db.transaction(() => {
     db.prepare(
       `
 INSERT INTO products 
@@ -305,6 +359,14 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
     ON CONFLICT(licenseId) DO UPDATE SET lastCodeNumber = excluded.lastCodeNumber
   `,
     ).run(product.licenseId, product.codeNumber);
+    saveEmbeddedProductRates({
+      licenseId: product.licenseId,
+      productId: newId,
+      rates: product.rates,
+      now,
+    });
+    });
+    createTx();
 
     return { success: true, productId: newId };
   });
@@ -482,6 +544,7 @@ LIMIT ? OFFSET ?
     const finalImageFileName =
       savedImage?.imageFileName ?? product.imageFileName ?? null;
 
+    const updateTx = db.transaction(() => {
     const result = db
       .prepare(
         `
@@ -521,6 +584,14 @@ LIMIT ? OFFSET ?
     if (result.changes === 0) {
       throw new Error("Product not found or no changes made");
     }
+    saveEmbeddedProductRates({
+      licenseId: existing.licenseId,
+      productId,
+      rates: product.rates,
+      now,
+    });
+    });
+    updateTx();
 
     return { success: true };
   });

@@ -15,7 +15,12 @@ import {
 import SearchableDropdown from "@/components/ui/SearchableDropdown";
 import Dropdown from "@/components/ui/Dropdown";
 import { platform } from "@/platform";
-import type { QuotationItemRow } from "@/platform/types";
+import type { QuotationItemRow, RateTypeRecord } from "@/platform/types";
+import {
+  findDefaultRateType,
+  orderActiveRateTypes,
+  resolveNamedRate,
+} from "@/lib/rates/rateResolution";
 import { isSyncEnabled } from "@/platform/mode";
 import { SyncManager } from "@/sync/SyncManager";
 
@@ -44,6 +49,17 @@ interface ItemRow {
   batchNo: string;
   mfgDate: string | null;
   expiryDate: string | null;
+  rateTypeId: string | null;
+  rateTypeCode: string | null;
+  rateTypeName: string | null;
+  rateSource: "MASTER" | "CUSTOM" | "LEGACY";
+  availableRates: Array<{
+    rateTypeId: string;
+    code: string;
+    name: string;
+    amount: number | null;
+    configured: boolean;
+  }>;
 }
 
 interface Product {
@@ -97,6 +113,11 @@ function emptyRow(lineNo: number): ItemRow {
     batchNo: "",
     mfgDate: null,
     expiryDate: null,
+    rateTypeId: null,
+    rateTypeCode: null,
+    rateTypeName: null,
+    rateSource: "LEGACY",
+    availableRates: [],
   };
 }
 
@@ -167,6 +188,7 @@ export default function QuotationFormModal({
     () => rows.reduce((s, r) => s + (r.billedValue || 0), 0),
     [rows],
   );
+  const [rateTypes, setRateTypes] = useState<RateTypeRecord[]>([]);
   const grandTotal = useMemo(
     () => Math.max(0, subTotal - (discount || 0)),
     [subTotal, discount],
@@ -174,9 +196,17 @@ export default function QuotationFormModal({
 
   useEffect(() => {
     if (!isOpen) return;
-    platform
-      .getFilteredProducts?.(licenseId, {}, { page: 1, pageSize: 5000 })
-      .then((r) => setProducts((r?.products || []) as Product[]));
+    Promise.all([
+      platform.getFilteredProducts?.(
+        licenseId,
+        {},
+        { page: 1, pageSize: 5000 },
+      ),
+      platform.listRateTypes(licenseId, false),
+    ]).then(([productResult, rateResult]) => {
+      setProducts((productResult?.products || []) as Product[]);
+      setRateTypes(orderActiveRateTypes(rateResult.rows || []));
+    });
   }, [isOpen, licenseId]);
 
   useEffect(() => {
@@ -222,6 +252,24 @@ export default function QuotationFormModal({
                 batchNo: it.batchNo || "",
                 mfgDate: it.mfgDate || null,
                 expiryDate: it.expiryDate || null,
+                rateTypeId: it.rateTypeId || null,
+                rateTypeCode: it.rateTypeCode || null,
+                rateTypeName: it.rateTypeName || null,
+                rateSource: it.rateSource || "LEGACY",
+                availableRates: it.rateTypeId
+                  ? [
+                      {
+                        rateTypeId: it.rateTypeId,
+                        code: it.rateTypeCode || "",
+                        name:
+                          it.rateTypeName ||
+                          it.rateTypeCode ||
+                          "Saved rate",
+                        amount: Number(it.rate),
+                        configured: true,
+                      },
+                    ]
+                  : [],
               });
             }),
           );
@@ -291,7 +339,29 @@ export default function QuotationFormModal({
     [products],
   );
 
-  function selectProduct(rowIdx: number, prod: Product) {
+  async function selectProduct(rowIdx: number, prod: Product) {
+    const activeTypes = orderActiveRateTypes(rateTypes);
+    const productRateResult = await platform.listProductRates(
+      licenseId,
+      prod.id,
+    );
+    const availableRates = activeTypes.map((rateType) => {
+      const resolved = resolveNamedRate({
+        rateType,
+        productRates: productRateResult.rows || [],
+      });
+      return {
+        rateTypeId: rateType.id,
+        code: rateType.code,
+        name: rateType.name,
+        amount: resolved.amount,
+        configured: resolved.configured,
+      };
+    });
+    const defaultType = findDefaultRateType(activeTypes);
+    const selected = availableRates.find(
+      (rate) => rate.rateTypeId === defaultType?.id,
+    );
     setRows((prev) =>
       prev.map((r, i) =>
         i === rowIdx
@@ -302,9 +372,18 @@ export default function QuotationFormModal({
               code: prod.code,
               barcode: prod.barcode || "",
               unit: prod.unit || "NOS",
-              rate: Number(prod.salePrice || prod.mrp || 0),
+              rate: activeTypes.length
+                ? (selected?.amount ?? 0)
+                : Number(prod.salePrice || prod.mrp || 0),
               mrp: Number(prod.mrp || 0),
-              salePrice: Number(prod.salePrice || 0),
+              salePrice: activeTypes.length
+                ? (selected?.amount ?? 0)
+                : Number(prod.salePrice || 0),
+              rateTypeId: defaultType?.id || null,
+              rateTypeCode: defaultType?.code || null,
+              rateTypeName: defaultType?.name || "Legacy",
+              rateSource: defaultType ? "MASTER" : "LEGACY",
+              availableRates,
               taxPercent: prod.tax || "NT",
               quantity: r.quantity || 1,
             })
@@ -346,6 +425,20 @@ export default function QuotationFormModal({
       setErrors(["Add at least one item with quantity > 0."]);
       return;
     }
+    const missingRate = validRows.find(
+      (row) =>
+        row.rateSource === "MASTER" &&
+        !row.availableRates.find(
+          (rate) =>
+            rate.rateTypeId === row.rateTypeId && rate.configured,
+        ),
+    );
+    if (missingRate) {
+      setErrors([
+        `Line ${missingRate.lineNo}: the selected named rate is not configured.`,
+      ]);
+      return;
+    }
     setErrors([]);
     setSaving(true);
     try {
@@ -379,6 +472,10 @@ export default function QuotationFormModal({
         mfgDate: r.mfgDate || null,
         expiryDate: r.expiryDate || null,
         lineNo: i + 1,
+        rateTypeId: r.rateTypeId,
+        rateTypeCode: r.rateTypeCode,
+        rateTypeName: r.rateTypeName,
+        rateSource: r.rateSource,
       }));
 
       let res;
@@ -757,20 +854,79 @@ export default function QuotationFormModal({
                             />
                           </td>
 
-                          {/* Rate */}
+                          {/* Rate type */}
                           <td className="px-3 py-1.5 align-middle">
-                            <input
-                              type="number"
-                              className={`${tableInputCls} text-right`}
-                              value={row.rate || ""}
-                              onChange={(e) =>
-                                updateRow(idx, {
-                                  rate: Number(e.target.value) || 0,
-                                })
-                              }
-                              min={0}
-                              step={0.01}
-                            />
+                            <div className="space-y-1">
+                              <select
+                                className={`${tableInputCls} text-left`}
+                                value={
+                                  row.rateSource === "CUSTOM"
+                                    ? "__CUSTOM__"
+                                    : row.rateTypeId || ""
+                                }
+                                onChange={(event) => {
+                                  if (event.target.value === "__CUSTOM__") {
+                                    updateRow(idx, {
+                                      rateTypeId: null,
+                                      rateTypeCode: null,
+                                      rateTypeName: "Custom",
+                                      rateSource: "CUSTOM",
+                                    });
+                                    return;
+                                  }
+                                  const selected = row.availableRates.find(
+                                    (rate) =>
+                                      rate.rateTypeId === event.target.value,
+                                  );
+                                  if (!selected?.configured || selected.amount == null) {
+                                    return;
+                                  }
+                                  updateRow(idx, {
+                                    rateTypeId: selected.rateTypeId,
+                                    rateTypeCode: selected.code,
+                                    rateTypeName: selected.name,
+                                    rateSource: "MASTER",
+                                    rate: selected.amount,
+                                    salePrice: selected.amount,
+                                  });
+                                }}
+                              >
+                                {!row.rateTypeId &&
+                                  row.rateSource !== "CUSTOM" && (
+                                    <option value="">Legacy</option>
+                                  )}
+                                {row.availableRates.map((rate) => (
+                                  <option
+                                    key={rate.rateTypeId}
+                                    value={rate.rateTypeId}
+                                    disabled={!rate.configured}
+                                  >
+                                    {rate.name}
+                                    {rate.configured
+                                      ? ` - ₹${rate.amount}`
+                                      : " - Not configured"}
+                                  </option>
+                                ))}
+                                <option value="__CUSTOM__">Custom rate</option>
+                              </select>
+                              <input
+                                type="number"
+                                className={`${tableInputCls} text-right`}
+                                value={row.rate || ""}
+                                onChange={(event) =>
+                                  updateRow(idx, {
+                                    rate: Number(event.target.value) || 0,
+                                    salePrice: Number(event.target.value) || 0,
+                                    rateTypeId: null,
+                                    rateTypeCode: null,
+                                    rateTypeName: "Custom",
+                                    rateSource: "CUSTOM",
+                                  })
+                                }
+                                min={0}
+                                step={0.01}
+                              />
+                            </div>
                           </td>
 
                           {/* Tax */}

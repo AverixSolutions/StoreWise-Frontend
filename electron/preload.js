@@ -62,6 +62,49 @@ contextBridge.exposeInMainWorld("electronAPI", {
   saveUnit: (payload) => ipcRenderer.invoke("unit:save", payload),
   deleteUnit: (id) => ipcRenderer.invoke("unit:delete", id),
 
+  // ---- Selling Rate Master ----
+  listRateTypes: (licenseId, includeInactive = true) =>
+    ipcRenderer.invoke("rate-type:list", { licenseId, includeInactive }),
+  saveRateType: (payload) => ipcRenderer.invoke("rate-type:save", payload),
+  createRateTypesBulk: (payload) =>
+    ipcRenderer.invoke("rate-type:create-bulk", payload),
+  setDefaultRateType: (licenseId, id) =>
+    ipcRenderer.invoke("rate-type:set-default", { licenseId, id }),
+  toggleRateType: (licenseId, id, isActive) =>
+    ipcRenderer.invoke("rate-type:toggle", { licenseId, id, isActive }),
+  deleteRateType: (licenseId, id) =>
+    ipcRenderer.invoke("rate-type:delete", { licenseId, id }),
+  listProductRates: (licenseId, productId) =>
+    ipcRenderer.invoke("product-rate:list", { licenseId, productId }),
+  saveProductRates: (payload) =>
+    ipcRenderer.invoke("product-rate:save", payload),
+  listProductBatchRates: (licenseId, productId, batchId) =>
+    ipcRenderer.invoke("product-batch-rate:list", {
+      licenseId,
+      productId,
+      batchId,
+    }),
+  saveProductBatchRates: (payload) =>
+    ipcRenderer.invoke("product-batch-rate:save", payload),
+  getDirtyRateTypes: (licenseId, limit) =>
+    ipcRenderer.invoke("rate-type:get-dirty", { licenseId, limit }),
+  markRateTypesSynced: (ids, ts) =>
+    ipcRenderer.invoke("rate-type:mark-synced", { ids, ts }),
+  bulkUpsertRateTypes: (records) =>
+    ipcRenderer.invoke("rate-type:bulk-upsert", records),
+  getDirtyProductRates: (licenseId, limit) =>
+    ipcRenderer.invoke("product-rate:get-dirty", { licenseId, limit }),
+  markProductRatesSynced: (ids, ts) =>
+    ipcRenderer.invoke("product-rate:mark-synced", { ids, ts }),
+  bulkUpsertProductRates: (records) =>
+    ipcRenderer.invoke("product-rate:bulk-upsert", records),
+  getDirtyProductBatchRates: (licenseId, limit) =>
+    ipcRenderer.invoke("product-batch-rate:get-dirty", { licenseId, limit }),
+  markProductBatchRatesSynced: (ids, ts) =>
+    ipcRenderer.invoke("product-batch-rate:mark-synced", { ids, ts }),
+  bulkUpsertProductBatchRates: (records) =>
+    ipcRenderer.invoke("product-batch-rate:bulk-upsert", records),
+
   // ---- Transaction Types ----
   listTransactionTypes: (licenseId, category) =>
     ipcRenderer.invoke("txn-type:list", { licenseId, category }),

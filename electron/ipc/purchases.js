@@ -2,6 +2,113 @@
 const { v4: uuidv4 } = require("uuid");
 const { ipcMain } = require("electron");
 const db = require("../db");
+
+function applySellingRatesSnapshot({
+  licenseId,
+  productId,
+  batchId,
+  sellingRatesJson,
+  now,
+}) {
+  if (!sellingRatesJson) return;
+  let rates;
+  try {
+    rates =
+      typeof sellingRatesJson === "string"
+        ? JSON.parse(sellingRatesJson)
+        : sellingRatesJson;
+  } catch {
+    throw new Error("Invalid selling-rate snapshot");
+  }
+  if (!Array.isArray(rates)) throw new Error("Invalid selling-rate snapshot");
+  const rateTypes = db
+    .prepare(`
+      SELECT id, code, name, isDefault FROM rate_types
+      WHERE licenseId=? AND deletedAt IS NULL
+    `)
+    .all(licenseId);
+  const byId = new Map(rateTypes.map((rate) => [rate.id, rate]));
+  const existingProduct = db.prepare(`
+    SELECT id FROM product_rates WHERE productId=? AND rateTypeId=? LIMIT 1
+  `);
+  const existingBatch = db.prepare(`
+    SELECT id FROM product_batch_rates WHERE batchId=? AND rateTypeId=? LIMIT 1
+  `);
+  const upsertProduct = db.prepare(`
+    INSERT INTO product_rates (
+      id, licenseId, productId, rateTypeId, amount, createdAt, updatedAt,
+      deletedAt, isSynced, syncedAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 0, NULL)
+    ON CONFLICT(id) DO UPDATE SET amount=excluded.amount, deletedAt=NULL,
+      updatedAt=excluded.updatedAt, isSynced=0, syncedAt=NULL
+  `);
+  const upsertBatch = db.prepare(`
+    INSERT INTO product_batch_rates (
+      id, licenseId, productId, batchId, rateTypeId, amount, createdAt,
+      updatedAt, deletedAt, isSynced, syncedAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, 0, NULL)
+    ON CONFLICT(id) DO UPDATE SET amount=excluded.amount, deletedAt=NULL,
+      updatedAt=excluded.updatedAt, isSynced=0, syncedAt=NULL
+  `);
+
+  let defaultAmount = null;
+  let hasDefault = false;
+  for (const value of rates) {
+    const rateTypeId = String(value.rateTypeId || "").trim();
+    const rateType = byId.get(rateTypeId);
+    if (!rateType) throw new Error("Selling rate does not belong to this license");
+    const amount = value.amount == null || value.amount === "" ? null : Number(value.amount);
+    if (amount != null && (!Number.isFinite(amount) || amount < 0)) {
+      throw new Error("Selling rates must be non-negative numbers");
+    }
+    if (rateType.isDefault) {
+      hasDefault = true;
+      defaultAmount = amount;
+    }
+    if (amount == null) {
+      db.prepare(`
+        UPDATE product_rates SET deletedAt=?, updatedAt=?, isSynced=0, syncedAt=NULL
+        WHERE productId=? AND rateTypeId=? AND licenseId=? AND deletedAt IS NULL
+      `).run(now, now, productId, rateTypeId, licenseId);
+      db.prepare(`
+        UPDATE product_batch_rates SET deletedAt=?, updatedAt=?, isSynced=0, syncedAt=NULL
+        WHERE batchId=? AND rateTypeId=? AND licenseId=? AND deletedAt IS NULL
+      `).run(now, now, batchId, rateTypeId, licenseId);
+      continue;
+    }
+    upsertProduct.run(
+      existingProduct.get(productId, rateTypeId)?.id ||
+        `pr:${productId}:${rateTypeId}`,
+      licenseId,
+      productId,
+      rateTypeId,
+      amount,
+      now,
+      now,
+    );
+    upsertBatch.run(
+      existingBatch.get(batchId, rateTypeId)?.id ||
+        `pbr:${batchId}:${rateTypeId}`,
+      licenseId,
+      productId,
+      batchId,
+      rateTypeId,
+      amount,
+      now,
+      now,
+    );
+  }
+  if (hasDefault) {
+    db.prepare(`
+      UPDATE products SET salePrice=?, updatedAt=?, isSynced=0, syncedAt=NULL
+      WHERE id=? AND licenseId=?
+    `).run(defaultAmount, now, productId, licenseId);
+    db.prepare(`
+      UPDATE product_batches SET salePrice=?, updatedAt=?
+      WHERE id=? AND productId=? AND licenseId=?
+    `).run(defaultAmount, now, batchId, productId, licenseId);
+  }
+}
 const { reserveOneBarcode } = require("./barcodes");
 const { canUseBarcode } = require("../licenseFeatures");
 
@@ -425,9 +532,9 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
   id, purchaseId, productId, barcode, quantity, unit, rate, mrp,
   taxPercent, taxAmount, discount, salePrice, profit, totalCost, billedValue, effectiveUnitValue,
   batchNo, purchaseBatchNo, mfgDate, expiryDate, discountType, lineNo, isFree, batchId,
-  createdAt, updatedAt, isSynced
+  sellingRatesJson, createdAt, updatedAt, isSynced
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
   `);
 
     const trx = db.transaction((purchase, items) => {
@@ -549,6 +656,14 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
           });
         }
 
+        applySellingRatesSnapshot({
+          licenseId: purchase.licenseId,
+          productId: item.productId,
+          batchId: batch.id,
+          sellingRatesJson: item.sellingRatesJson,
+          now,
+        });
+
         insertItem.run(
           uuidv4(),
           newId,
@@ -574,6 +689,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
           item.lineNo || index + 1,
           item.isFree ? 1 : 0,
           batch.id,
+          item.sellingRatesJson || null,
           now,
           now,
         );
@@ -744,12 +860,12 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
           id, purchaseId, productId, quantity, unit, rate, taxPercent, taxAmount,
           discount, discountType, salePrice, profit, totalCost, billedValue,
          barcode, mrp, batchNo, purchaseBatchNo, mfgDate, expiryDate, lineNo, isFree, batchId,
-          effectiveUnitValue, createdAt, updatedAt, isSynced, syncedAt
+          effectiveUnitValue, sellingRatesJson, createdAt, updatedAt, isSynced, syncedAt
         ) VALUES (
           lower(hex(randomblob(16))), @purchaseId, @productId, @quantity, @unit, @rate, @taxPercent, @taxAmount,
           @discount, @discountType, @salePrice, @profit, @totalCost, @billedValue,
           @barcode, @mrp, @batchNo, @purchaseBatchNo, @mfgDate, @expiryDate, @lineNo, @isFree, @batchId,
-          @effectiveUnitValue, @now, @now, 0, NULL
+          @effectiveUnitValue, @sellingRatesJson, @now, @now, 0, NULL
         )
       `);
 
@@ -836,6 +952,15 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
           isFree,
           batchId: batch.id,
           effectiveUnitValue: effUnit,
+          sellingRatesJson: it.sellingRatesJson ?? null,
+          now,
+        });
+
+        applySellingRatesSnapshot({
+          licenseId,
+          productId: it.productId,
+          batchId: batch.id,
+          sellingRatesJson: it.sellingRatesJson,
           now,
         });
 
@@ -1835,6 +1960,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
                  pi.batchNo, pi.batchId, pi.purchaseBatchNo,
                  pi.mfgDate, pi.expiryDate,
                  pi.lineNo, pi.isFree, pi.effectiveUnitValue,
+                 pi.sellingRatesJson,
                  pi.createdAt, pi.updatedAt, pi.deletedAt,
                  pi.isSynced, pi.syncedAt
           FROM purchase_items pi
@@ -2027,6 +2153,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
         salePrice, profit, totalCost, billedValue,
         batchNo, batchId, purchaseBatchNo,
         mfgDate, expiryDate, lineNo, isFree, effectiveUnitValue,
+        sellingRatesJson,
         createdAt, updatedAt, deletedAt, isSynced, syncedAt
       ) VALUES (
         @id, @purchaseId, @productId, @barcode,
@@ -2035,6 +2162,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
         @salePrice, @profit, @totalCost, @billedValue,
         @batchNo, @batchId, @purchaseBatchNo,
         @mfgDate, @expiryDate, @lineNo, @isFree, @effectiveUnitValue,
+        @sellingRatesJson,
         @createdAt, @updatedAt, @deletedAt, 1, @syncedAt
       )
       ON CONFLICT(id) DO UPDATE SET
@@ -2058,6 +2186,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
         lineNo             = excluded.lineNo,
         isFree             = excluded.isFree,
         effectiveUnitValue = excluded.effectiveUnitValue,
+        sellingRatesJson   = excluded.sellingRatesJson,
         updatedAt          = excluded.updatedAt,
         deletedAt          = excluded.deletedAt,
         isSynced           = 1,
@@ -2094,6 +2223,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
           isFree: r.isFree ? 1 : 0,
           effectiveUnitValue:
             r.effectiveUnitValue != null ? Number(r.effectiveUnitValue) : null,
+          sellingRatesJson: r.sellingRatesJson ?? null,
           createdAt:
             r.createdAt instanceof Date
               ? r.createdAt.toISOString()

@@ -24,6 +24,15 @@ export interface BatchInfo {
   stock?: number | null;
 }
 
+export type AvailableNamedRate = {
+  rateTypeId: string;
+  code: string;
+  name: string;
+  amount: number | null;
+  configured: boolean;
+  isDefault?: boolean;
+};
+
 export interface ItemRow {
   lineNo: number;
   productId: string;
@@ -58,6 +67,11 @@ export interface ItemRow {
   offerDiscountAmount?: number;
   offerMessage?: string | null;
   offerMeta?: string | null;
+  rateTypeId?: string | null;
+  rateTypeCode?: string | null;
+  rateTypeName?: string | null;
+  rateSource?: "MASTER" | "CUSTOM" | "LEGACY";
+  availableRates?: AvailableNamedRate[];
 }
 
 export interface HeaderForm {

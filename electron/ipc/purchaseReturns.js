@@ -305,6 +305,7 @@ function insertPurchaseReturnItems({
       overQty > 0
         ? item.overReturnReason || "Over return beyond available stock"
         : null,
+      item.sellingRatesJson || null,
       now,
       now,
     );
@@ -373,8 +374,8 @@ function registerPurchaseReturnHandlers() {
         taxAmount, discount, discountType, salePrice, profit, totalCost, billedValue,
         effectiveUnitValue, batchNo, mfgDate, expiryDate, lineNo,
         batchId, appliedQuantity, overReturnQuantity, overReturnReason,
-        createdAt, updatedAt, isSynced
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+        sellingRatesJson, createdAt, updatedAt, isSynced
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
     `);
 
     const trx = db.transaction(({ header, items }) => {
@@ -446,8 +447,8 @@ function registerPurchaseReturnHandlers() {
         taxAmount, discount, discountType, salePrice, profit, totalCost, billedValue,
         effectiveUnitValue, batchNo, mfgDate, expiryDate, lineNo,
         batchId, appliedQuantity, overReturnQuantity, overReturnReason,
-        createdAt, updatedAt, isSynced
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+        sellingRatesJson, createdAt, updatedAt, isSynced
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
     `);
 
     const trx = db.transaction(() => {
@@ -839,6 +840,7 @@ function registerPurchaseReturnHandlers() {
              pri.taxPercent, pri.taxAmount,
              pri.discount, pri.discountType,
              pri.salePrice, pri.profit, pri.totalCost, pri.billedValue,
+             pri.sellingRatesJson,
              pri.batchNo, pri.batchId,
              pri.mfgDate, pri.expiryDate,
              pri.lineNo, pri.effectiveUnitValue,
@@ -980,6 +982,7 @@ function registerPurchaseReturnHandlers() {
         effectiveUnitValue, batchNo, batchId,
         mfgDate, expiryDate, lineNo,
         appliedQuantity, overReturnQuantity, overReturnReason,
+        sellingRatesJson,
         createdAt, updatedAt, deletedAt, isSynced, syncedAt
       ) VALUES (
         @id, @returnId, @productId, @barcode,
@@ -989,6 +992,7 @@ function registerPurchaseReturnHandlers() {
         @effectiveUnitValue, @batchNo, @batchId,
         @mfgDate, @expiryDate, @lineNo,
         @appliedQuantity, @overReturnQuantity, @overReturnReason,
+        @sellingRatesJson,
         @createdAt, @updatedAt, @deletedAt, 1, @syncedAt
       )
       ON CONFLICT(id) DO UPDATE SET
@@ -1013,6 +1017,7 @@ function registerPurchaseReturnHandlers() {
         appliedQuantity      = excluded.appliedQuantity,
         overReturnQuantity   = excluded.overReturnQuantity,
         overReturnReason     = excluded.overReturnReason,
+        sellingRatesJson     = excluded.sellingRatesJson,
         updatedAt            = excluded.updatedAt,
         deletedAt            = excluded.deletedAt,
         isSynced             = 1,
@@ -1050,6 +1055,7 @@ function registerPurchaseReturnHandlers() {
           appliedQuantity: Number(r.appliedQuantity || 0),
           overReturnQuantity: Number(r.overReturnQuantity || 0),
           overReturnReason: r.overReturnReason ?? null,
+          sellingRatesJson: r.sellingRatesJson ?? null,
           createdAt: r.createdAt ?? now,
           updatedAt: r.updatedAt ?? now,
           deletedAt: r.deletedAt ?? null,

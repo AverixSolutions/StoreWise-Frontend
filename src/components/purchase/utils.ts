@@ -189,6 +189,34 @@ export function mapItems(rows: ItemRow[]) {
       appliedQuantity: r.appliedQuantity ?? null,
       overReturnQuantity: r.overReturnQuantity ?? null,
       overReturnReason: r.overReturnReason ?? null,
+      sellingRatesJson: (() => {
+        if (!r.sellingRatesJson || !(Number(r.profitPercent) > 0)) {
+          return r.sellingRatesJson ?? null;
+        }
+        try {
+          const values = JSON.parse(r.sellingRatesJson);
+          if (!Array.isArray(values)) return r.sellingRatesJson;
+          return JSON.stringify(
+            values.map((value: unknown) => {
+              const rate =
+                value && typeof value === "object"
+                  ? (value as {
+                      isDefault?: unknown;
+                      [key: string]: unknown;
+                    })
+                  : null;
+              return rate?.isDefault
+                ? {
+                    ...rate,
+                    amount: r.salePrice ?? null,
+                  }
+                : value;
+            }),
+          );
+        } catch {
+          return r.sellingRatesJson;
+        }
+      })(),
     }));
 }
 
@@ -224,6 +252,31 @@ export function rowsFromDbItems(dbItems: any[]): ItemRow[] {
     appliedQuantity: it.appliedQuantity ?? 0,
     overReturnQuantity: it.overReturnQuantity ?? 0,
     overReturnReason: it.overReturnReason ?? null,
+    sellingRatesJson: it.sellingRatesJson ?? null,
+    availableRates: (() => {
+      try {
+        const values = JSON.parse(it.sellingRatesJson || "[]");
+        return Array.isArray(values)
+          ? values.map((value: unknown) => {
+              const rate =
+                value && typeof value === "object"
+                  ? (value as Record<string, unknown>)
+                  : {};
+              return {
+                rateTypeId: String(rate.rateTypeId || ""),
+                code: String(rate.code || ""),
+                name: String(rate.name || rate.code || "Saved rate"),
+                amount:
+                  rate.amount == null ? null : Number(rate.amount),
+                configured: rate.amount != null,
+                isDefault: Boolean(rate.isDefault),
+              };
+            })
+          : [];
+      } catch {
+        return [];
+      }
+    })(),
   }));
 }
 

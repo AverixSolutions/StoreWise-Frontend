@@ -245,8 +245,9 @@ function registerSaleHandlers() {
         totalCost, billedValue, effectiveUnitValue, batchNo, mfgDate, expiryDate,
         lineNo, isFree, batchId, originalRate, originalSalePrice, appliedRate,
         offerId, offerName, offerType, offerDiscountAmount, offerMeta,
+        rateTypeId, rateTypeCode, rateTypeName, rateSource,
         createdAt, updatedAt, isSynced
-      ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+      ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
     `);
 
     const trx = db.transaction((header, items) => {
@@ -371,6 +372,10 @@ function registerSaleHandlers() {
           it.offerType || null,
           Number(it.offerDiscountAmount || 0),
           it.offerMeta || null,
+          it.rateTypeId || null,
+          it.rateTypeCode || null,
+          it.rateTypeName || null,
+          it.rateSource || "LEGACY",
           now,
           now,
         );
@@ -536,6 +541,7 @@ function registerSaleHandlers() {
     barcode, mrp, batchNo, mfgDate, expiryDate, lineNo, isFree,
     batchId, effectiveUnitValue, originalRate, originalSalePrice, appliedRate,
     offerId, offerName, offerType, offerDiscountAmount, offerMeta,
+    rateTypeId, rateTypeCode, rateTypeName, rateSource,
     createdAt, updatedAt, isSynced, syncedAt
   ) VALUES (
     lower(hex(randomblob(16))), @saleId, @productId, @quantity, @unit, @rate, @taxPercent, @taxAmount,
@@ -543,6 +549,7 @@ function registerSaleHandlers() {
     @barcode, @mrp, @batchNo, @mfgDate, @expiryDate, @lineNo, @isFree,
     @batchId, @effectiveUnitValue, @originalRate, @originalSalePrice, @appliedRate,
     @offerId, @offerName, @offerType, @offerDiscountAmount, @offerMeta,
+    @rateTypeId, @rateTypeCode, @rateTypeName, @rateSource,
     @now, @now, 0, NULL
   )
 `);
@@ -615,6 +622,10 @@ function registerSaleHandlers() {
           offerType: it.offerType ?? null,
           offerDiscountAmount: Number(it.offerDiscountAmount || 0),
           offerMeta: it.offerMeta ?? null,
+          rateTypeId: it.rateTypeId ?? null,
+          rateTypeCode: it.rateTypeCode ?? null,
+          rateTypeName: it.rateTypeName ?? null,
+          rateSource: it.rateSource ?? "LEGACY",
           now,
         });
 
@@ -835,6 +846,8 @@ function registerSaleHandlers() {
            si.originalRate, si.originalSalePrice, si.appliedRate,
            si.offerId, si.offerName, si.offerType,
            si.offerDiscountAmount, si.offerMeta,
+           si.rateTypeId, si.rateTypeCode, si.rateTypeName,
+           COALESCE(si.rateSource, 'LEGACY') AS rateSource,
            si.createdAt, si.updatedAt, si.deletedAt,
            si.isSynced, si.syncedAt
     FROM sale_items si
@@ -1079,6 +1092,7 @@ function registerSaleHandlers() {
       mfgDate, expiryDate, lineNo, isFree, effectiveUnitValue,
       originalRate, originalSalePrice, appliedRate,
       offerId, offerName, offerType, offerDiscountAmount, offerMeta,
+      rateTypeId, rateTypeCode, rateTypeName, rateSource,
       createdAt, updatedAt, deletedAt, isSynced, syncedAt
     ) VALUES (
       @id, @saleId, @productId, @barcode,
@@ -1089,6 +1103,7 @@ function registerSaleHandlers() {
       @mfgDate, @expiryDate, @lineNo, @isFree, @effectiveUnitValue,
       @originalRate, @originalSalePrice, @appliedRate,
       @offerId, @offerName, @offerType, @offerDiscountAmount, @offerMeta,
+      @rateTypeId, @rateTypeCode, @rateTypeName, @rateSource,
       @createdAt, @updatedAt, @deletedAt, 1, @syncedAt
     )
     ON CONFLICT(id) DO UPDATE SET
@@ -1119,6 +1134,10 @@ function registerSaleHandlers() {
       offerType          = excluded.offerType,
       offerDiscountAmount = excluded.offerDiscountAmount,
       offerMeta          = excluded.offerMeta,
+      rateTypeId         = excluded.rateTypeId,
+      rateTypeCode       = excluded.rateTypeCode,
+      rateTypeName       = excluded.rateTypeName,
+      rateSource         = excluded.rateSource,
       updatedAt          = excluded.updatedAt,
       deletedAt          = excluded.deletedAt,
       isSynced           = 1,
@@ -1163,6 +1182,10 @@ function registerSaleHandlers() {
           offerType: r.offerType ?? null,
           offerDiscountAmount: Number(r.offerDiscountAmount || 0),
           offerMeta: r.offerMeta ?? null,
+          rateTypeId: r.rateTypeId ?? null,
+          rateTypeCode: r.rateTypeCode ?? null,
+          rateTypeName: r.rateTypeName ?? null,
+          rateSource: r.rateSource ?? "LEGACY",
           createdAt:
             r.createdAt instanceof Date
               ? r.createdAt.toISOString()

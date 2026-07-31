@@ -10,10 +10,17 @@ function ensureDir(dirPath) {
   }
 }
 
-const appDataRoot = path.join(app.getPath("appData"), "KYNFLOW");
-const dataDir = path.join(appDataRoot, "data");
-const backupDir = path.join(appDataRoot, "backups");
-const dbPath = path.join(dataDir, "kynflow.db");
+const testDbPath = process.env.KYNFLOW_DB_PATH
+  ? path.resolve(process.env.KYNFLOW_DB_PATH)
+  : null;
+const appDataRoot = testDbPath
+  ? path.dirname(testDbPath)
+  : path.join(app.getPath("appData"), "KYNFLOW");
+const dataDir = testDbPath ? path.dirname(testDbPath) : path.join(appDataRoot, "data");
+const backupDir = testDbPath
+  ? path.join(appDataRoot, "backups")
+  : path.join(appDataRoot, "backups");
+const dbPath = testDbPath || path.join(dataDir, "kynflow.db");
 
 ensureDir(appDataRoot);
 ensureDir(dataDir);
@@ -2539,5 +2546,185 @@ addColumnIfMissing("sale_items", "offerName", "TEXT");
 addColumnIfMissing("sale_items", "offerType", "TEXT");
 addColumnIfMissing("sale_items", "offerDiscountAmount", "REAL DEFAULT 0");
 addColumnIfMissing("sale_items", "offerMeta", "TEXT");
+
+// Named, idempotent multi-rate migration. This migration only adds normalized
+// master/value tables and transaction snapshot columns; existing salePrice
+// columns remain compatibility mirrors.
+const multiRateMigrationName = "multi_rate_master_v1";
+const multiRateMigrationRan = db
+  .prepare(`SELECT 1 FROM _migrations WHERE name = ? LIMIT 1`)
+  .get(multiRateMigrationName);
+
+if (!multiRateMigrationRan) {
+  const runMultiRateMigration = db.transaction(() => {
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS rate_types (
+        id TEXT PRIMARY KEY,
+        licenseId TEXT NOT NULL,
+        code TEXT NOT NULL COLLATE NOCASE,
+        name TEXT NOT NULL COLLATE NOCASE,
+        isDefault INTEGER NOT NULL DEFAULT 0,
+        isActive INTEGER NOT NULL DEFAULT 1,
+        sortOrder INTEGER NOT NULL DEFAULT 0,
+        createdAt TEXT,
+        updatedAt TEXT NOT NULL,
+        deletedAt TEXT,
+        isSynced INTEGER NOT NULL DEFAULT 0,
+        syncedAt TEXT
+      )
+    `).run();
+
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS product_rates (
+        id TEXT PRIMARY KEY,
+        licenseId TEXT NOT NULL,
+        productId TEXT NOT NULL,
+        rateTypeId TEXT NOT NULL,
+        amount REAL NOT NULL,
+        createdAt TEXT,
+        updatedAt TEXT NOT NULL,
+        deletedAt TEXT,
+        isSynced INTEGER NOT NULL DEFAULT 0,
+        syncedAt TEXT,
+        FOREIGN KEY (productId) REFERENCES products(id) ON DELETE CASCADE,
+        FOREIGN KEY (rateTypeId) REFERENCES rate_types(id) ON DELETE RESTRICT
+      )
+    `).run();
+
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS product_batch_rates (
+        id TEXT PRIMARY KEY,
+        licenseId TEXT NOT NULL,
+        productId TEXT NOT NULL,
+        batchId TEXT NOT NULL,
+        rateTypeId TEXT NOT NULL,
+        amount REAL NOT NULL,
+        createdAt TEXT,
+        updatedAt TEXT NOT NULL,
+        deletedAt TEXT,
+        isSynced INTEGER NOT NULL DEFAULT 0,
+        syncedAt TEXT,
+        FOREIGN KEY (productId) REFERENCES products(id) ON DELETE CASCADE,
+        FOREIGN KEY (batchId) REFERENCES product_batches(id) ON DELETE CASCADE,
+        FOREIGN KEY (rateTypeId) REFERENCES rate_types(id) ON DELETE RESTRICT
+      )
+    `).run();
+
+    addColumnIfMissing("purchase_items", "sellingRatesJson", "TEXT");
+    addColumnIfMissing("purchase_return_items", "sellingRatesJson", "TEXT");
+    for (const table of ["sale_items", "sale_return_items", "quotation_items"]) {
+      addColumnIfMissing(table, "rateTypeId", "TEXT");
+      addColumnIfMissing(table, "rateTypeCode", "TEXT");
+      addColumnIfMissing(table, "rateTypeName", "TEXT");
+      addColumnIfMissing(table, "rateSource", "TEXT DEFAULT 'LEGACY'");
+    }
+
+    db.prepare(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_rate_types_code_live
+      ON rate_types(licenseId, code COLLATE NOCASE)
+      WHERE deletedAt IS NULL
+    `).run();
+    db.prepare(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_rate_types_name_live
+      ON rate_types(licenseId, name COLLATE NOCASE)
+      WHERE deletedAt IS NULL
+    `).run();
+    db.prepare(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_rate_types_one_active_default
+      ON rate_types(licenseId)
+      WHERE isDefault = 1 AND isActive = 1 AND deletedAt IS NULL
+    `).run();
+    db.prepare(`
+      CREATE INDEX IF NOT EXISTS idx_rate_types_license_sort
+      ON rate_types(licenseId, isActive, sortOrder, updatedAt)
+    `).run();
+    db.prepare(`
+      CREATE INDEX IF NOT EXISTS idx_rate_types_dirty
+      ON rate_types(licenseId, isSynced, updatedAt)
+    `).run();
+    db.prepare(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_product_rates_live
+      ON product_rates(productId, rateTypeId)
+      WHERE deletedAt IS NULL
+    `).run();
+    db.prepare(`
+      CREATE INDEX IF NOT EXISTS idx_product_rates_lookup
+      ON product_rates(licenseId, productId, rateTypeId, updatedAt)
+    `).run();
+    db.prepare(`
+      CREATE INDEX IF NOT EXISTS idx_product_rates_dirty
+      ON product_rates(licenseId, isSynced, updatedAt)
+    `).run();
+    db.prepare(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_product_batch_rates_live
+      ON product_batch_rates(batchId, rateTypeId)
+      WHERE deletedAt IS NULL
+    `).run();
+    db.prepare(`
+      CREATE INDEX IF NOT EXISTS idx_product_batch_rates_lookup
+      ON product_batch_rates(licenseId, productId, batchId, rateTypeId, updatedAt)
+    `).run();
+    db.prepare(`
+      CREATE INDEX IF NOT EXISTS idx_product_batch_rates_dirty
+      ON product_batch_rates(licenseId, isSynced, updatedAt)
+    `).run();
+
+    const now = new Date().toISOString();
+    db.prepare(`
+      INSERT OR IGNORE INTO rate_types (
+        id, licenseId, code, name, isDefault, isActive, sortOrder,
+        createdAt, updatedAt, isSynced
+      )
+      SELECT 'retail-' || licenseId, licenseId, 'RETAIL', 'Retail', 1, 1, 0,
+             @now, @now, 0
+      FROM (
+        SELECT licenseId FROM products
+        UNION SELECT licenseId FROM product_batches
+        UNION SELECT licenseId FROM purchases
+        UNION SELECT licenseId FROM sales
+        UNION SELECT licenseId FROM quotations
+      )
+      WHERE licenseId IS NOT NULL AND trim(licenseId) <> ''
+    `).run({ now });
+
+    db.prepare(`
+      INSERT OR IGNORE INTO product_rates (
+        id, licenseId, productId, rateTypeId, amount,
+        createdAt, updatedAt, isSynced
+      )
+      SELECT 'pr:' || p.id || ':' || rt.id, p.licenseId, p.id, rt.id, p.salePrice,
+             @now, @now, 0
+      FROM products p
+      JOIN rate_types rt
+        ON rt.licenseId = p.licenseId
+       AND rt.code = 'RETAIL' COLLATE NOCASE
+       AND rt.deletedAt IS NULL
+      WHERE p.salePrice IS NOT NULL
+    `).run({ now });
+
+    db.prepare(`
+      INSERT OR IGNORE INTO product_batch_rates (
+        id, licenseId, productId, batchId, rateTypeId, amount,
+        createdAt, updatedAt, isSynced
+      )
+      SELECT 'pbr:' || pb.id || ':' || rt.id, pb.licenseId, pb.productId, pb.id, rt.id,
+             pb.salePrice, @now, @now, 0
+      FROM product_batches pb
+      JOIN rate_types rt
+        ON rt.licenseId = pb.licenseId
+       AND rt.code = 'RETAIL' COLLATE NOCASE
+       AND rt.deletedAt IS NULL
+      WHERE pb.salePrice IS NOT NULL
+    `).run({ now });
+
+    db.prepare(`INSERT INTO _migrations(name, ranAt) VALUES(?, ?)`).run(
+      multiRateMigrationName,
+      now,
+    );
+  });
+
+  runMultiRateMigration();
+  console.log("[db] multi_rate_master_v1 completed");
+}
 
 module.exports = db;

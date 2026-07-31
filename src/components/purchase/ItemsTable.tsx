@@ -1,5 +1,5 @@
 // src/components/purchase/ItemsTable.tsx
-import { ItemRow, Product } from "./types";
+import { ItemRow, Product, TransactionMode } from "./types";
 import ItemTableRow from "./ItemTableRow";
 import { useEffect } from "react";
 import { focusCell, nextCell, ColKey } from "./keyboardGrid";
@@ -14,6 +14,7 @@ interface ItemsTableProps {
   onRequestBatchSelect?: (rowIndex: number) => void;
   onBarcodeCommit?: (rowIndex: number) => void;
   barcodeEnabled?: boolean;
+  mode?: TransactionMode;
 }
 
 export default function ItemsTable({
@@ -26,6 +27,7 @@ export default function ItemsTable({
   onRequestBatchSelect,
   onBarcodeCommit,
   barcodeEnabled = true,
+  mode = "PURCHASE",
 }: ItemsTableProps) {
   const REQUIRED: Partial<Record<ColKey, (r: ItemRow) => boolean>> = {
     product: (r) => !!r.productId,
@@ -116,7 +118,9 @@ export default function ItemsTable({
             </th>
 
             <th className="px-2.5 py-2 text-center text-[10px] font-semibold text-white/80 uppercase tracking-[0.14em] min-w-[200px]">
-              Sale Price
+              {mode === "SALE" || mode === "QUOTATION"
+                ? "Rate Type"
+                : "Sale Price"}
             </th>
             <th className="px-2.5 py-2 text-center text-[10px] font-semibold text-white/80 uppercase tracking-[0.14em] min-w-[84px]">
               MRP
@@ -168,6 +172,7 @@ export default function ItemsTable({
               onRequestBatchSelect={onRequestBatchSelect}
               onBarcodeCommit={onBarcodeCommit}
               barcodeEnabled={barcodeEnabled}
+              mode={mode}
             />
           ))}
         </tbody>

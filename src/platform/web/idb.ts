@@ -1,6 +1,6 @@
 // src/platform/web/idb.ts
 const DB_NAME = "kynflow-web";
-const DB_VERSION = 15; // bumped from 14
+const DB_VERSION = 16; // v16: normalized selling-rate master and values
 
 export const STORES = {
   SHOP_SETTINGS: "shop_settings",
@@ -34,6 +34,9 @@ export const STORES = {
   PURCHASE_RETURNS: "purchase_returns",
   PURCHASE_RETURN_ITEMS: "purchase_return_items",
   PURCHASE_RETURN_HOLDS: "purchase_return_holds",
+  RATE_TYPES: "rate_types",
+  PRODUCT_RATES: "product_rates",
+  PRODUCT_BATCH_RATES: "product_batch_rates",
 } as const;
 
 export type SyncJob = {
@@ -391,6 +394,72 @@ function openDb(): Promise<IDBDatabase> {
           );
         }
       }
+
+      if (oldVersion < 16) {
+        if (!db.objectStoreNames.contains(STORES.RATE_TYPES)) {
+          const store = db.createObjectStore(STORES.RATE_TYPES, {
+            keyPath: "id",
+          });
+          store.createIndex("licenseId", "licenseId", { unique: false });
+          store.createIndex("licenseId_code", ["licenseId", "code"], {
+            unique: false,
+          });
+          store.createIndex("licenseId_name", ["licenseId", "name"], {
+            unique: false,
+          });
+          store.createIndex("licenseId_active", ["licenseId", "activeKey"], {
+            unique: false,
+          });
+          store.createIndex("licenseId_default", ["licenseId", "defaultKey"], {
+            unique: false,
+          });
+          store.createIndex("licenseId_dirty", ["licenseId", "dirtyKey"], {
+            unique: false,
+          });
+          store.createIndex("licenseId_updatedAt", ["licenseId", "updatedAt"], {
+            unique: false,
+          });
+        }
+        if (!db.objectStoreNames.contains(STORES.PRODUCT_RATES)) {
+          const store = db.createObjectStore(STORES.PRODUCT_RATES, {
+            keyPath: "id",
+          });
+          store.createIndex("licenseId", "licenseId", { unique: false });
+          store.createIndex("productId", "productId", { unique: false });
+          store.createIndex("rateTypeId", "rateTypeId", { unique: false });
+          store.createIndex(
+            "productId_rateTypeId",
+            ["productId", "rateTypeId"],
+            { unique: true },
+          );
+          store.createIndex("licenseId_dirty", ["licenseId", "dirtyKey"], {
+            unique: false,
+          });
+          store.createIndex("licenseId_updatedAt", ["licenseId", "updatedAt"], {
+            unique: false,
+          });
+        }
+        if (!db.objectStoreNames.contains(STORES.PRODUCT_BATCH_RATES)) {
+          const store = db.createObjectStore(STORES.PRODUCT_BATCH_RATES, {
+            keyPath: "id",
+          });
+          store.createIndex("licenseId", "licenseId", { unique: false });
+          store.createIndex("productId", "productId", { unique: false });
+          store.createIndex("batchId", "batchId", { unique: false });
+          store.createIndex("rateTypeId", "rateTypeId", { unique: false });
+          store.createIndex(
+            "batchId_rateTypeId",
+            ["batchId", "rateTypeId"],
+            { unique: true },
+          );
+          store.createIndex("licenseId_dirty", ["licenseId", "dirtyKey"], {
+            unique: false,
+          });
+          store.createIndex("licenseId_updatedAt", ["licenseId", "updatedAt"], {
+            unique: false,
+          });
+        }
+      }
     };
 
     request.onsuccess = () => resolve(request.result);
@@ -429,6 +498,94 @@ async function withStore<T>(
   });
 }
 
+export type IdbTransactionContext = {
+  getAll: <T>(storeName: string) => Promise<T[]>;
+  getAllByIndex: <T>(
+    storeName: string,
+    indexName: string,
+    key: IDBValidKey | IDBKeyRange,
+  ) => Promise<T[]>;
+  put: <T>(storeName: string, value: T) => Promise<T>;
+};
+
+export async function idbRunTransaction<T>(
+  storeNames: string[],
+  mode: IDBTransactionMode,
+  executor: (context: IdbTransactionContext) => Promise<T>,
+): Promise<T> {
+  const db = await openDb();
+  return new Promise<T>((resolve, reject) => {
+    const tx = db.transaction(storeNames, mode);
+    let result: T;
+    let executorFinished = false;
+    let settled = false;
+
+    const fail = (error: unknown) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+      db.close();
+    };
+    const request = <R>(idbRequest: IDBRequest<R>, message: string) =>
+      new Promise<R>((requestResolve, requestReject) => {
+        idbRequest.onsuccess = () => requestResolve(idbRequest.result);
+        idbRequest.onerror = () =>
+          requestReject(idbRequest.error || new Error(message));
+      });
+    const context: IdbTransactionContext = {
+      getAll: <R>(storeName: string) =>
+        request<R[]>(
+          tx.objectStore(storeName).getAll(),
+          `Failed to read all from ${storeName}`,
+        ),
+      getAllByIndex: <R>(
+        storeName: string,
+        indexName: string,
+        key: IDBValidKey | IDBKeyRange,
+      ) =>
+        request<R[]>(
+          tx.objectStore(storeName).index(indexName).getAll(key),
+          `Failed to read index ${indexName}`,
+        ),
+      put: <R>(storeName: string, value: R) =>
+        request<IDBValidKey>(
+          tx.objectStore(storeName).put(value),
+          `Failed to write to ${storeName}`,
+        ).then(() => value),
+    };
+
+    tx.oncomplete = () => {
+      if (settled) return;
+      if (!executorFinished) {
+        fail(new Error("IndexedDB transaction completed before its work finished"));
+        return;
+      }
+      settled = true;
+      resolve(result);
+      db.close();
+    };
+    tx.onerror = () =>
+      fail(tx.error || new Error("IndexedDB transaction failed"));
+    tx.onabort = () =>
+      fail(tx.error || new Error("IndexedDB transaction aborted"));
+
+    Promise.resolve()
+      .then(() => executor(context))
+      .then((value) => {
+        result = value;
+        executorFinished = true;
+      })
+      .catch((error) => {
+        try {
+          tx.abort();
+        } catch {
+          // The transaction may already be aborting after a failed request.
+        }
+        fail(error);
+      });
+  });
+}
+
 export function newId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
@@ -458,6 +615,27 @@ export async function idbPut<T>(storeName: string, value: T): Promise<T> {
     request.onsuccess = () => resolve(value);
     request.onerror = () =>
       reject(request.error || new Error(`Failed to write to ${storeName}`));
+  });
+}
+
+export async function idbPutMany<T>(
+  storeName: string,
+  values: T[],
+): Promise<T[]> {
+  if (values.length === 0) return values;
+  return withStore<T[]>(storeName, "readwrite", (store, resolve, reject) => {
+    let remaining = values.length;
+    for (const value of values) {
+      const request = store.put(value);
+      request.onsuccess = () => {
+        remaining -= 1;
+        if (remaining === 0) resolve(values);
+      };
+      request.onerror = () =>
+        reject(
+          request.error || new Error(`Failed to write batch to ${storeName}`),
+        );
+    }
   });
 }
 

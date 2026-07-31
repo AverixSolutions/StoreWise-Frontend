@@ -38,6 +38,7 @@ export interface SalesReportsModalProps {
   licenseId: string;
   customers: Array<{ id: string; name: string }>;
   onOpenSale: (id: string) => void;
+  onReturnSale?: (id: string) => void;
   openingId?: string;
 }
 
@@ -47,6 +48,7 @@ export default function SalesReportsModal({
   licenseId,
   customers,
   onOpenSale,
+  onReturnSale,
   openingId,
 }: SalesReportsModalProps) {
   const [q, setQ] = useState("");
@@ -443,6 +445,16 @@ export default function SalesReportsModal({
                                 </>
                               )}
                             </button>
+
+                            {onReturnSale && (
+                              <button
+                                disabled={Boolean(openingId)}
+                                onClick={() => onReturnSale(r.id)}
+                                className="inline-flex h-6 items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                Return
+                              </button>
+                            )}
 
                             <button
                               disabled={Boolean(openingId)}

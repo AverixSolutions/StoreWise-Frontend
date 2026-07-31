@@ -10,6 +10,7 @@
     "dev:next": "cross-env NODE_ENV=development NODE_OPTIONS=\"--max-old-space-size=6144 --max-semi-space-size=256\" next dev",
     "dev:electron": "wait-on tcp:3000 && cross-env NODE_ENV=development electron electron/main.js",
     "build": "cross-env NODE_OPTIONS=\"--max-old-space-size=6144 --max-semi-space-size=256\" next build",
+    "test:rates": "node tests/run-electron-rate-test.cjs",
     "start": "cross-env NODE_ENV=production next start",
     "dist": "npm run build && electron-builder",
     "postinstall": "electron-builder install-app-deps"

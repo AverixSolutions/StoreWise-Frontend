@@ -315,6 +315,12 @@ export default function QuotationViewModal({
                         </td>
                         <td className="px-3 py-2.5 text-right text-slate-700 tabular-nums">
                           ₹{Number(it.rate || 0).toFixed(2)}
+                          <div className="text-[10px] font-normal text-slate-400">
+                            {it.rateTypeName ||
+                              (it.rateSource === "CUSTOM"
+                                ? "Custom"
+                                : "Legacy")}
+                          </div>
                         </td>
                         <td className="px-3 py-2.5 text-right font-semibold text-slate-800 tabular-nums">
                           ₹{Number(it.billedValue || 0).toFixed(2)}

@@ -16,6 +16,16 @@ export type DiscountType = "ABS" | "PCT";
 export type PurchaseType = "CASH" | "CREDIT";
 
 export type LineType = "VALUED" | "FREE";
+export type TransactionMode = "PURCHASE" | "SALE" | "QUOTATION" | "RETURN";
+
+export type AvailableNamedRate = {
+  rateTypeId: string;
+  code: string;
+  name: string;
+  amount: number | null;
+  configured: boolean;
+  isDefault?: boolean;
+};
 
 export interface ItemRow {
   lineNo: number;
@@ -62,6 +72,12 @@ export interface ItemRow {
   appliedQuantity?: number;
   overReturnQuantity?: number;
   overReturnReason?: string | null;
+  rateTypeId?: string | null;
+  rateTypeCode?: string | null;
+  rateTypeName?: string | null;
+  rateSource?: "MASTER" | "CUSTOM" | "LEGACY";
+  availableRates?: AvailableNamedRate[];
+  sellingRatesJson?: string | null;
 }
 
 export interface HeaderForm {

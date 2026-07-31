@@ -2,6 +2,90 @@
 
 export type UnitCode = "KG" | "NOS" | "LTR" | "MTR";
 export type TaxCode = "NT" | "P5" | "P12" | "P18" | "P28";
+export type RateSource = "MASTER" | "CUSTOM" | "LEGACY";
+
+export type RateTypeRecord = {
+  id: string;
+  licenseId: string;
+  code: string;
+  name: string;
+  isDefault: boolean;
+  isActive: boolean;
+  sortOrder: number;
+  createdAt?: string | null;
+  updatedAt: string;
+  deletedAt?: string | null;
+  isSynced?: boolean;
+  syncedAt?: string | null;
+};
+
+export type RateTypeSavePayload = {
+  id?: string;
+  licenseId: string;
+  code: string;
+  name: string;
+  isDefault?: boolean;
+  isActive?: boolean;
+  sortOrder?: number;
+};
+
+export type RateTypeBulkCreateInput = {
+  code: string;
+  name: string;
+  isDefault: boolean;
+  isActive: boolean;
+  sortOrder: number;
+};
+
+export type RateTypeBulkCreatePayload = {
+  licenseId: string;
+  rows: RateTypeBulkCreateInput[];
+};
+
+export type RateTypeBulkCreateResult = MutationResult & {
+  rows: RateTypeRecord[];
+};
+
+export type ProductRateRecord = {
+  id: string;
+  licenseId: string;
+  productId: string;
+  rateTypeId: string;
+  amount: number;
+  createdAt?: string | null;
+  updatedAt: string;
+  deletedAt?: string | null;
+  isSynced?: boolean;
+  syncedAt?: string | null;
+};
+
+export type ProductBatchRateRecord = ProductRateRecord & {
+  batchId: string;
+};
+
+export type RateValueInput = {
+  rateTypeId: string;
+  amount: number | null;
+};
+
+export type SellingRateSnapshot = {
+  rateTypeId: string;
+  code: string;
+  name: string;
+  amount: number;
+};
+
+export type RateTypeListResult = MutationResult & {
+  rows: RateTypeRecord[];
+};
+
+export type ProductRateListResult = MutationResult & {
+  rows: ProductRateRecord[];
+};
+
+export type ProductBatchRateListResult = MutationResult & {
+  rows: ProductBatchRateRecord[];
+};
 
 export type Pagination = {
   page?: number;
@@ -44,6 +128,7 @@ export type ProductInput = {
   barcode?: string | null;
   image?: ProductImagePayload | null;
   imagePath?: string | null;
+  rates?: RateValueInput[];
 };
 
 // READ/LIST MODEL
@@ -623,6 +708,7 @@ export type PurchaseItemInput = {
   offerType?: OfferType | string | null;
   offerDiscountAmount?: number;
   offerMeta?: string | null;
+  sellingRatesJson?: string | null;
 };
 
 export type PurchaseCreatePayload = {
@@ -732,6 +818,7 @@ export type PurchaseItemRow = {
   lineNo?: number;
   isFree?: number;
   batchId?: string | null;
+  sellingRatesJson?: string | null;
 };
 
 export type PurchaseFullResult = {
@@ -867,6 +954,7 @@ export type PurchaseReturnItemInput = {
   lineNo?: number;
   batchId?: string | null;
   profitPercent?: number;
+  sellingRatesJson?: string | null;
 };
 
 export type PurchaseReturnCreatePayload = {
@@ -990,6 +1078,10 @@ export type SaleReturnItemInput = {
   lineNo?: number;
   batchId?: string | null;
   profitPercent?: number;
+  rateTypeId?: string | null;
+  rateTypeCode?: string | null;
+  rateTypeName?: string | null;
+  rateSource?: RateSource;
 };
 
 export type SaleReturnCreatePayload = {
@@ -1126,6 +1218,10 @@ export type SaleItemInput = {
   isFree?: boolean;
   batchId?: string | null;
   profitPercent?: number;
+  rateTypeId?: string | null;
+  rateTypeCode?: string | null;
+  rateTypeName?: string | null;
+  rateSource?: RateSource;
 };
 
 export type SaleCreatePayload = {
@@ -1259,6 +1355,10 @@ export type SaleItemRow = {
   offerType?: string | null;
   offerDiscountAmount?: number;
   offerMeta?: string | null;
+  rateTypeId?: string | null;
+  rateTypeCode?: string | null;
+  rateTypeName?: string | null;
+  rateSource?: RateSource;
 };
 
 export type SaleFullResult = {
@@ -1464,6 +1564,48 @@ export type PlatformAPI = {
   listUnits: (licenseId: string) => Promise<UnitListResult>;
   saveUnit: (payload: UnitSavePayload) => Promise<UnitMutationResult>;
   deleteUnit: (id: string) => Promise<MutationResult>;
+
+  // Selling Rate Master
+  listRateTypes: (
+    licenseId: string,
+    includeInactive?: boolean,
+  ) => Promise<RateTypeListResult>;
+  saveRateType: (
+    payload: RateTypeSavePayload,
+  ) => Promise<MutationResult & { id?: string }>;
+  createRateTypesBulk: (
+    payload: RateTypeBulkCreatePayload,
+  ) => Promise<RateTypeBulkCreateResult>;
+  setDefaultRateType: (
+    licenseId: string,
+    id: string,
+  ) => Promise<MutationResult>;
+  toggleRateType: (
+    licenseId: string,
+    id: string,
+    isActive: boolean,
+  ) => Promise<MutationResult>;
+  deleteRateType: (licenseId: string, id: string) => Promise<MutationResult>;
+  listProductRates: (
+    licenseId: string,
+    productId: string,
+  ) => Promise<ProductRateListResult>;
+  saveProductRates: (payload: {
+    licenseId: string;
+    productId: string;
+    rates: RateValueInput[];
+  }) => Promise<MutationResult>;
+  listProductBatchRates: (
+    licenseId: string,
+    productId: string,
+    batchId: string,
+  ) => Promise<ProductBatchRateListResult>;
+  saveProductBatchRates: (payload: {
+    licenseId: string;
+    productId: string;
+    batchId: string;
+    rates: RateValueInput[];
+  }) => Promise<MutationResult>;
 
   // Tax
   listTaxCategories: (licenseId: string) => Promise<TaxCategoryListResult>;
@@ -1887,6 +2029,10 @@ export type QuotationItemInput = {
   lineNo?: number;
   isFree?: boolean;
   batchId?: string | null;
+  rateTypeId?: string | null;
+  rateTypeCode?: string | null;
+  rateTypeName?: string | null;
+  rateSource?: RateSource;
 };
 
 export type QuotationCreatePayload = {
@@ -1983,6 +2129,10 @@ export type QuotationItemRow = {
   lineNo?: number;
   isFree?: number;
   batchId?: string | null;
+  rateTypeId?: string | null;
+  rateTypeCode?: string | null;
+  rateTypeName?: string | null;
+  rateSource?: RateSource;
 };
 
 export type QuotationListResult = {

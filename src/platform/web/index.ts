@@ -71,6 +71,18 @@ import {
 import { webListBrands, webSaveBrand, webDeleteBrand } from "./brands";
 import { webListUnits, webSaveUnit, webDeleteUnit } from "./units";
 import {
+  webCreateRateTypesBulk,
+  webDeleteRateType,
+  webListProductBatchRates,
+  webListProductRates,
+  webListRateTypes,
+  webSaveProductBatchRates,
+  webSaveProductRates,
+  webSaveRateType,
+  webSetDefaultRateType,
+  webToggleRateType,
+} from "./rates";
+import {
   webListTaxCategories,
   webSaveTaxCategory,
   webDeleteTaxCategory,
@@ -308,6 +320,22 @@ export const webPlatform: PlatformAPI = {
   saveUnit: (payload: UnitSavePayload): Promise<UnitMutationResult> =>
     webSaveUnit(payload),
   deleteUnit: (id: string): Promise<MutationResult> => webDeleteUnit(id),
+
+  listRateTypes: (licenseId, includeInactive) =>
+    webListRateTypes(licenseId, includeInactive),
+  saveRateType: (payload) => webSaveRateType(payload),
+  createRateTypesBulk: (payload) => webCreateRateTypesBulk(payload),
+  setDefaultRateType: (licenseId, id) =>
+    webSetDefaultRateType(licenseId, id),
+  toggleRateType: (licenseId, id, isActive) =>
+    webToggleRateType(licenseId, id, isActive),
+  deleteRateType: (licenseId, id) => webDeleteRateType(licenseId, id),
+  listProductRates: (licenseId, productId) =>
+    webListProductRates(licenseId, productId),
+  saveProductRates: (payload) => webSaveProductRates(payload),
+  listProductBatchRates: (licenseId, productId, batchId) =>
+    webListProductBatchRates(licenseId, productId, batchId),
+  saveProductBatchRates: (payload) => webSaveProductBatchRates(payload),
 
   // ── Tax ───────────────────────────────────────────────────────────────────
   listTaxCategories: (licenseId: string) => webListTaxCategories(licenseId),

@@ -8,7 +8,7 @@ import {
   Receipt,
   Printer,
 } from "lucide-react";
-import { ItemRow, Product } from "./types";
+import { ItemRow, Product, TransactionMode } from "./types";
 import ItemsTable from "./ItemsTable";
 
 interface ItemsTableSectionProps {
@@ -36,6 +36,7 @@ interface ItemsTableSectionProps {
   onOpenMobileSheet?: () => void;
   hasMissingFields?: boolean;
   barcodeEnabled?: boolean;
+  mode?: TransactionMode;
 }
 
 export default function ItemsTableSection({
@@ -63,6 +64,7 @@ export default function ItemsTableSection({
   onOpenMobileSheet,
   hasMissingFields = false,
   barcodeEnabled = true,
+  mode = "PURCHASE",
 }: ItemsTableSectionProps) {
   const itemCount = rows.filter((r) => r.productId).length;
 
@@ -184,6 +186,7 @@ export default function ItemsTableSection({
           onRequestBatchSelect={onRequestBatchSelect}
           onBarcodeCommit={onBarcodeCommit}
           barcodeEnabled={barcodeEnabled}
+          mode={mode}
         />
       </div>
 
