@@ -755,6 +755,41 @@ app.whenReady().then(async () => {
         .get(currentPurchasedItem.batchId).salePrice,
       77,
     );
+    const retailSale = await invoke(
+      "create-sale",
+      {
+        licenseId: "legacy-license",
+        userId: "test-user",
+        saleType: "CASH",
+        saleDate: now,
+        entryTime: now,
+      },
+      [
+        {
+          productId: "legacy-product",
+          batchId: currentPurchasedItem.batchId,
+          quantity: 1,
+          unit: "NOS",
+          rate: 77,
+          salePrice: 77,
+          taxPercent: "NT",
+          discount: 0,
+          discountType: "ABS",
+          lineNo: 1,
+          rateTypeId: retail.id,
+          rateTypeCode: "RETAIL",
+          rateTypeName: "Retail",
+          rateSource: "MASTER",
+        },
+      ],
+    );
+    assert.equal(retailSale.success, true, retailSale.error);
+    assert.deepEqual(
+      db
+        .prepare(`SELECT rate, rateTypeName FROM sale_items WHERE saleId=?`)
+        .get(retailSale.saleId),
+      { rate: 77, rateTypeName: "Retail" },
+    );
     assert.equal(
       (
         await invoke("rate-type:toggle", {
