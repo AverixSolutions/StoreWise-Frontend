@@ -10,6 +10,7 @@ import {
   idbGetAllByIndex,
   idbGetByKey,
   idbPut,
+  idbPutMany,
   newId,
 } from "./idb";
 
@@ -228,7 +229,11 @@ export async function webReconcilePulledRateDefaults(licenseId: string) {
     licenseId,
   );
   const active = all.filter((row) => row.isActive && !row.deletedAt);
-  if (active.length === 0) return;
+  if (active.length === 0) {
+    const fallback = await ensureDefault(licenseId);
+    await refreshMirrors(licenseId, fallback.id);
+    return;
+  }
   const defaults = active
     .filter((row) => row.isDefault)
     .sort(
@@ -244,15 +249,16 @@ export async function webReconcilePulledRateDefaults(licenseId: string) {
         new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime() ||
         a.id.localeCompare(b.id),
     )[0];
-  for (const row of active) {
-    if (row.isDefault !== (row.id === winner.id)) {
-      await putRateRecord(STORES.RATE_TYPES, {
+  const reconciled = active
+    .filter((row) => row.isDefault !== (row.id === winner.id))
+    .map((row) =>
+      withRateIndexKeys(STORES.RATE_TYPES, {
         ...row,
         isDefault: row.id === winner.id,
         isSynced: true,
-      });
-    }
-  }
+      }),
+    );
+  await idbPutMany(STORES.RATE_TYPES, reconciled);
   await refreshMirrors(licenseId, winner.id);
 }
 
@@ -310,7 +316,7 @@ export async function webSaveRateType(payload: RateTypeSavePayload) {
     }
     const now = new Date().toISOString();
     const id = existing?.id || newId();
-    await putRateRecord(STORES.RATE_TYPES, {
+    const savedRate = {
       id,
       licenseId: payload.licenseId,
       code,
@@ -323,9 +329,28 @@ export async function webSaveRateType(payload: RateTypeSavePayload) {
       deletedAt: null,
       isSynced: false,
       syncedAt: null,
-    });
-    if (payload.isDefault) await webSetDefaultRateType(payload.licenseId, id);
-    else await ensureDefault(payload.licenseId);
+    };
+    if (payload.isDefault) {
+      const nowRows = all
+        .filter((row) => !row.deletedAt && row.id !== id)
+        .map((row) => ({
+          ...row,
+          isDefault: false,
+          updatedAt: now,
+          isSynced: false,
+          syncedAt: null,
+        }));
+      await idbPutMany(
+        STORES.RATE_TYPES,
+        [...nowRows, savedRate].map((row) =>
+          withRateIndexKeys(STORES.RATE_TYPES, row),
+        ),
+      );
+      await refreshMirrors(payload.licenseId, id);
+    } else {
+      await putRateRecord(STORES.RATE_TYPES, savedRate);
+      await ensureDefault(payload.licenseId);
+    }
     trigger("rateType");
     return { success: true, id };
   } catch (error) {
@@ -345,15 +370,18 @@ export async function webSetDefaultRateType(licenseId: string, id: string) {
     );
     if (!selected) throw new Error("Only an active rate can be set as default");
     const now = new Date().toISOString();
-    for (const row of all.filter((item) => !item.deletedAt)) {
-      await putRateRecord(STORES.RATE_TYPES, {
-        ...row,
-        isDefault: row.id === id,
-        updatedAt: now,
-        isSynced: false,
-        syncedAt: null,
-      });
-    }
+    const updatedRows = all
+      .filter((item) => !item.deletedAt)
+      .map((row) =>
+        withRateIndexKeys(STORES.RATE_TYPES, {
+          ...row,
+          isDefault: row.id === id,
+          updatedAt: now,
+          isSynced: false,
+          syncedAt: null,
+        }),
+      );
+    await idbPutMany(STORES.RATE_TYPES, updatedRows);
     await refreshMirrors(licenseId, id);
     trigger("rateType");
     return { success: true };

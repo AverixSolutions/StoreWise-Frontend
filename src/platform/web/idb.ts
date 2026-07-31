@@ -530,6 +530,27 @@ export async function idbPut<T>(storeName: string, value: T): Promise<T> {
   });
 }
 
+export async function idbPutMany<T>(
+  storeName: string,
+  values: T[],
+): Promise<T[]> {
+  if (values.length === 0) return values;
+  return withStore<T[]>(storeName, "readwrite", (store, resolve, reject) => {
+    let remaining = values.length;
+    for (const value of values) {
+      const request = store.put(value);
+      request.onsuccess = () => {
+        remaining -= 1;
+        if (remaining === 0) resolve(values);
+      };
+      request.onerror = () =>
+        reject(
+          request.error || new Error(`Failed to write batch to ${storeName}`),
+        );
+    }
+  });
+}
+
 export async function idbDelete(
   storeName: string,
   key: IDBValidKey,

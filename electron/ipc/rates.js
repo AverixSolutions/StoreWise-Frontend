@@ -481,19 +481,28 @@ function registerRateHandlers() {
       try {
         db.transaction((rows) => {
           if (entity === "rate-type") {
-            const defaults = rows
-              .filter((row) => row.isDefault && row.isActive && !row.deletedAt)
-              .sort((a, b) =>
-                String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")) ||
-                String(a.id).localeCompare(String(b.id)),
-              );
-            const winner = defaults[0] || null;
+            const winnerByLicense = new Map();
+            for (const row of [...rows].sort((a, b) =>
+              String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")) ||
+              String(a.id).localeCompare(String(b.id)),
+            )) {
+              const licenseId = requiredLicenseId(row.licenseId);
+              if (
+                row.isDefault &&
+                row.isActive &&
+                !row.deletedAt &&
+                !winnerByLicense.has(licenseId)
+              ) {
+                winnerByLicense.set(licenseId, row.id);
+              }
+            }
             for (const row of rows) {
               const licenseId = requiredLicenseId(row.licenseId);
+              const winnerId = winnerByLicense.get(licenseId);
               const code = String(row.code || "").trim().toUpperCase();
               const name = String(row.name || "").trim();
               if (!code || !name) throw new Error("Rate code and name are required");
-              if (winner && winner.licenseId === licenseId && row.id === winner.id) {
+              if (winnerId && row.id === winnerId) {
                 db.prepare(`UPDATE rate_types SET isDefault=0 WHERE licenseId=? AND id<>?`).run(licenseId, row.id);
               }
               db.prepare(`
@@ -506,7 +515,7 @@ function registerRateHandlers() {
                   deletedAt=excluded.deletedAt, isSynced=1, syncedAt=excluded.syncedAt
               `).run(
                 row.id, licenseId, code, name,
-                winner && winner.licenseId === licenseId ? (row.id === winner.id ? 1 : 0) : row.isDefault ? 1 : 0,
+                winnerId ? (row.id === winnerId ? 1 : 0) : row.isDefault ? 1 : 0,
                 row.isActive ? 1 : 0, Number(row.sortOrder || 0),
                 row.createdAt || row.updatedAt, row.updatedAt,
                 row.deletedAt || null, row.syncedAt || row.updatedAt,

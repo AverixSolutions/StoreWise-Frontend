@@ -255,7 +255,6 @@ export default function ProductFormPanel({
   const [tax, setTax] = useState<TaxCode>("P5");
   const [hsn, setHsn] = useState("");
   const [costPrice, setCostPrice] = useState("");
-  const [salePrice, setSalePrice] = useState("");
   const [rateTypes, setRateTypes] = useState<RateTypeRecord[]>([]);
   const [rateValues, setRateValues] = useState<Record<string, string>>({});
 
@@ -580,7 +579,6 @@ export default function ProductFormPanel({
       setTax(editProduct.tax);
       setHsn(editProduct.hsn ?? "");
       setCostPrice(editProduct.costPrice.toString());
-      setSalePrice(editProduct.salePrice?.toString() ?? "");
       if (barcodeEnabled) loadExistingBarcodes(editProduct.id);
       loadExistingProductImage(editProduct.id);
     } else {
@@ -933,7 +931,6 @@ export default function ProductFormPanel({
     setTax("P5");
     setHsn("");
     setCostPrice("");
-    setSalePrice("");
     setRateValues({});
     setBarcodeEntries([]);
     setCustomBarcodeInput("");
@@ -1921,7 +1918,6 @@ export default function ProductFormPanel({
                             ...current,
                             [rateType.id]: value,
                           }));
-                          if (rateType.isDefault) setSalePrice(value);
                         }}
                         onKeyDown={(event) => {
                           if (index === rateTypes.length - 1) {

@@ -207,6 +207,71 @@ app.whenReady().then(async () => {
       return handler({}, ...args);
     };
 
+    const bulkDefaults = await invoke("rate-type:bulk-upsert", [
+      {
+        id: "sync-a-retail",
+        licenseId: "sync-license-a",
+        code: "RETAIL",
+        name: "Retail",
+        isDefault: true,
+        isActive: true,
+        sortOrder: 0,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "sync-a-wholesale",
+        licenseId: "sync-license-a",
+        code: "WHOLESALE",
+        name: "Wholesale",
+        isDefault: true,
+        isActive: true,
+        sortOrder: 10,
+        createdAt: now,
+        updatedAt: new Date(Date.parse(now) + 1_000).toISOString(),
+      },
+      {
+        id: "sync-b-retail",
+        licenseId: "sync-license-b",
+        code: "RETAIL",
+        name: "Retail",
+        isDefault: true,
+        isActive: true,
+        sortOrder: 0,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: "sync-b-dealer",
+        licenseId: "sync-license-b",
+        code: "DEALER",
+        name: "Dealer",
+        isDefault: true,
+        isActive: true,
+        sortOrder: 10,
+        createdAt: now,
+        updatedAt: new Date(Date.parse(now) + 2_000).toISOString(),
+      },
+    ]);
+    assert.equal(bulkDefaults.success, true, bulkDefaults.error);
+    assert.deepEqual(
+      db
+        .prepare(`
+          SELECT licenseId, COUNT(*) AS count
+          FROM rate_types
+          WHERE licenseId IN ('sync-license-a', 'sync-license-b')
+            AND isDefault=1 AND isActive=1 AND deletedAt IS NULL
+          GROUP BY licenseId
+          ORDER BY licenseId
+        `)
+        .all(),
+      [
+        { licenseId: "sync-license-a", count: 1 },
+        { licenseId: "sync-license-b", count: 1 },
+      ],
+      "bulk reconciliation must choose exactly one default per license",
+    );
+
     const wholesale = await invoke("rate-type:save", {
       licenseId: "legacy-license",
       code: " wholesale ",

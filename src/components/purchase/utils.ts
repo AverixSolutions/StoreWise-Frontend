@@ -197,14 +197,21 @@ export function mapItems(rows: ItemRow[]) {
           const values = JSON.parse(r.sellingRatesJson);
           if (!Array.isArray(values)) return r.sellingRatesJson;
           return JSON.stringify(
-            values.map((value: any) =>
-              value.isDefault
+            values.map((value: unknown) => {
+              const rate =
+                value && typeof value === "object"
+                  ? (value as {
+                      isDefault?: unknown;
+                      [key: string]: unknown;
+                    })
+                  : null;
+              return rate?.isDefault
                 ? {
-                    ...value,
+                    ...rate,
                     amount: r.salePrice ?? null,
                   }
-                : value,
-            ),
+                : value;
+            }),
           );
         } catch {
           return r.sellingRatesJson;
@@ -250,14 +257,21 @@ export function rowsFromDbItems(dbItems: any[]): ItemRow[] {
       try {
         const values = JSON.parse(it.sellingRatesJson || "[]");
         return Array.isArray(values)
-          ? values.map((value: any) => ({
-              rateTypeId: value.rateTypeId,
-              code: value.code || "",
-              name: value.name || value.code || "Saved rate",
-              amount: value.amount == null ? null : Number(value.amount),
-              configured: value.amount != null,
-              isDefault: Boolean(value.isDefault),
-            }))
+          ? values.map((value: unknown) => {
+              const rate =
+                value && typeof value === "object"
+                  ? (value as Record<string, unknown>)
+                  : {};
+              return {
+                rateTypeId: String(rate.rateTypeId || ""),
+                code: String(rate.code || ""),
+                name: String(rate.name || rate.code || "Saved rate"),
+                amount:
+                  rate.amount == null ? null : Number(rate.amount),
+                configured: rate.amount != null,
+                isDefault: Boolean(rate.isDefault),
+              };
+            })
           : [];
       } catch {
         return [];
