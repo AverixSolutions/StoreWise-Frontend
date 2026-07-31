@@ -498,6 +498,94 @@ async function withStore<T>(
   });
 }
 
+export type IdbTransactionContext = {
+  getAll: <T>(storeName: string) => Promise<T[]>;
+  getAllByIndex: <T>(
+    storeName: string,
+    indexName: string,
+    key: IDBValidKey | IDBKeyRange,
+  ) => Promise<T[]>;
+  put: <T>(storeName: string, value: T) => Promise<T>;
+};
+
+export async function idbRunTransaction<T>(
+  storeNames: string[],
+  mode: IDBTransactionMode,
+  executor: (context: IdbTransactionContext) => Promise<T>,
+): Promise<T> {
+  const db = await openDb();
+  return new Promise<T>((resolve, reject) => {
+    const tx = db.transaction(storeNames, mode);
+    let result: T;
+    let executorFinished = false;
+    let settled = false;
+
+    const fail = (error: unknown) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+      db.close();
+    };
+    const request = <R>(idbRequest: IDBRequest<R>, message: string) =>
+      new Promise<R>((requestResolve, requestReject) => {
+        idbRequest.onsuccess = () => requestResolve(idbRequest.result);
+        idbRequest.onerror = () =>
+          requestReject(idbRequest.error || new Error(message));
+      });
+    const context: IdbTransactionContext = {
+      getAll: <R>(storeName: string) =>
+        request<R[]>(
+          tx.objectStore(storeName).getAll(),
+          `Failed to read all from ${storeName}`,
+        ),
+      getAllByIndex: <R>(
+        storeName: string,
+        indexName: string,
+        key: IDBValidKey | IDBKeyRange,
+      ) =>
+        request<R[]>(
+          tx.objectStore(storeName).index(indexName).getAll(key),
+          `Failed to read index ${indexName}`,
+        ),
+      put: <R>(storeName: string, value: R) =>
+        request<IDBValidKey>(
+          tx.objectStore(storeName).put(value),
+          `Failed to write to ${storeName}`,
+        ).then(() => value),
+    };
+
+    tx.oncomplete = () => {
+      if (settled) return;
+      if (!executorFinished) {
+        fail(new Error("IndexedDB transaction completed before its work finished"));
+        return;
+      }
+      settled = true;
+      resolve(result);
+      db.close();
+    };
+    tx.onerror = () =>
+      fail(tx.error || new Error("IndexedDB transaction failed"));
+    tx.onabort = () =>
+      fail(tx.error || new Error("IndexedDB transaction aborted"));
+
+    Promise.resolve()
+      .then(() => executor(context))
+      .then((value) => {
+        result = value;
+        executorFinished = true;
+      })
+      .catch((error) => {
+        try {
+          tx.abort();
+        } catch {
+          // The transaction may already be aborting after a failed request.
+        }
+        fail(error);
+      });
+  });
+}
+
 export function newId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();

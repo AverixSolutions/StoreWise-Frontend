@@ -29,6 +29,23 @@ export type RateTypeSavePayload = {
   sortOrder?: number;
 };
 
+export type RateTypeBulkCreateInput = {
+  code: string;
+  name: string;
+  isDefault: boolean;
+  isActive: boolean;
+  sortOrder: number;
+};
+
+export type RateTypeBulkCreatePayload = {
+  licenseId: string;
+  rows: RateTypeBulkCreateInput[];
+};
+
+export type RateTypeBulkCreateResult = MutationResult & {
+  rows: RateTypeRecord[];
+};
+
 export type ProductRateRecord = {
   id: string;
   licenseId: string;
@@ -1556,6 +1573,9 @@ export type PlatformAPI = {
   saveRateType: (
     payload: RateTypeSavePayload,
   ) => Promise<MutationResult & { id?: string }>;
+  createRateTypesBulk: (
+    payload: RateTypeBulkCreatePayload,
+  ) => Promise<RateTypeBulkCreateResult>;
   setDefaultRateType: (
     licenseId: string,
     id: string,

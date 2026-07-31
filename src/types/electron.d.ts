@@ -37,6 +37,19 @@ type ElectronRateValueInput = {
   amount: number | null | "";
 };
 
+type ElectronRateTypeBulkCreateInput = {
+  code: string;
+  name: string;
+  isDefault: boolean;
+  isActive: boolean;
+  sortOrder: number;
+};
+
+type ElectronRateTypeBulkCreatePayload = {
+  licenseId: string;
+  rows: ElectronRateTypeBulkCreateInput[];
+};
+
 type LabelPrintRow = {
   productId: string;
   batchId?: string;
@@ -884,6 +897,13 @@ declare global {
           name: string;
         },
       ) => Promise<{ success: boolean; id?: string; error?: string }>;
+      createRateTypesBulk: (
+        payload: ElectronRateTypeBulkCreatePayload,
+      ) => Promise<{
+        success: boolean;
+        rows: ElectronRateType[];
+        error?: string;
+      }>;
       setDefaultRateType: (
         licenseId: string,
         id: string,

@@ -113,6 +113,7 @@ import {
   desktopDeleteSaleReturnHold,
 } from "./saleReturns";
 import {
+  desktopCreateRateTypesBulk,
   desktopListProductBatchRates,
   desktopListProductRates,
   desktopListRateTypes,
@@ -518,6 +519,11 @@ export const desktopPlatform: PlatformAPI = {
     desktopListRateTypes(licenseId, includeInactive),
   saveRateType: async (payload) => {
     const result = await requireElectronAPI().saveRateType(payload);
+    if (result.success) triggerDesktopSync("rateType");
+    return result;
+  },
+  createRateTypesBulk: async (payload) => {
+    const result = await desktopCreateRateTypesBulk(payload);
     if (result.success) triggerDesktopSync("rateType");
     return result;
   },

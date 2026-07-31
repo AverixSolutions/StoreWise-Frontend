@@ -71,6 +71,7 @@ import {
 import { webListBrands, webSaveBrand, webDeleteBrand } from "./brands";
 import { webListUnits, webSaveUnit, webDeleteUnit } from "./units";
 import {
+  webCreateRateTypesBulk,
   webDeleteRateType,
   webListProductBatchRates,
   webListProductRates,
@@ -323,6 +324,7 @@ export const webPlatform: PlatformAPI = {
   listRateTypes: (licenseId, includeInactive) =>
     webListRateTypes(licenseId, includeInactive),
   saveRateType: (payload) => webSaveRateType(payload),
+  createRateTypesBulk: (payload) => webCreateRateTypesBulk(payload),
   setDefaultRateType: (licenseId, id) =>
     webSetDefaultRateType(licenseId, id),
   toggleRateType: (licenseId, id, isActive) =>

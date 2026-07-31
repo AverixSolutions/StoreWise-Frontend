@@ -13,6 +13,69 @@ function requiredLicenseId(licenseId) {
   return value;
 }
 
+function normalizeBulkRateRows(licenseId, rows) {
+  const scopedLicenseId = requiredLicenseId(licenseId);
+  if (!Array.isArray(rows) || rows.length === 0) {
+    throw new Error("Add at least one rate");
+  }
+  const names = new Map();
+  const codes = new Map();
+  let defaultCount = 0;
+  const normalized = rows.map((row, index) => {
+    if (!row || typeof row !== "object") {
+      throw new Error(`Row ${index + 1}: rate data is required`);
+    }
+    if (
+      row.licenseId != null &&
+      requiredLicenseId(row.licenseId) !== scopedLicenseId
+    ) {
+      throw new Error(`Row ${index + 1}: rate records cannot cross license boundaries`);
+    }
+    const name = String(row.name || "").trim();
+    const code = String(row.code || "").trim().toUpperCase();
+    const rawSortOrder = row.sortOrder;
+    const sortOrder =
+      (typeof rawSortOrder === "number" || typeof rawSortOrder === "string") &&
+      String(rawSortOrder).trim() !== ""
+        ? Number(rawSortOrder)
+        : Number.NaN;
+    if (typeof row.isActive !== "boolean") {
+      throw new Error(`Row ${index + 1}: active status must be true or false`);
+    }
+    if (typeof row.isDefault !== "boolean") {
+      throw new Error(`Row ${index + 1}: default status must be true or false`);
+    }
+    const isActive = row.isActive;
+    const isDefault = row.isDefault;
+    if (!name) throw new Error(`Row ${index + 1}: rate name is required`);
+    if (!/^[A-Z0-9_-]{1,30}$/.test(code)) {
+      throw new Error(
+        `Row ${index + 1}: code must use 1-30 letters, numbers, hyphens or underscores`,
+      );
+    }
+    if (!Number.isFinite(sortOrder) || !Number.isInteger(sortOrder) || sortOrder < 0) {
+      throw new Error(`Row ${index + 1}: order must be a non-negative whole number`);
+    }
+    const nameKey = name.toLocaleLowerCase();
+    const codeKey = code.toLocaleLowerCase();
+    if (names.has(nameKey)) {
+      throw new Error(`Row ${index + 1}: rate name duplicates row ${names.get(nameKey) + 1}`);
+    }
+    if (codes.has(codeKey)) {
+      throw new Error(`Row ${index + 1}: rate code duplicates row ${codes.get(codeKey) + 1}`);
+    }
+    names.set(nameKey, index);
+    codes.set(codeKey, index);
+    if (isDefault) {
+      defaultCount += 1;
+      if (!isActive) throw new Error(`Row ${index + 1}: the default rate must be active`);
+    }
+    return { name, code, sortOrder, isActive, isDefault };
+  });
+  if (defaultCount > 1) throw new Error("Select only one default rate");
+  return normalized;
+}
+
 function ensureDefaultRate(licenseId) {
   const scopedLicenseId = requiredLicenseId(licenseId);
   const current = db
@@ -124,6 +187,75 @@ const setDefaultTransaction = db.transaction((licenseId, rateTypeId, synced) => 
   `).run(now, synced ? 1 : 0, synced ? now : null, rateTypeId, scopedLicenseId);
   refreshCompatibilityMirrors(scopedLicenseId, rateTypeId, now);
   return rateTypeId;
+});
+
+const createRateTypesBulkTransaction = db.transaction((payload) => {
+  const licenseId = requiredLicenseId(payload.licenseId);
+  const rows = normalizeBulkRateRows(licenseId, payload.rows);
+  const requestedDefault = rows.find((row) => row.isDefault);
+  if (!requestedDefault) ensureDefaultRate(licenseId);
+
+  const existing = db.prepare(`
+    SELECT id, code, name FROM rate_types
+    WHERE licenseId=? AND deletedAt IS NULL
+  `).all(licenseId);
+  const existingNames = new Set(existing.map((row) => row.name.trim().toLocaleLowerCase()));
+  const existingCodes = new Set(existing.map((row) => row.code.trim().toLocaleLowerCase()));
+  rows.forEach((row, index) => {
+    if (existingNames.has(row.name.toLocaleLowerCase())) {
+      throw new Error(`Row ${index + 1}: a rate with this name already exists`);
+    }
+    if (existingCodes.has(row.code.toLocaleLowerCase())) {
+      throw new Error(`Row ${index + 1}: a rate with this code already exists`);
+    }
+  });
+
+  const now = new Date().toISOString();
+  if (requestedDefault) {
+    db.prepare(`
+      UPDATE rate_types
+      SET isDefault=0, updatedAt=?, isSynced=0, syncedAt=NULL
+      WHERE licenseId=? AND isDefault=1 AND deletedAt IS NULL
+    `).run(now, licenseId);
+  }
+
+  const insert = db.prepare(`
+    INSERT INTO rate_types (
+      id, licenseId, code, name, isDefault, isActive, sortOrder,
+      createdAt, updatedAt, deletedAt, isSynced, syncedAt
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 0, NULL)
+  `);
+  const createdIds = [];
+  for (const row of rows) {
+    const id = uuidv4();
+    insert.run(
+      id,
+      licenseId,
+      row.code,
+      row.name,
+      row.isDefault ? 1 : 0,
+      row.isActive ? 1 : 0,
+      row.sortOrder,
+      now,
+      now,
+    );
+    createdIds.push(id);
+  }
+
+  const currentDefaults = db.prepare(`
+    SELECT id FROM rate_types
+    WHERE licenseId=? AND isDefault=1 AND isActive=1 AND deletedAt IS NULL
+  `).all(licenseId);
+  if (currentDefaults.length !== 1) {
+    throw new Error("Bulk creation must leave exactly one active default rate");
+  }
+  if (requestedDefault) {
+    refreshCompatibilityMirrors(licenseId, currentDefaults[0].id, now);
+  }
+  const selectCreated = db.prepare(`SELECT ${RATE_COLUMNS} FROM rate_types WHERE id=? AND licenseId=?`);
+  return createdIds
+    .map((id) => selectCreated.get(id, licenseId))
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
 });
 
 function assertProduct(licenseId, productId) {
@@ -334,6 +466,16 @@ function registerRateHandlers() {
       return { success: true, id };
     } catch (error) {
       return { success: false, error: String(error.message || error) };
+    }
+  });
+
+  ipcMain.handle("rate-type:create-bulk", (_event, payload = {}) => {
+    try {
+      normalizeBulkRateRows(payload.licenseId, payload.rows);
+      const rows = createRateTypesBulkTransaction(payload);
+      return { success: true, rows };
+    } catch (error) {
+      return { success: false, rows: [], error: String(error.message || error) };
     }
   });
 

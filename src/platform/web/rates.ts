@@ -1,6 +1,7 @@
 import type {
   ProductBatchRateRecord,
   ProductRateRecord,
+  RateTypeBulkCreatePayload,
   RateTypeRecord,
   RateTypeSavePayload,
   RateValueInput,
@@ -11,8 +12,10 @@ import {
   idbGetByKey,
   idbPut,
   idbPutMany,
+  idbRunTransaction,
   newId,
 } from "./idb";
+import { validateBulkRateRows } from "@/lib/rates/rateMaster";
 
 function withRateIndexKeys(
   store: string,
@@ -284,6 +287,214 @@ export async function webListRateTypes(
     };
   } catch (error) {
     return { success: false, rows: [], error: String(error) };
+  }
+}
+
+export async function webCreateRateTypesBulk(
+  payload: RateTypeBulkCreatePayload,
+) {
+  try {
+    const licenseId = payload.licenseId.trim();
+    if (!licenseId) throw new Error("licenseId required");
+    if (!Array.isArray(payload.rows) || payload.rows.length === 0) {
+      throw new Error("Add at least one rate");
+    }
+
+    const created = await idbRunTransaction<RateTypeRecord[]>(
+      [
+        STORES.RATE_TYPES,
+        STORES.PRODUCT_RATES,
+        STORES.PRODUCT_BATCH_RATES,
+        STORES.PRODUCTS,
+        STORES.PRODUCT_BATCHES,
+      ],
+      "readwrite",
+      async (tx) => {
+        const now = new Date().toISOString();
+        let all = await tx.getAllByIndex<RateTypeRecord>(
+          STORES.RATE_TYPES,
+          "licenseId",
+          licenseId,
+        );
+        const requestedDefault = payload.rows.some((row) => row.isDefault);
+        let currentDefaults = all
+          .filter((row) => row.isDefault && row.isActive && !row.deletedAt)
+          .sort(
+            (a, b) =>
+              new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime() ||
+              a.id.localeCompare(b.id),
+          );
+        let mirrorDefaultId: string | null = null;
+
+        if (!requestedDefault && currentDefaults.length === 0) {
+          const retail = all.find(
+            (row) =>
+              row.code.toUpperCase() === "RETAIL" && !row.deletedAt,
+          );
+          const fallback: RateTypeRecord = retail
+            ? {
+                ...retail,
+                isDefault: true,
+                isActive: true,
+                updatedAt: now,
+                isSynced: false,
+                syncedAt: null,
+              }
+            : {
+                id: `retail-${licenseId}`,
+                licenseId,
+                code: "RETAIL",
+                name: "Retail",
+                isDefault: true,
+                isActive: true,
+                sortOrder: 0,
+                createdAt: now,
+                updatedAt: now,
+                deletedAt: null,
+                isSynced: false,
+                syncedAt: null,
+              };
+          await tx.put(
+            STORES.RATE_TYPES,
+            withRateIndexKeys(STORES.RATE_TYPES, fallback),
+          );
+          all = [...all.filter((row) => row.id !== fallback.id), fallback];
+          currentDefaults = [fallback];
+          mirrorDefaultId = fallback.id;
+        }
+
+        const validation = validateBulkRateRows(payload.rows, all, {
+          ignoreBlankTrailingRows: false,
+        });
+        if (validation.errors.length > 0) {
+          throw new Error(validation.errors[0].message);
+        }
+
+        if (requestedDefault) {
+          for (const row of all) {
+            if (row.isDefault && !row.deletedAt) {
+              await tx.put(
+                STORES.RATE_TYPES,
+                withRateIndexKeys(STORES.RATE_TYPES, {
+                  ...row,
+                  isDefault: false,
+                  updatedAt: now,
+                  isSynced: false,
+                  syncedAt: null,
+                }),
+              );
+            }
+          }
+        } else if (currentDefaults.length > 1) {
+          for (const row of currentDefaults.slice(1)) {
+            await tx.put(
+              STORES.RATE_TYPES,
+              withRateIndexKeys(STORES.RATE_TYPES, {
+                ...row,
+                isDefault: false,
+                updatedAt: now,
+                isSynced: false,
+                syncedAt: null,
+              }),
+            );
+          }
+        }
+
+        const inserted: RateTypeRecord[] = [];
+        for (const input of validation.rows) {
+          const row: RateTypeRecord = {
+            id: newId(),
+            licenseId,
+            code: input.code,
+            name: input.name,
+            isDefault: input.isDefault,
+            isActive: input.isActive,
+            sortOrder: input.sortOrder,
+            createdAt: now,
+            updatedAt: now,
+            deletedAt: null,
+            isSynced: false,
+            syncedAt: null,
+          };
+          await tx.put(
+            STORES.RATE_TYPES,
+            withRateIndexKeys(STORES.RATE_TYPES, row),
+          );
+          inserted.push(row);
+          if (row.isDefault) mirrorDefaultId = row.id;
+        }
+
+        if (mirrorDefaultId) {
+          const productRates = await tx.getAllByIndex<ProductRateRecord>(
+            STORES.PRODUCT_RATES,
+            "licenseId",
+            licenseId,
+          );
+          const batchRates = await tx.getAllByIndex<ProductBatchRateRecord>(
+            STORES.PRODUCT_BATCH_RATES,
+            "licenseId",
+            licenseId,
+          );
+          const byProduct = new Map(
+            productRates
+              .filter(
+                (row) =>
+                  row.rateTypeId === mirrorDefaultId && !row.deletedAt,
+              )
+              .map((row) => [row.productId, row.amount]),
+          );
+          const byBatch = new Map(
+            batchRates
+              .filter(
+                (row) =>
+                  row.rateTypeId === mirrorDefaultId && !row.deletedAt,
+              )
+              .map((row) => [row.batchId, row.amount]),
+          );
+          const products = await tx.getAllByIndex<Record<string, unknown>>(
+            STORES.PRODUCTS,
+            "licenseId",
+            licenseId,
+          );
+          for (const product of products) {
+            await tx.put(STORES.PRODUCTS, {
+              ...product,
+              salePrice: byProduct.get(String(product.id)) ?? null,
+              updatedAt: now,
+              isSynced: false,
+              syncedAt: null,
+            });
+          }
+          const batches = await tx.getAllByIndex<Record<string, unknown>>(
+            STORES.PRODUCT_BATCHES,
+            "licenseId",
+            licenseId,
+          );
+          for (const batch of batches) {
+            await tx.put(STORES.PRODUCT_BATCHES, {
+              ...batch,
+              salePrice:
+                byBatch.get(String(batch.id)) ??
+                byProduct.get(String(batch.productId)) ??
+                null,
+              updatedAt: now,
+            });
+          }
+        }
+
+        return inserted.sort(
+          (a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name),
+        );
+      },
+    );
+    trigger("rateType");
+    return { success: true, rows: created };
+  } catch (error) {
+    return {
+      success: false,
+      rows: [],
+      error: String((error as Error).message || error),
+    };
   }
 }
 

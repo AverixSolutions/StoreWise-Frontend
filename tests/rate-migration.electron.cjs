@@ -207,6 +207,121 @@ app.whenReady().then(async () => {
       return handler({}, ...args);
     };
 
+    const originalDefaultId = retail.id;
+    const bulkCreated = await invoke("rate-type:create-bulk", {
+      licenseId: "legacy-license",
+      rows: [
+        {
+          name: "Bulk Alpha",
+          code: "BULK_ALPHA",
+          sortOrder: 40,
+          isActive: true,
+          isDefault: false,
+        },
+        {
+          name: "Bulk Beta",
+          code: "BULK_BETA",
+          sortOrder: 30,
+          isActive: true,
+          isDefault: false,
+        },
+      ],
+    });
+    assert.equal(bulkCreated.success, true, bulkCreated.error);
+    assert.deepEqual(
+      bulkCreated.rows.map((row) => row.code),
+      ["BULK_BETA", "BULK_ALPHA"],
+      "SQLite bulk results should be returned in final sort order",
+    );
+    assert.equal(
+      db.prepare(`SELECT id FROM rate_types WHERE licenseId=? AND isDefault=1`).get("legacy-license").id,
+      originalDefaultId,
+      "no supplied SQLite default must preserve the existing default",
+    );
+    assert.equal(
+      db.prepare(`SELECT COUNT(*) AS count FROM rate_types WHERE code IN ('BULK_ALPHA','BULK_BETA') AND isSynced=0`).get().count,
+      2,
+      "SQLite bulk-created rows must be dirty for normal Rate Type sync",
+    );
+
+    const switchedBulk = await invoke("rate-type:create-bulk", {
+      licenseId: "legacy-license",
+      rows: [{
+        name: "Bulk Default",
+        code: "BULK_DEFAULT",
+        sortOrder: 50,
+        isActive: true,
+        isDefault: true,
+      }],
+    });
+    assert.equal(switchedBulk.success, true, switchedBulk.error);
+    assert.equal(
+      db.prepare(`SELECT code FROM rate_types WHERE licenseId=? AND isDefault=1`).get("legacy-license").code,
+      "BULK_DEFAULT",
+      "one supplied SQLite default must switch atomically",
+    );
+    assert.equal(
+      (await invoke("rate-type:set-default", { licenseId: "legacy-license", id: originalDefaultId })).success,
+      true,
+    );
+
+    db.prepare(`
+      CREATE TEMP TRIGGER force_rate_bulk_failure
+      BEFORE INSERT ON rate_types
+      WHEN NEW.code='FAIL_BULK'
+      BEGIN SELECT RAISE(ABORT, 'forced bulk failure'); END
+    `).run();
+    const failedBulk = await invoke("rate-type:create-bulk", {
+      licenseId: "legacy-license",
+      rows: [
+        { name: "Before Failure", code: "BEFORE_FAILURE", sortOrder: 60, isActive: true, isDefault: false },
+        { name: "Forced Failure", code: "FAIL_BULK", sortOrder: 70, isActive: true, isDefault: false },
+      ],
+    });
+    assert.equal(failedBulk.success, false);
+    assert.equal(
+      db.prepare(`SELECT COUNT(*) AS count FROM rate_types WHERE code IN ('BEFORE_FAILURE','FAIL_BULK')`).get().count,
+      0,
+      "a SQLite failure must roll back every inserted row",
+    );
+    db.prepare(`DROP TRIGGER force_rate_bulk_failure`).run();
+
+    const crossedLicense = await invoke("rate-type:create-bulk", {
+      licenseId: "legacy-license",
+      rows: [{
+        licenseId: "another-license",
+        name: "Crossed License",
+        code: "CROSSED_LICENSE",
+        sortOrder: 80,
+        isActive: true,
+        isDefault: false,
+      }],
+    });
+    assert.equal(crossedLicense.success, false);
+    assert.match(crossedLicense.error, /cannot cross license boundaries/i);
+    assert.equal(
+      db.prepare(`SELECT COUNT(*) AS count FROM rate_types WHERE code='CROSSED_LICENSE'`).get().count,
+      0,
+    );
+
+    const invalidRuntimeBulk = await invoke("rate-type:create-bulk", {
+      licenseId: "legacy-license",
+      rows: [{
+        name: "Invalid Runtime Row",
+        code: "INVALID_RUNTIME_ROW",
+        sortOrder: null,
+        isActive: true,
+        isDefault: false,
+      }],
+    });
+    assert.equal(invalidRuntimeBulk.success, false);
+    assert.match(invalidRuntimeBulk.error, /order must be a non-negative whole number/i);
+    assert.equal(
+      db.prepare(`SELECT COUNT(*) AS count FROM rate_types WHERE code='INVALID_RUNTIME_ROW'`).get().count,
+      0,
+      "runtime bulk validation must reject coercible invalid sort orders",
+    );
+
     const bulkDefaults = await invoke("rate-type:bulk-upsert", [
       {
         id: "sync-a-retail",

@@ -2,6 +2,8 @@ import type {
   ProductBatchRateListResult,
   ProductRateListResult,
   RateTypeListResult,
+  RateTypeBulkCreatePayload,
+  RateTypeBulkCreateResult,
   RateTypeRecord,
 } from "../types";
 
@@ -39,6 +41,16 @@ export async function desktopListRateTypes(
   includeInactive = true,
 ): Promise<RateTypeListResult> {
   const result = await api().listRateTypes(licenseId, includeInactive);
+  return {
+    ...result,
+    rows: (result.rows || []).map(normalizeRateType),
+  };
+}
+
+export async function desktopCreateRateTypesBulk(
+  payload: RateTypeBulkCreatePayload,
+): Promise<RateTypeBulkCreateResult> {
+  const result = await api().createRateTypesBulk(payload);
   return {
     ...result,
     rows: (result.rows || []).map(normalizeRateType),

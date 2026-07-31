@@ -66,6 +66,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   listRateTypes: (licenseId, includeInactive = true) =>
     ipcRenderer.invoke("rate-type:list", { licenseId, includeInactive }),
   saveRateType: (payload) => ipcRenderer.invoke("rate-type:save", payload),
+  createRateTypesBulk: (payload) =>
+    ipcRenderer.invoke("rate-type:create-bulk", payload),
   setDefaultRateType: (licenseId, id) =>
     ipcRenderer.invoke("rate-type:set-default", { licenseId, id }),
   toggleRateType: (licenseId, id, isActive) =>
