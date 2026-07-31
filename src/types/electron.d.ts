@@ -3,6 +3,40 @@ export {};
 
 type LabelPrintEngine = "BARTENDER" | "ZPL" | "HTML";
 
+type ElectronRateType = {
+  id: string;
+  licenseId: string;
+  code: string;
+  name: string;
+  isDefault: number | boolean;
+  isActive: number | boolean;
+  sortOrder: number;
+  createdAt?: string | null;
+  updatedAt: string;
+  deletedAt?: string | null;
+  isSynced: number | boolean;
+  syncedAt?: string | null;
+};
+
+type ElectronRateValue = {
+  id: string;
+  licenseId: string;
+  productId: string;
+  batchId?: string;
+  rateTypeId: string;
+  amount: number;
+  createdAt?: string | null;
+  updatedAt: string;
+  deletedAt?: string | null;
+  isSynced: number | boolean;
+  syncedAt?: string | null;
+};
+
+type ElectronRateValueInput = {
+  rateTypeId: string;
+  amount: number | null | "";
+};
+
 type LabelPrintRow = {
   productId: string;
   batchId?: string;
@@ -838,6 +872,60 @@ declare global {
       }) => Promise<{ success: boolean; id?: string; error?: string }>;
 
       deleteUnit: (id: string) => Promise<{ success: boolean; error?: string }>;
+
+      listRateTypes: (
+        licenseId: string,
+        includeInactive?: boolean,
+      ) => Promise<{ success: boolean; rows: ElectronRateType[]; error?: string }>;
+      saveRateType: (
+        payload: Partial<ElectronRateType> & {
+          licenseId: string;
+          code: string;
+          name: string;
+        },
+      ) => Promise<{ success: boolean; id?: string; error?: string }>;
+      setDefaultRateType: (
+        licenseId: string,
+        id: string,
+      ) => Promise<{ success: boolean; error?: string }>;
+      toggleRateType: (
+        licenseId: string,
+        id: string,
+        isActive: boolean,
+      ) => Promise<{ success: boolean; error?: string }>;
+      deleteRateType: (
+        licenseId: string,
+        id: string,
+      ) => Promise<{ success: boolean; error?: string }>;
+      listProductRates: (
+        licenseId: string,
+        productId: string,
+      ) => Promise<{ success: boolean; rows: ElectronRateValue[]; error?: string }>;
+      saveProductRates: (payload: {
+        licenseId: string;
+        productId: string;
+        rates: ElectronRateValueInput[];
+      }) => Promise<{ success: boolean; error?: string }>;
+      listProductBatchRates: (
+        licenseId: string,
+        productId: string,
+        batchId: string,
+      ) => Promise<{ success: boolean; rows: ElectronRateValue[]; error?: string }>;
+      saveProductBatchRates: (payload: {
+        licenseId: string;
+        productId: string;
+        batchId: string;
+        rates: ElectronRateValueInput[];
+      }) => Promise<{ success: boolean; error?: string }>;
+      getDirtyRateTypes: (licenseId: string, limit?: number) => Promise<ElectronRateType[]>;
+      markRateTypesSynced: (ids: string[], ts?: string) => Promise<{ success: boolean }>;
+      bulkUpsertRateTypes: (records: ElectronRateType[]) => Promise<{ success: boolean }>;
+      getDirtyProductRates: (licenseId: string, limit?: number) => Promise<ElectronRateValue[]>;
+      markProductRatesSynced: (ids: string[], ts?: string) => Promise<{ success: boolean }>;
+      bulkUpsertProductRates: (records: ElectronRateValue[]) => Promise<{ success: boolean }>;
+      getDirtyProductBatchRates: (licenseId: string, limit?: number) => Promise<ElectronRateValue[]>;
+      markProductBatchRatesSynced: (ids: string[], ts?: string) => Promise<{ success: boolean }>;
+      bulkUpsertProductBatchRates: (records: ElectronRateValue[]) => Promise<{ success: boolean }>;
 
       listTaxCategories: (
         licenseId: string,

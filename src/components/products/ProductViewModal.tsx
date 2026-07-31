@@ -8,7 +8,11 @@ import {
   canUseBarcode,
   getActiveLicenseId,
 } from "@/lib/session/runtimeSession";
-import type { ProductSummary } from "@/platform/types";
+import type {
+  ProductRateRecord,
+  ProductSummary,
+  RateTypeRecord,
+} from "@/platform/types";
 
 type Product = ProductSummary;
 type BarcodeRow = { id: string; barcode?: string | null };
@@ -48,6 +52,8 @@ export default function ProductViewModal({
   const [barcodes, setBarcodes] = useState<string[]>([]);
   const [loadingBarcodes, setLoadingBarcodes] = useState(false);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+  const [rateTypes, setRateTypes] = useState<RateTypeRecord[]>([]);
+  const [productRates, setProductRates] = useState<ProductRateRecord[]>([]);
 
   const licenseId = typeof window !== "undefined" ? getActiveLicenseId() : "";
   const barcodeEnabled = canUseBarcode();
@@ -114,6 +120,32 @@ export default function ProductViewModal({
       alive = false;
     };
   }, [open, product?.id]);
+
+  useEffect(() => {
+    let alive = true;
+    if (!open || !product?.id || !licenseId) {
+      setRateTypes([]);
+      setProductRates([]);
+      return;
+    }
+    Promise.all([
+      platform.listRateTypes(licenseId, true),
+      platform.listProductRates(licenseId, product.id),
+    ])
+      .then(([types, values]) => {
+        if (!alive) return;
+        setRateTypes(types.success ? types.rows : []);
+        setProductRates(values.success ? values.rows : []);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setRateTypes([]);
+        setProductRates([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [open, product?.id, licenseId]);
 
   const barcodeSummary = useMemo(() => {
     if (loadingBarcodes) return "Loading...";
@@ -290,9 +322,34 @@ export default function ProductViewModal({
               value={money((product as any).costPrice)}
             />
             <InfoCard
-              label="Sale Price"
+              label="Default Selling Price"
               value={money((product as any).salePrice)}
             />
+          </div>
+
+          <div className="rounded-xl border border-sky-200 bg-sky-50/40 p-2.5">
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-xs font-semibold text-slate-900">Selling Rates</p>
+              <span className="text-[9px] uppercase tracking-[0.12em] text-slate-400">
+                Named prices
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {rateTypes
+                .filter((rateType) => !rateType.deletedAt)
+                .map((rateType) => {
+                  const value = productRates.find(
+                    (rate) => rate.rateTypeId === rateType.id,
+                  );
+                  return (
+                    <InfoCard
+                      key={rateType.id}
+                      label={`${rateType.name}${rateType.isDefault ? " • Default" : ""}`}
+                      value={value ? money(value.amount) : "Not configured"}
+                    />
+                  );
+                })}
+            </div>
           </div>
 
           {barcodeEnabled && (

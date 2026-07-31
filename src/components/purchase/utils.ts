@@ -189,6 +189,27 @@ export function mapItems(rows: ItemRow[]) {
       appliedQuantity: r.appliedQuantity ?? null,
       overReturnQuantity: r.overReturnQuantity ?? null,
       overReturnReason: r.overReturnReason ?? null,
+      sellingRatesJson: (() => {
+        if (!r.sellingRatesJson || !(Number(r.profitPercent) > 0)) {
+          return r.sellingRatesJson ?? null;
+        }
+        try {
+          const values = JSON.parse(r.sellingRatesJson);
+          if (!Array.isArray(values)) return r.sellingRatesJson;
+          return JSON.stringify(
+            values.map((value: any) =>
+              value.isDefault
+                ? {
+                    ...value,
+                    amount: r.salePrice ?? null,
+                  }
+                : value,
+            ),
+          );
+        } catch {
+          return r.sellingRatesJson;
+        }
+      })(),
     }));
 }
 
@@ -224,6 +245,24 @@ export function rowsFromDbItems(dbItems: any[]): ItemRow[] {
     appliedQuantity: it.appliedQuantity ?? 0,
     overReturnQuantity: it.overReturnQuantity ?? 0,
     overReturnReason: it.overReturnReason ?? null,
+    sellingRatesJson: it.sellingRatesJson ?? null,
+    availableRates: (() => {
+      try {
+        const values = JSON.parse(it.sellingRatesJson || "[]");
+        return Array.isArray(values)
+          ? values.map((value: any) => ({
+              rateTypeId: value.rateTypeId,
+              code: value.code || "",
+              name: value.name || value.code || "Saved rate",
+              amount: value.amount == null ? null : Number(value.amount),
+              configured: value.amount != null,
+              isDefault: Boolean(value.isDefault),
+            }))
+          : [];
+      } catch {
+        return [];
+      }
+    })(),
   }));
 }
 

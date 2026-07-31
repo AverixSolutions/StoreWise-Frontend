@@ -1,6 +1,6 @@
 // src/platform/web/idb.ts
 const DB_NAME = "kynflow-web";
-const DB_VERSION = 15; // bumped from 14
+const DB_VERSION = 16; // v16: normalized selling-rate master and values
 
 export const STORES = {
   SHOP_SETTINGS: "shop_settings",
@@ -34,6 +34,9 @@ export const STORES = {
   PURCHASE_RETURNS: "purchase_returns",
   PURCHASE_RETURN_ITEMS: "purchase_return_items",
   PURCHASE_RETURN_HOLDS: "purchase_return_holds",
+  RATE_TYPES: "rate_types",
+  PRODUCT_RATES: "product_rates",
+  PRODUCT_BATCH_RATES: "product_batch_rates",
 } as const;
 
 export type SyncJob = {
@@ -389,6 +392,72 @@ function openDb(): Promise<IDBDatabase> {
             ["licenseId", "createdAt"],
             { unique: false },
           );
+        }
+      }
+
+      if (oldVersion < 16) {
+        if (!db.objectStoreNames.contains(STORES.RATE_TYPES)) {
+          const store = db.createObjectStore(STORES.RATE_TYPES, {
+            keyPath: "id",
+          });
+          store.createIndex("licenseId", "licenseId", { unique: false });
+          store.createIndex("licenseId_code", ["licenseId", "code"], {
+            unique: false,
+          });
+          store.createIndex("licenseId_name", ["licenseId", "name"], {
+            unique: false,
+          });
+          store.createIndex("licenseId_active", ["licenseId", "activeKey"], {
+            unique: false,
+          });
+          store.createIndex("licenseId_default", ["licenseId", "defaultKey"], {
+            unique: false,
+          });
+          store.createIndex("licenseId_dirty", ["licenseId", "dirtyKey"], {
+            unique: false,
+          });
+          store.createIndex("licenseId_updatedAt", ["licenseId", "updatedAt"], {
+            unique: false,
+          });
+        }
+        if (!db.objectStoreNames.contains(STORES.PRODUCT_RATES)) {
+          const store = db.createObjectStore(STORES.PRODUCT_RATES, {
+            keyPath: "id",
+          });
+          store.createIndex("licenseId", "licenseId", { unique: false });
+          store.createIndex("productId", "productId", { unique: false });
+          store.createIndex("rateTypeId", "rateTypeId", { unique: false });
+          store.createIndex(
+            "productId_rateTypeId",
+            ["productId", "rateTypeId"],
+            { unique: true },
+          );
+          store.createIndex("licenseId_dirty", ["licenseId", "dirtyKey"], {
+            unique: false,
+          });
+          store.createIndex("licenseId_updatedAt", ["licenseId", "updatedAt"], {
+            unique: false,
+          });
+        }
+        if (!db.objectStoreNames.contains(STORES.PRODUCT_BATCH_RATES)) {
+          const store = db.createObjectStore(STORES.PRODUCT_BATCH_RATES, {
+            keyPath: "id",
+          });
+          store.createIndex("licenseId", "licenseId", { unique: false });
+          store.createIndex("productId", "productId", { unique: false });
+          store.createIndex("batchId", "batchId", { unique: false });
+          store.createIndex("rateTypeId", "rateTypeId", { unique: false });
+          store.createIndex(
+            "batchId_rateTypeId",
+            ["batchId", "rateTypeId"],
+            { unique: true },
+          );
+          store.createIndex("licenseId_dirty", ["licenseId", "dirtyKey"], {
+            unique: false,
+          });
+          store.createIndex("licenseId_updatedAt", ["licenseId", "updatedAt"], {
+            unique: false,
+          });
         }
       }
     };

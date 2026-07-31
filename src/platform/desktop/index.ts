@@ -112,6 +112,11 @@ import {
   desktopGetSaleReturnHold,
   desktopDeleteSaleReturnHold,
 } from "./saleReturns";
+import {
+  desktopListProductBatchRates,
+  desktopListProductRates,
+  desktopListRateTypes,
+} from "./rates";
 
 function requireElectronAPI() {
   if (typeof window === "undefined" || !window.electronAPI) {
@@ -506,6 +511,47 @@ export const desktopPlatform: PlatformAPI = {
   deleteUnit: async (id: string): Promise<UnitMutationResult> => {
     const result = await requireElectronAPI().deleteUnit(id);
     if (result?.success) triggerDesktopSync("unit");
+    return result;
+  },
+
+  listRateTypes: (licenseId, includeInactive) =>
+    desktopListRateTypes(licenseId, includeInactive),
+  saveRateType: async (payload) => {
+    const result = await requireElectronAPI().saveRateType(payload);
+    if (result.success) triggerDesktopSync("rateType");
+    return result;
+  },
+  setDefaultRateType: async (licenseId, id) => {
+    const result = await requireElectronAPI().setDefaultRateType(licenseId, id);
+    if (result.success) triggerDesktopSync("rateType");
+    return result;
+  },
+  toggleRateType: async (licenseId, id, isActive) => {
+    const result = await requireElectronAPI().toggleRateType(
+      licenseId,
+      id,
+      isActive,
+    );
+    if (result.success) triggerDesktopSync("rateType");
+    return result;
+  },
+  deleteRateType: async (licenseId, id) => {
+    const result = await requireElectronAPI().deleteRateType(licenseId, id);
+    if (result.success) triggerDesktopSync("rateType");
+    return result;
+  },
+  listProductRates: (licenseId, productId) =>
+    desktopListProductRates(licenseId, productId),
+  saveProductRates: async (payload) => {
+    const result = await requireElectronAPI().saveProductRates(payload);
+    if (result.success) triggerDesktopSync("productRate");
+    return result;
+  },
+  listProductBatchRates: (licenseId, productId, batchId) =>
+    desktopListProductBatchRates(licenseId, productId, batchId),
+  saveProductBatchRates: async (payload) => {
+    const result = await requireElectronAPI().saveProductBatchRates(payload);
+    if (result.success) triggerDesktopSync("productBatchRate");
     return result;
   },
 

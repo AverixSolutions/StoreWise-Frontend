@@ -35,7 +35,13 @@ import type {
   OfferRecord,
   OfferTargetProductRecord,
   QuotationRow,
+  RateTypeRecord,
 } from "@/platform/types";
+import {
+  findDefaultRateType,
+  orderActiveRateTypes,
+  resolveNamedRate,
+} from "@/lib/rates/rateResolution";
 import { isSyncEnabled } from "@/platform/mode";
 import { canUseBarcode } from "@/lib/session/runtimeSession";
 import { SyncManager } from "@/sync/SyncManager";
@@ -175,6 +181,10 @@ function makeSnapshot(header: HeaderForm, rows: ItemRow[]) {
       offerType: r.offerType,
       offerDiscountAmount: r.offerDiscountAmount,
       offerMeta: r.offerMeta,
+      rateTypeId: r.rateTypeId,
+      rateTypeCode: r.rateTypeCode,
+      rateTypeName: r.rateTypeName,
+      rateSource: r.rateSource,
     })),
   });
 }
@@ -213,6 +223,7 @@ export default function SalesPage() {
   }, []);
 
   const [products, setProducts] = useState<any[]>([]);
+  const [rateTypes, setRateTypes] = useState<RateTypeRecord[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [nextEntryNo, setNextEntryNo] = useState<number | null>(null);
@@ -353,17 +364,81 @@ export default function SalesPage() {
     pullNow("quotation");
     pullNow("quotationItem");
     (async () => {
-      const res = await platform.getProducts(licenseId, {
-        page: 1,
-        pageSize: 5000,
-      });
-      setProducts(res.products);
+      const [productRes, rateTypeRes] = await Promise.all([
+        platform.getProducts(licenseId, {
+          page: 1,
+          pageSize: 5000,
+        }),
+        platform.listRateTypes(licenseId, false),
+      ]);
+      setProducts(productRes.products);
+      setRateTypes(orderActiveRateTypes(rateTypeRes.rows || []));
     })();
     (async () => {
       const res = await platform.peekNextSaleSlNo?.(licenseId);
       setNextEntryNo(res?.nextSlNo ?? 1);
     })();
   }, [licenseId, isClient]);
+
+  const resolveProductRatePatch = useCallback(
+    async (
+      productId: string,
+      batchId: string | null,
+      legacyRate: number | null | undefined,
+    ): Promise<Partial<ItemRow>> => {
+      const activeTypes = orderActiveRateTypes(rateTypes);
+      if (!activeTypes.length) {
+        const amount = Number(legacyRate || 0);
+        return {
+          rate: amount,
+          salePrice: amount,
+          rateTypeId: null,
+          rateTypeCode: null,
+          rateTypeName: "Legacy",
+          rateSource: "LEGACY",
+          availableRates: [],
+        };
+      }
+
+      const [productRateRes, batchRateRes] = await Promise.all([
+        platform.listProductRates(licenseId, productId),
+        batchId
+          ? platform.listProductBatchRates(licenseId, productId, batchId)
+          : Promise.resolve({ success: true, rows: [] }),
+      ]);
+      const productRates = productRateRes.rows || [];
+      const batchRates = batchRateRes.rows || [];
+      const availableRates = activeTypes.map((rateType) => {
+        const resolved = resolveNamedRate({
+          rateType,
+          productRates,
+          batchRates,
+        });
+        return {
+          rateTypeId: rateType.id,
+          code: rateType.code,
+          name: rateType.name,
+          amount: resolved.amount,
+          configured: resolved.configured,
+          isDefault: rateType.isDefault,
+        };
+      });
+      const defaultType = findDefaultRateType(activeTypes) || activeTypes[0];
+      const selected = availableRates.find(
+        (rate) => rate.rateTypeId === defaultType.id,
+      );
+      return {
+        rate: selected?.amount ?? 0,
+        salePrice: selected?.amount ?? null,
+        rateTypeId: defaultType.id,
+        rateTypeCode: defaultType.code,
+        rateTypeName: defaultType.name,
+        rateSource: "MASTER",
+        availableRates,
+      };
+    },
+    [licenseId, rateTypes],
+  );
 
   useEffect(() => {
     loadQuotationOptions();
@@ -705,6 +780,21 @@ export default function SalesPage() {
           expiryDate: item.expiryDate ?? null,
           lineType: item.isFree ? "FREE" : "VALUED",
           unitBilled: 0,
+          rateTypeId: item.rateTypeId ?? null,
+          rateTypeCode: item.rateTypeCode ?? null,
+          rateTypeName: item.rateTypeName ?? null,
+          rateSource: item.rateSource ?? "LEGACY",
+          availableRates: item.rateTypeId
+            ? [
+                {
+                  rateTypeId: item.rateTypeId,
+                  code: item.rateTypeCode || "",
+                  name: item.rateTypeName || item.rateTypeCode || "Saved rate",
+                  amount: Number(item.rate),
+                  configured: true,
+                },
+              ]
+            : [],
           ...offerClearPatch,
         });
       });
@@ -806,6 +896,13 @@ export default function SalesPage() {
         stock: b.stock,
       }));
 
+    const selectedBatchId = liveBatches.length === 1 ? liveBatches[0].id : null;
+    const ratePatch = await resolveProductRatePatch(
+      productId,
+      selectedBatchId,
+      product.salePrice,
+    );
+
     // Base row fill
     const basePatch = {
       productId,
@@ -818,11 +915,7 @@ export default function SalesPage() {
       mfgDate: null,
       expiryDate: null,
       mrp: null,
-      rate: Number(product.salePrice) || 0,
-      salePrice:
-        product.salePrice != null && !Number.isNaN(Number(product.salePrice))
-          ? Number(product.salePrice)
-          : 0,
+      ...ratePatch,
       ...offerClearPatch,
     };
 
@@ -844,14 +937,6 @@ export default function SalesPage() {
                 mfgDate: b.mfgDate ?? null,
                 expiryDate: b.expiryDate ?? null,
                 mrp: b.mrp ?? null,
-                rate:
-                  b.costPrice != null && !Number.isNaN(Number(b.costPrice))
-                    ? Number(b.costPrice)
-                    : Number(product.costPrice) || 0,
-                salePrice:
-                  b.salePrice != null && !Number.isNaN(Number(b.salePrice))
-                    ? Number(b.salePrice)
-                    : Number(product.salePrice) || 0,
               },
         ),
       );
@@ -1129,6 +1214,21 @@ export default function SalesPage() {
       offerDiscountAmount: Number(it.offerDiscountAmount || 0),
       offerMessage: it.offerName ? String(it.offerType || "Offer") : null,
       offerMeta: it.offerMeta ?? null,
+      rateTypeId: it.rateTypeId ?? null,
+      rateTypeCode: it.rateTypeCode ?? null,
+      rateTypeName: it.rateTypeName ?? null,
+      rateSource: it.rateSource ?? "LEGACY",
+      availableRates: it.rateTypeId
+        ? [
+            {
+              rateTypeId: it.rateTypeId,
+              code: it.rateTypeCode || "",
+              name: it.rateTypeName || it.rateTypeCode || "Saved rate",
+              amount: Number(it.rate),
+              configured: true,
+            },
+          ]
+        : [],
     }));
 
     setHeader(nextHeader);
@@ -1486,10 +1586,27 @@ export default function SalesPage() {
       "rate" in patch ||
       "salePrice" in patch ||
       "lineType" in patch;
+    const manualRate =
+      "rate" in patch &&
+      !("rateTypeId" in patch) &&
+      !("rateSource" in patch);
+    const normalizedPatch: Partial<ItemRow> = manualRate
+      ? {
+          ...patch,
+          rateTypeId: null,
+          rateTypeCode: null,
+          rateTypeName: "Custom",
+          rateSource: "CUSTOM",
+        }
+      : patch;
     setRows((prev) =>
       prev.map((r, i) =>
         i === index
-          ? { ...r, ...(shouldClearOffer ? offerClearPatch : {}), ...patch }
+          ? {
+              ...r,
+              ...(shouldClearOffer ? offerClearPatch : {}),
+              ...normalizedPatch,
+            }
           : r,
       ),
     );
@@ -1723,6 +1840,7 @@ export default function SalesPage() {
             transactionTypes={transactionTypes}
           />
           <ItemsTableSection
+            mode="SALE"
             rows={rows}
             products={products}
             onSelectProduct={handleSelectProduct}
@@ -1782,6 +1900,10 @@ export default function SalesPage() {
         licenseId={licenseId}
         customers={customers}
         onOpenSale={handleOpenSaleFromReport}
+        onReturnSale={(id) => {
+          setShowReports(false);
+          void tryNavigate(`/dashboard/sales-return?saleId=${id}`);
+        }}
       />
 
       <BatchSelectModal
@@ -1802,35 +1924,31 @@ export default function SalesPage() {
             return;
           }
 
-          setRows((prev) =>
-            prev.map((r, i) =>
-              i !== rowIndex
-                ? r
-                : {
-                    ...r,
-                    batchId: batch.id,
-                    barcode: barcodeEnabled ? batch.barcode || "" : "",
-                    batchNo: batch.batchNo ?? null,
-                    purchaseBatchNo:
-                      batch.purchaseBatchNo ?? batch.batchNo ?? null,
-                    mfgDate: batch.mfgDate ?? null,
-                    expiryDate: batch.expiryDate ?? null,
-                    mrp: batch.mrp ?? null,
-                    rate:
-                      batch.costPrice != null &&
-                      !Number.isNaN(Number(batch.costPrice))
-                        ? Number(batch.costPrice)
-                        : r.rate,
-                    salePrice:
-                      batch.salePrice != null &&
-                      !Number.isNaN(Number(batch.salePrice))
-                        ? Number(batch.salePrice)
-                        : r.salePrice,
-                    ...offerClearPatch,
-                  },
-            ),
-          );
-
+          void resolveProductRatePatch(
+            batchPicker.productId,
+            batch.id,
+            batch.salePrice,
+          ).then((ratePatch) => {
+            setRows((prev) =>
+              prev.map((r, i) =>
+                i !== rowIndex
+                  ? r
+                  : {
+                      ...r,
+                      batchId: batch.id,
+                      barcode: barcodeEnabled ? batch.barcode || "" : "",
+                      batchNo: batch.batchNo ?? null,
+                      purchaseBatchNo:
+                        batch.purchaseBatchNo ?? batch.batchNo ?? null,
+                      mfgDate: batch.mfgDate ?? null,
+                      expiryDate: batch.expiryDate ?? null,
+                      mrp: batch.mrp ?? null,
+                      ...ratePatch,
+                      ...offerClearPatch,
+                    },
+              ),
+            );
+          });
           setBatchPicker(null);
         }}
         onAddNewBatch={() => {

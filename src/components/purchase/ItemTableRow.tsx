@@ -1,6 +1,6 @@
 // src/components/purchase/ItemTableRow.tsx
 import { X } from "lucide-react";
-import { ItemRow, Product } from "./types";
+import { ItemRow, Product, TransactionMode } from "./types";
 import { toDateInput, fromDateInput, round2 } from "./utils";
 import SearchableDropdown from "@/components/ui/SearchableDropdown";
 import CompactDropdown from "@/components/ui/CompactDropdown";
@@ -58,6 +58,7 @@ interface ItemTableRowProps {
   onRequestBatchSelect?: (rowIndex: number) => void;
   onBarcodeCommit?: (rowIndex: number) => void;
   barcodeEnabled?: boolean;
+  mode?: TransactionMode;
 }
 
 export default function ItemTableRow({
@@ -74,6 +75,7 @@ export default function ItemTableRow({
   onRequestBatchSelect,
   onBarcodeCommit,
   barcodeEnabled = true,
+  mode = "PURCHASE",
 }: ItemTableRowProps) {
   const taxOptions = [
     { value: "NT", label: "No Tax" },
@@ -419,6 +421,76 @@ export default function ItemTableRow({
 
       {/* Sale Price + Profit % */}
       <td className="px-2.5 py-2 min-w-[200px]">
+        {mode === "SALE" || mode === "QUOTATION" ? (
+          <div className="space-y-1">
+            <select
+              className={cellInput}
+              value={r.rateSource === "CUSTOM" ? "__CUSTOM__" : r.rateTypeId || ""}
+              onChange={(event) => {
+                if (event.target.value === "__CUSTOM__") {
+                  onUpdateRow(idx, {
+                    rateTypeId: null,
+                    rateTypeCode: null,
+                    rateTypeName: "Custom",
+                    rateSource: "CUSTOM",
+                    originalRate: r.rate,
+                    originalSalePrice: r.rate,
+                    appliedRate: null,
+                    offerId: null,
+                    offerName: null,
+                    offerType: null,
+                    offerDiscountAmount: 0,
+                    offerMeta: null,
+                  });
+                  return;
+                }
+                const selected = r.availableRates?.find(
+                  (rate) => rate.rateTypeId === event.target.value,
+                );
+                if (!selected?.configured || selected.amount == null) return;
+                onUpdateRow(idx, {
+                  rateTypeId: selected.rateTypeId,
+                  rateTypeCode: selected.code,
+                  rateTypeName: selected.name,
+                  rateSource: "MASTER",
+                  rate: selected.amount,
+                  salePrice: selected.amount,
+                  originalRate: selected.amount,
+                  originalSalePrice: selected.amount,
+                  appliedRate: null,
+                  offerId: null,
+                  offerName: null,
+                  offerType: null,
+                  offerDiscountAmount: 0,
+                  offerMessage: null,
+                  offerMeta: null,
+                });
+              }}
+              aria-label={`Rate type for row ${r.lineNo}`}
+            >
+              {!r.rateTypeId && r.rateSource !== "CUSTOM" && (
+                <option value="">Legacy</option>
+              )}
+              {(r.availableRates || []).map((rate) => (
+                <option
+                  key={rate.rateTypeId}
+                  value={rate.rateTypeId}
+                  disabled={!rate.configured}
+                >
+                  {rate.name}
+                  {rate.configured ? ` — ₹${rate.amount}` : " — Not configured"}
+                </option>
+              ))}
+              <option value="__CUSTOM__">Custom rate</option>
+            </select>
+            <div className="text-[10px] text-slate-500">
+              {r.rateSource === "CUSTOM"
+                ? "Manual custom rate"
+                : r.rateTypeName || "Legacy saved rate"}
+            </div>
+          </div>
+        ) : (
+        <div className="space-y-1">
         <div className="grid grid-cols-[1fr_96px] gap-2 items-center">
           <div className="flex items-center gap-1">
             <span className="text-[11px] text-gray-500">P%</span>
@@ -497,6 +569,63 @@ export default function ItemTableRow({
             }}
           />
         </div>
+        {mode === "PURCHASE" && (r.availableRates?.length || 0) > 0 && (
+          <details className="rounded border border-slate-200 bg-slate-50 px-1.5 py-1">
+            <summary className="cursor-pointer text-[10px] font-medium text-slate-600">
+              All selling rates
+            </summary>
+            <div className="mt-1 space-y-1">
+              {(r.availableRates || []).map((namedRate) => (
+                <label
+                  key={namedRate.rateTypeId}
+                  className="grid grid-cols-[1fr_78px] items-center gap-1 text-[10px] text-slate-600"
+                >
+                  <span title={namedRate.code}>
+                    {namedRate.name}
+                    {namedRate.isDefault ? " (Default)" : ""}
+                  </span>
+                  <input
+                    className={cellInput + " h-7 text-right"}
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={namedRate.amount ?? ""}
+                    placeholder="Blank"
+                    onChange={(event) => {
+                      const raw = event.target.value;
+                      const amount =
+                        raw === "" ? null : Math.max(0, round2(Number(raw)));
+                      const nextRates = (r.availableRates || []).map((rate) =>
+                        rate.rateTypeId === namedRate.rateTypeId
+                          ? {
+                              ...rate,
+                              amount,
+                              configured: amount != null,
+                            }
+                          : rate,
+                      );
+                      onUpdateRow(idx, {
+                        availableRates: nextRates,
+                        sellingRatesJson: JSON.stringify(
+                          nextRates.map((rate) => ({
+                            rateTypeId: rate.rateTypeId,
+                            code: rate.code,
+                            name: rate.name,
+                            amount: rate.amount,
+                            isDefault: Boolean(rate.isDefault),
+                          })),
+                        ),
+                        ...(namedRate.isDefault ? { salePrice: amount } : {}),
+                      });
+                    }}
+                  />
+                </label>
+              ))}
+            </div>
+          </details>
+        )}
+        </div>
+        )}
       </td>
 
       {/* MRP */}

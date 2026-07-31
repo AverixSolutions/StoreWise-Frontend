@@ -54,6 +54,10 @@ function makeSnapshot(header: HeaderForm, rows: ItemRow[]) {
       mfgDate: r.mfgDate,
       expiryDate: r.expiryDate,
       lineType: r.lineType,
+      rateTypeId: r.rateTypeId,
+      rateTypeCode: r.rateTypeCode,
+      rateTypeName: r.rateTypeName,
+      rateSource: r.rateSource,
     })),
   });
 }
@@ -76,6 +80,8 @@ function SalesReturnPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const openId = searchParams.get("open");
+  const sourceSaleId = searchParams.get("saleId");
+  const sourceSaleLoaded = useRef<string | null>(null);
 
   const [isClient, setIsClient] = useState(false);
   const [licenseId, setLicenseId] = useState("demo-license");
@@ -219,6 +225,10 @@ function SalesReturnPageInner() {
                 totalCost: Number(it.totalCost || 0),
                 billedValue: Number(it.billedValue || 0),
                 lineType: "VALUED",
+                rateTypeId: it.rateTypeId ?? null,
+                rateTypeCode: it.rateTypeCode ?? null,
+                rateTypeName: it.rateTypeName ?? null,
+                rateSource: it.rateSource ?? "LEGACY",
               } as ItemRow),
             )
           : [createEmptyRow(1)];
@@ -255,6 +265,95 @@ function SalesReturnPageInner() {
       cancelled = true;
     };
   }, [openId]);
+
+  useEffect(() => {
+    if (
+      !isClient ||
+      !sourceSaleId ||
+      openId ||
+      sourceSaleLoaded.current === sourceSaleId
+    ) {
+      return;
+    }
+    sourceSaleLoaded.current = sourceSaleId;
+    void (async () => {
+      const res = await platform.getSaleFull?.(sourceSaleId);
+      if (!res?.success || !res.sale || !res.items?.length) {
+        setValidationMsgs(["The source sale could not be loaded for return."]);
+        setValidationOpen(true);
+        return;
+      }
+      const sale = res.sale;
+      const nextHeader: HeaderForm = {
+        billNo: sale.billNo || "",
+        customer: sale.customerId
+          ? {
+              id: sale.customerId,
+              name: sale.customerName || sale.customerId,
+            }
+          : null,
+        department: "",
+        debitAccount: "",
+        natureOfEntry: "",
+        saleDate: new Date().toISOString(),
+        entryTime: new Date().toISOString(),
+        discount: 0,
+        saleType: sale.saleType === "CREDIT" ? "CREDIT" : "CASH",
+      };
+      const nextRows = res.items.map((item, index) =>
+        calcRow({
+          lineNo: item.lineNo ?? index + 1,
+          productId: item.productId,
+          code: item.productCode || "",
+          name: item.productName || "",
+          barcode: item.barcode || "",
+          batchId: item.batchId ?? null,
+          batchNo: item.batchNo || "",
+          purchaseBatchNo: item.purchaseBatchNo || item.batchNo || "",
+          mfgDate: item.mfgDate || null,
+          expiryDate: item.expiryDate || null,
+          quantity: Number(item.quantity || 0),
+          unit: (item.unit || "NOS") as ItemRow["unit"],
+          rate: Number(item.rate || 0),
+          mrp: item.mrp != null ? Number(item.mrp) : null,
+          taxPercent: (item.taxPercent || "NT") as ItemRow["taxPercent"],
+          discount: Number(item.discount || 0),
+          discountType:
+            item.discountType === "PCT" ? "PCT" : "ABS",
+          salePrice:
+            item.salePrice != null
+              ? Number(item.salePrice)
+              : Number(item.rate || 0),
+          profit: item.profit != null ? Number(item.profit) : 0,
+          totalCost: Number(item.totalCost || 0),
+          billedValue: Number(item.billedValue || 0),
+          lineType: item.isFree ? "FREE" : "VALUED",
+          rateTypeId: item.rateTypeId ?? null,
+          rateTypeCode: item.rateTypeCode ?? null,
+          rateTypeName: item.rateTypeName ?? null,
+          rateSource: item.rateSource ?? "LEGACY",
+          availableRates: item.rateTypeId
+            ? [
+                {
+                  rateTypeId: item.rateTypeId,
+                  code: item.rateTypeCode || "",
+                  name:
+                    item.rateTypeName ||
+                    item.rateTypeCode ||
+                    "Saved rate",
+                  amount: Number(item.rate),
+                  configured: true,
+                },
+              ]
+            : [],
+        }),
+      );
+      setHeader(nextHeader);
+      setRows(nextRows);
+      initialSnapshot.current = makeSnapshot(nextHeader, nextRows);
+      setIsDirty(false);
+    })();
+  }, [isClient, openId, sourceSaleId]);
 
   const handleSelectProduct = async (rowIndex: number, productId: string) => {
     const product = await platform.getProduct(productId);
@@ -599,8 +698,18 @@ function SalesReturnPageInner() {
   }, [header, rows]);
 
   function updateRow(index: number, patch: Partial<ItemRow>) {
+    const normalizedPatch: Partial<ItemRow> =
+      "rate" in patch
+        ? {
+            ...patch,
+            rateTypeId: null,
+            rateTypeCode: null,
+            rateTypeName: "Custom",
+            rateSource: "CUSTOM",
+          }
+        : patch;
     setRows((prev) =>
-      prev.map((r, i) => (i === index ? { ...r, ...patch } : r)),
+      prev.map((r, i) => (i === index ? { ...r, ...normalizedPatch } : r)),
     );
   }
 
@@ -656,6 +765,7 @@ function SalesReturnPageInner() {
           />
 
           <ItemsTableSection
+            mode="RETURN"
             rows={rows}
             products={products}
             onSelectProduct={handleSelectProduct}

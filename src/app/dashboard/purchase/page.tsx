@@ -1,6 +1,6 @@
 // src/app/dashboard/purchase/page.tsx
 "use client";
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import PurchaseNavigation from "@/components/purchase/PurchaseNavigation";
 import BillDetailsSection from "@/components/purchase/BillDetailsSection";
@@ -36,7 +36,12 @@ import { isSyncEnabled } from "@/platform/mode";
 import { SyncManager } from "@/sync/SyncManager";
 import { useSyncStatus } from "@/sync/SyncProvider";
 import ProductFormModal from "@/components/products/ProductFormModal";
-import type { CategoryRecord } from "@/platform/types";
+import type { CategoryRecord, RateTypeRecord } from "@/platform/types";
+import {
+  findDefaultRateType,
+  orderActiveRateTypes,
+  resolveNamedRate,
+} from "@/lib/rates/rateResolution";
 
 type BatchDecision = "OVERRIDE" | "NEW";
 
@@ -109,6 +114,7 @@ function makeSnapshot(header: HeaderForm, rows: ItemRow[]) {
       mfgDate: r.mfgDate,
       expiryDate: r.expiryDate,
       lineType: r.lineType,
+      sellingRatesJson: r.sellingRatesJson,
     })),
   });
 }
@@ -156,6 +162,7 @@ export default function PurchasePage() {
   const [templates, setTemplates] = useState<any[]>([]);
 
   const [products, setProducts] = useState<Product[]>([]);
+  const [rateTypes, setRateTypes] = useState<RateTypeRecord[]>([]);
   const [showProductModal, setShowProductModal] = useState(false);
   const [productCategories, setProductCategories] = useState<string[]>([]);
   const [productBrands, setProductBrands] = useState<string[]>([]);
@@ -279,14 +286,16 @@ export default function PurchasePage() {
   }, []);
 
   async function reloadProductsAndMasters() {
-    const [productsResult, categoriesResult, brandsResult] = await Promise.all([
+    const [productsResult, categoriesResult, brandsResult, rateTypeResult] = await Promise.all([
       platform.getProducts(licenseId, { page: 1, pageSize: 1000 }),
       platform.listCategories(licenseId),
       platform.listBrands(licenseId),
+      platform.listRateTypes(licenseId, false),
     ]);
 
     const nextProducts = productsResult.products as Product[];
     setProducts(nextProducts);
+    setRateTypes(orderActiveRateTypes(rateTypeResult.rows || []));
 
     const productCategoryNames = nextProducts
       .map((p: any) => p.category)
@@ -457,6 +466,12 @@ export default function PurchasePage() {
         salePrice: b.salePrice,
         stock: b.stock,
       }));
+      const selectedBatchId = batches.length === 1 ? batches[0].id : null;
+      const sellingRatePatch = await resolvePurchaseRatePatch(
+        productId,
+        selectedBatchId,
+        product.salePrice,
+      );
 
       // First fill only base product details
       setRows((prev) =>
@@ -481,11 +496,7 @@ export default function PurchasePage() {
                   !Number.isNaN(Number((product as any).mrp))
                     ? Number((product as any).mrp)
                     : null,
-                salePrice:
-                  product.salePrice != null &&
-                  !Number.isNaN(Number(product.salePrice))
-                    ? Number(product.salePrice)
-                    : 0,
+                ...sellingRatePatch,
               },
         ),
       );
@@ -530,6 +541,7 @@ export default function PurchasePage() {
               : {
                   ...r,
                   barcode: b.barcode || "",
+                  batchId: b.id,
                   batchNo: b.batchNo ?? "",
                   mfgDate: b.mfgDate ?? null,
                   expiryDate: b.expiryDate ?? null,
@@ -538,10 +550,6 @@ export default function PurchasePage() {
                     b.mrp != null && !Number.isNaN(Number(b.mrp))
                       ? Number(b.mrp)
                       : r.mrp,
-                  salePrice:
-                    b.salePrice != null && !Number.isNaN(Number(b.salePrice))
-                      ? Number(b.salePrice)
-                      : r.salePrice,
                 },
           ),
         );
@@ -581,6 +589,62 @@ export default function PurchasePage() {
       console.error("Failed to select product", e);
     }
   };
+
+  const resolvePurchaseRatePatch = useCallback(
+    async (
+      productId: string,
+      batchId: string | null,
+      legacySalePrice: number | null | undefined,
+    ): Promise<Partial<ItemRow>> => {
+      const activeTypes = orderActiveRateTypes(rateTypes);
+      if (!activeTypes.length) {
+        return {
+          salePrice: Number(legacySalePrice || 0),
+          availableRates: [],
+          sellingRatesJson: null,
+        };
+      }
+      const [productRateRes, batchRateRes] = await Promise.all([
+        platform.listProductRates(licenseId, productId),
+        batchId
+          ? platform.listProductBatchRates(licenseId, productId, batchId)
+          : Promise.resolve({ success: true, rows: [] }),
+      ]);
+      const availableRates = activeTypes.map((rateType) => {
+        const resolved = resolveNamedRate({
+          rateType,
+          productRates: productRateRes.rows || [],
+          batchRates: batchRateRes.rows || [],
+        });
+        return {
+          rateTypeId: rateType.id,
+          code: rateType.code,
+          name: rateType.name,
+          amount: resolved.amount,
+          configured: resolved.configured,
+          isDefault: rateType.isDefault,
+        };
+      });
+      const defaultType = findDefaultRateType(activeTypes);
+      const defaultValue = availableRates.find(
+        (rate) => rate.rateTypeId === defaultType?.id,
+      );
+      return {
+        salePrice: defaultValue?.amount ?? null,
+        availableRates,
+        sellingRatesJson: JSON.stringify(
+          availableRates.map((rate) => ({
+            rateTypeId: rate.rateTypeId,
+            code: rate.code,
+            name: rate.name,
+            amount: rate.amount,
+            isDefault: Boolean(rate.isDefault),
+          })),
+        ),
+      };
+    },
+    [licenseId, rateTypes],
+  );
 
   const handleRequestBatchSelect = async (
     rowIndex: number,
@@ -1462,6 +1526,7 @@ export default function PurchasePage() {
 
           <div className="min-h-0 flex flex-col bg-white overflow-hidden">
             <ItemsTableSection
+              mode="PURCHASE"
               rows={rows}
               products={products}
               onAddProduct={handleAddInlineProduct}
@@ -1819,32 +1884,34 @@ export default function PurchasePage() {
             return;
           }
 
-          setRows((prev) =>
-            prev.map((r, i) =>
-              i !== rowIndex
-                ? r
-                : {
-                    ...r,
-                    barcode: batch.barcode || r.barcode,
-                    batchNo: batch.batchNo ?? r.batchNo,
-                    mfgDate: batch.mfgDate ?? r.mfgDate,
-                    expiryDate: batch.expiryDate ?? r.expiryDate,
-                    forceNewBatch: false,
-                    mrp:
-                      typeof r.mrp === "number" && r.mrp > 0
-                        ? r.mrp
-                        : batch.mrp != null
-                          ? Number(batch.mrp)
-                          : r.mrp,
-                    salePrice:
-                      typeof r.salePrice === "number" && r.salePrice > 0
-                        ? r.salePrice
-                        : batch.salePrice != null
-                          ? Number(batch.salePrice)
-                          : r.salePrice,
-                  },
-            ),
-          );
+          void resolvePurchaseRatePatch(
+            batchPicker.productId,
+            batch.id,
+            batch.salePrice,
+          ).then((sellingRatePatch) => {
+            setRows((prev) =>
+              prev.map((r, i) =>
+                i !== rowIndex
+                  ? r
+                  : {
+                      ...r,
+                      batchId: batch.id,
+                      barcode: batch.barcode || r.barcode,
+                      batchNo: batch.batchNo ?? r.batchNo,
+                      mfgDate: batch.mfgDate ?? r.mfgDate,
+                      expiryDate: batch.expiryDate ?? r.expiryDate,
+                      forceNewBatch: false,
+                      mrp:
+                        typeof r.mrp === "number" && r.mrp > 0
+                          ? r.mrp
+                          : batch.mrp != null
+                            ? Number(batch.mrp)
+                            : r.mrp,
+                      ...sellingRatePatch,
+                    },
+              ),
+            );
+          });
 
           setBatchPicker(null);
 

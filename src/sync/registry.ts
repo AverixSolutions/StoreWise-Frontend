@@ -44,6 +44,11 @@ import {
   createQuotationsAdapter,
   createQuotationItemsAdapter,
 } from "./adapters/quotations";
+import {
+  createProductBatchRatesAdapter,
+  createProductRatesAdapter,
+  createRateTypesAdapter,
+} from "./adapters/rates";
 
 export function buildAdapters(isDesktop: boolean): SyncAdapter[] {
   return [
@@ -53,8 +58,11 @@ export function buildAdapters(isDesktop: boolean): SyncAdapter[] {
     createBrandsAdapter(isDesktop),
     createUnitsAdapter(isDesktop),
     createTransactionTypesAdapter(isDesktop),
+    createRateTypesAdapter(isDesktop),
     createProductsAdapter(isDesktop),
+    createProductRatesAdapter(isDesktop),
     createProductBatchesAdapter(isDesktop),
+    createProductBatchRatesAdapter(isDesktop),
     createOffersAdapter(isDesktop),
     createOfferTargetProductsAdapter(isDesktop),
     createSuppliersAdapter(isDesktop),

@@ -48,6 +48,7 @@ function makeSnapshot(header: HeaderForm, rows: ItemRow[]) {
       mfgDate: r.mfgDate,
       expiryDate: r.expiryDate,
       lineType: r.lineType,
+      sellingRatesJson: r.sellingRatesJson,
     })),
   });
 }
@@ -729,6 +730,7 @@ export default function PurchaseReturnPage() {
           />
 
           <ItemsTableSection
+            mode="RETURN"
             rows={rows}
             products={products}
             onSelectProduct={handleSelectProduct}

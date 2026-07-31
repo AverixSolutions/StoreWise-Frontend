@@ -235,8 +235,10 @@ function registerQuotationHandlers() {
            id, quotationId, productId, barcode, quantity, unit, rate, mrp,
            taxPercent, taxAmount, discount, discountType, salePrice, profit,
            totalCost, billedValue, effectiveUnitValue, batchNo, batchId,
-           mfgDate, expiryDate, lineNo, isFree, createdAt, updatedAt, isSynced
-         ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)`,
+           mfgDate, expiryDate, lineNo, isFree,
+           rateTypeId, rateTypeCode, rateTypeName, rateSource,
+           createdAt, updatedAt, isSynced
+         ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)`,
       );
 
       let totalAmount = 0;
@@ -285,6 +287,10 @@ function registerQuotationHandlers() {
           it.expiryDate || null,
           it.lineNo || idx + 1,
           it.isFree ? 1 : 0,
+          it.rateTypeId || null,
+          it.rateTypeCode || null,
+          it.rateTypeName || null,
+          it.rateSource || "LEGACY",
           now,
           now,
         );
@@ -366,9 +372,11 @@ function registerQuotationHandlers() {
            id, quotationId, productId, barcode, quantity, unit, rate, mrp,
            taxPercent, taxAmount, discount, discountType, salePrice, profit,
            totalCost, billedValue, effectiveUnitValue, batchNo, batchId,
-           mfgDate, expiryDate, lineNo, isFree, createdAt, updatedAt, isSynced
+           mfgDate, expiryDate, lineNo, isFree,
+           rateTypeId, rateTypeCode, rateTypeName, rateSource,
+           createdAt, updatedAt, isSynced
          ) VALUES(
-           lower(hex(randomblob(16))),?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)`,
+           lower(hex(randomblob(16))),?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)`,
       );
 
       items.forEach((it, idx) => {
@@ -397,6 +405,10 @@ function registerQuotationHandlers() {
           it.expiryDate ?? null,
           it.lineNo ?? idx + 1,
           it.isFree ? 1 : 0,
+          it.rateTypeId ?? null,
+          it.rateTypeCode ?? null,
+          it.rateTypeName ?? null,
+          it.rateSource ?? "LEGACY",
           now,
           now,
         );
@@ -593,8 +605,10 @@ function registerQuotationHandlers() {
              id, saleId, productId, barcode, quantity, unit, rate, mrp,
              taxPercent, taxAmount, discount, discountType, salePrice, profit,
              totalCost, billedValue, effectiveUnitValue, batchNo, batchId,
-             mfgDate, expiryDate, lineNo, isFree, createdAt, updatedAt, isSynced
-           ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)`,
+             mfgDate, expiryDate, lineNo, isFree,
+             rateTypeId, rateTypeCode, rateTypeName, rateSource,
+             createdAt, updatedAt, isSynced
+           ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)`,
           ).run(
             uuidv4(),
             saleId,
@@ -619,6 +633,10 @@ function registerQuotationHandlers() {
             it.expiryDate,
             it.lineNo,
             it.isFree,
+            it.rateTypeId,
+            it.rateTypeCode,
+            it.rateTypeName,
+            it.rateSource,
             now,
             now,
           );
@@ -759,6 +777,8 @@ function registerQuotationHandlers() {
              qi.batchNo, qi.batchId,
              qi.mfgDate, qi.expiryDate,
              qi.lineNo, qi.isFree,
+             qi.rateTypeId, qi.rateTypeCode, qi.rateTypeName,
+             COALESCE(qi.rateSource, 'LEGACY') AS rateSource,
              qi.createdAt, qi.updatedAt, qi.deletedAt,
              qi.isSynced, qi.syncedAt
       FROM quotation_items qi
@@ -904,6 +924,7 @@ function registerQuotationHandlers() {
         salePrice, profit, totalCost, billedValue,
         effectiveUnitValue, batchNo, batchId,
         mfgDate, expiryDate, lineNo, isFree,
+        rateTypeId, rateTypeCode, rateTypeName, rateSource,
         createdAt, updatedAt, deletedAt, isSynced, syncedAt
       ) VALUES (
         @id, @quotationId, @productId, @barcode,
@@ -912,6 +933,7 @@ function registerQuotationHandlers() {
         @salePrice, @profit, @totalCost, @billedValue,
         @effectiveUnitValue, @batchNo, @batchId,
         @mfgDate, @expiryDate, @lineNo, @isFree,
+        @rateTypeId, @rateTypeCode, @rateTypeName, @rateSource,
         @createdAt, @updatedAt, @deletedAt, 1, @syncedAt
       )
       ON CONFLICT(id) DO UPDATE SET
@@ -934,6 +956,10 @@ function registerQuotationHandlers() {
         expiryDate         = excluded.expiryDate,
         lineNo             = excluded.lineNo,
         isFree             = excluded.isFree,
+        rateTypeId         = excluded.rateTypeId,
+        rateTypeCode       = excluded.rateTypeCode,
+        rateTypeName       = excluded.rateTypeName,
+        rateSource         = excluded.rateSource,
         updatedAt          = excluded.updatedAt,
         deletedAt          = excluded.deletedAt,
         isSynced           = 1,
@@ -969,6 +995,10 @@ function registerQuotationHandlers() {
           expiryDate: r.expiryDate ?? null,
           lineNo: r.lineNo ?? null,
           isFree: r.isFree ? 1 : 0,
+          rateTypeId: r.rateTypeId ?? null,
+          rateTypeCode: r.rateTypeCode ?? null,
+          rateTypeName: r.rateTypeName ?? null,
+          rateSource: r.rateSource ?? "LEGACY",
           createdAt:
             r.createdAt instanceof Date
               ? r.createdAt.toISOString()

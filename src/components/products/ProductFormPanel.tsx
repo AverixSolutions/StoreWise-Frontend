@@ -29,9 +29,16 @@ import type {
   UnitCode,
   TaxCode,
   CategoryRecord,
+  RateTypeRecord,
+  RateValueInput,
 } from "@/platform/types";
 import { useToast } from "../ui/ToastProvider";
 import { uploadProductImage } from "@/lib/uploadImage";
+import {
+  compatibilitySalePrice,
+  findDefaultRateType,
+  orderActiveRateTypes,
+} from "@/lib/rates/rateResolution";
 
 type Product = ProductSummary;
 
@@ -249,6 +256,8 @@ export default function ProductFormPanel({
   const [hsn, setHsn] = useState("");
   const [costPrice, setCostPrice] = useState("");
   const [salePrice, setSalePrice] = useState("");
+  const [rateTypes, setRateTypes] = useState<RateTypeRecord[]>([]);
+  const [rateValues, setRateValues] = useState<Record<string, string>>({});
 
   // ── Barcode state ──
   const [barcodeEntries, setBarcodeEntries] = useState<BarcodeEntry[]>([]);
@@ -475,6 +484,44 @@ export default function ProductFormPanel({
       })
       .catch(() => {});
   }, [isOpen, licenseId]);
+
+  useEffect(() => {
+    if (!isOpen || !licenseId) return;
+    let cancelled = false;
+    (async () => {
+      const result = await platform.listRateTypes(licenseId, false);
+      if (!result.success || cancelled) return;
+      const active = orderActiveRateTypes(result.rows);
+      setRateTypes(active);
+      const values: Record<string, string> = {};
+      if (editProduct) {
+        const rateResult = await platform.listProductRates(
+          licenseId,
+          editProduct.id,
+        );
+        if (cancelled) return;
+        if (rateResult.success) {
+          for (const row of rateResult.rows) {
+            values[row.rateTypeId] = String(row.amount);
+          }
+        }
+        const defaultRate = findDefaultRateType(active);
+        if (
+          defaultRate &&
+          values[defaultRate.id] === undefined &&
+          editProduct.salePrice != null
+        ) {
+          values[defaultRate.id] = String(editProduct.salePrice);
+        }
+      }
+      if (!cancelled) setRateValues(values);
+    })().catch((error) => {
+      if (!cancelled) console.error("selling rates load failed", error);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, licenseId, editProduct]);
 
   // ── Sync prop categories ────────────────────────────────────────────────────
 
@@ -887,6 +934,7 @@ export default function ProductFormPanel({
     setHsn("");
     setCostPrice("");
     setSalePrice("");
+    setRateValues({});
     setBarcodeEntries([]);
     setCustomBarcodeInput("");
     setBarcodeError(null);
@@ -988,7 +1036,18 @@ export default function ProductFormPanel({
       }
 
       const parsedCostPrice = costPrice ? parseFloat(costPrice) : 0;
-      const parsedSalePrice = salePrice ? parseFloat(salePrice) : null;
+      const parsedRates: RateValueInput[] = rateTypes.map((rateType) => {
+        const raw = rateValues[rateType.id];
+        if (raw == null || raw.trim() === "") {
+          return { rateTypeId: rateType.id, amount: null };
+        }
+        const amount = Number(raw);
+        if (!Number.isFinite(amount) || amount < 0) {
+          throw new Error(`Invalid ${rateType.name} selling rate`);
+        }
+        return { rateTypeId: rateType.id, amount };
+      });
+      const parsedSalePrice = compatibilitySalePrice(rateTypes, parsedRates);
       if (Number.isNaN(parsedCostPrice) || parsedCostPrice < 0)
         throw new Error("Invalid cost price");
       if (
@@ -1044,6 +1103,7 @@ export default function ProductFormPanel({
         salePrice: parsedSalePrice,
         imagePath, // ← R2 URL (or null)
         image: null, // ← base64 no longer used
+        rates: parsedRates,
       };
 
       let productId = "";
@@ -1061,6 +1121,17 @@ export default function ProductFormPanel({
       }
 
       if (!productId) throw new Error("Product id missing after save");
+
+      const rateResult = await platform.saveProductRates({
+        licenseId,
+        productId,
+        rates: parsedRates,
+      });
+      if (!rateResult.success) {
+        throw new Error(
+          rateResult.error || "Product saved but selling rates failed",
+        );
+      }
 
       for (const entry of barcodeEnabled ? barcodeEntries : []) {
         const value = entry.barcode.trim();
@@ -1220,6 +1291,14 @@ export default function ProductFormPanel({
           category: resolvedCategory.category,
           subcategory: resolvedCategory.subcategory,
         });
+        const defaultRate = findDefaultRateType(rateTypes);
+        const bulkRates: RateValueInput[] = rateTypes.map((rateType) => ({
+          rateTypeId: rateType.id,
+          amount:
+            rateType.id === defaultRate?.id && r.salePrice != null
+              ? r.salePrice
+              : null,
+        }));
 
         const productData: ProductInput = {
           licenseId,
@@ -1238,11 +1317,25 @@ export default function ProductFormPanel({
           hsn: r.hsn?.trim() || null,
           costPrice: r.costPrice,
           salePrice: r.salePrice ?? null,
+          rates: bulkRates,
         };
 
         const result = await platform.createProduct(productData);
         if (!result?.success) {
           throw new Error(result?.error || "Create failed");
+        }
+        if (!result.productId) {
+          throw new Error("Product was created without an id");
+        }
+        const rateResult = await platform.saveProductRates({
+          licenseId,
+          productId: result.productId,
+          rates: bulkRates,
+        });
+        if (!rateResult.success) {
+          throw new Error(
+            rateResult.error || "Product created, but selling rates failed",
+          );
         }
 
         updated[i] = {
@@ -1693,7 +1786,7 @@ export default function ProductFormPanel({
           </div>
 
           {/* ── Compact Row: Short Code + Unit + Tax ── */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className={labelClass}>Short Code</label>
               <input
@@ -1774,25 +1867,77 @@ export default function ProductFormPanel({
               </div>
             </div>
 
-            <div>
-              <label className={labelClass}>Sale Price</label>
-              <div className="relative">
-                <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-slate-400">
-                  ₹
-                </span>
-                <input
-                  ref={saleRef}
-                  type="number"
-                  value={salePrice}
-                  onChange={(e) => setSalePrice(e.target.value)}
-                  onKeyDown={(e) => handleKeyDown(e, IDX.SALE)}
-                  min="0"
-                  step="1"
-                  placeholder="0.00"
-                  className={`${fieldClass} pl-7`}
-                />
+          </div>
+
+          <div className="rounded-[14px] border border-sky-200 bg-sky-50/40 p-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div>
+                <h3 className="text-xs font-semibold text-slate-800">
+                  Selling Rates
+                </h3>
+                <p className="text-[10px] text-slate-500">
+                  Blank rates remain unconfigured. Enter zero to save zero.
+                </p>
               </div>
+              {findDefaultRateType(rateTypes) && (
+                <span className="rounded-full bg-sky-100 px-2 py-1 text-[10px] font-semibold text-sky-700">
+                  Default: {findDefaultRateType(rateTypes)?.name}
+                </span>
+              )}
             </div>
+            {rateTypes.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-slate-200 bg-white px-3 py-3 text-xs text-slate-500">
+                Loading selling rates…
+              </div>
+            ) : (
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {rateTypes.map((rateType, index) => (
+                  <label
+                    key={rateType.id}
+                    className="text-[11px] font-medium text-slate-600"
+                  >
+                    <span className="flex items-center gap-1">
+                      {rateType.name}
+                      <code className="text-[9px] text-slate-400">
+                        {rateType.code}
+                      </code>
+                      {rateType.isDefault && (
+                        <span className="rounded bg-sky-100 px-1 text-[9px] text-sky-700">
+                          Default
+                        </span>
+                      )}
+                    </span>
+                    <div className="relative mt-1">
+                      <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-slate-400">
+                        ₹
+                      </span>
+                      <input
+                        ref={rateType.isDefault ? saleRef : undefined}
+                        type="number"
+                        value={rateValues[rateType.id] ?? ""}
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          setRateValues((current) => ({
+                            ...current,
+                            [rateType.id]: value,
+                          }));
+                          if (rateType.isDefault) setSalePrice(value);
+                        }}
+                        onKeyDown={(event) => {
+                          if (index === rateTypes.length - 1) {
+                            handleKeyDown(event, IDX.SALE);
+                          }
+                        }}
+                        min="0"
+                        step="0.01"
+                        placeholder="Not configured"
+                        className={`${fieldClass} pl-7`}
+                      />
+                    </div>
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* ── Row 8: Barcodes ── */}
