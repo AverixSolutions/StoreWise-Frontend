@@ -5,6 +5,14 @@ import { useRouter } from "next/navigation";
 import PurchaseNavigation from "@/components/purchase/PurchaseNavigation";
 import BillDetailsSection from "@/components/purchase/BillDetailsSection";
 import ItemsTableSection from "@/components/purchase/ItemsTableSection";
+import { focusCell } from "@/components/purchase/keyboardGrid";
+import PurchaseEntrySettingsModal from "@/components/purchase/PurchaseEntrySettingsModal";
+import {
+  DEFAULT_PURCHASE_UI_SETTINGS,
+  loadPurchaseUiSettings,
+  savePurchaseUiSettings,
+  type PurchaseUiSettings,
+} from "@/components/purchase/purchaseUiSettings";
 import SupplierFormModal from "@/components/suppliers/SupplierFormModal";
 import HoldsModal from "@/components/purchase/HoldsModal";
 import PurchaseReportsModal from "@/components/purchase/PurchaseReportsModal";
@@ -119,6 +127,43 @@ function makeSnapshot(header: HeaderForm, rows: ItemRow[]) {
   });
 }
 
+function queuePurchaseFocus(resolveTarget: () => HTMLElement | null) {
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
+      const target = resolveTarget();
+      if (!target) return;
+
+      target.scrollIntoView({
+        behavior: "auto",
+        block: "nearest",
+        inline: "nearest",
+      });
+      target.focus({ preventScroll: true });
+
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement
+      ) {
+        target.select();
+      }
+    });
+  });
+}
+
+function visiblePurchaseHeaderFields(root: HTMLElement) {
+  return Array.from(
+    root.querySelectorAll<HTMLElement>("[data-purchase-header-field]"),
+  ).filter((element) => {
+    if (element.hasAttribute("disabled")) return false;
+    const style = window.getComputedStyle(element);
+    return (
+      style.display !== "none" &&
+      style.visibility !== "hidden" &&
+      element.getClientRects().length > 0
+    );
+  });
+}
+
 function isNumericBarcode(value?: string | null) {
   return !!value && /^\d+$/.test(String(value).trim());
 }
@@ -204,6 +249,9 @@ export default function PurchasePage() {
 
   const [rows, setRows] = useState<ItemRow[]>([createEmptyRow(1)]);
   const [isDirty, setIsDirty] = useState(false);
+  const rowsRef = useRef(rows);
+  const headerRef = useRef(header);
+  const editingPurchaseIdRef = useRef(editingPurchaseId);
 
   const [showHolds, setShowHolds] = useState(false);
   const [resumedHoldId, setResumedHoldId] = useState<string | null>(null);
@@ -222,6 +270,10 @@ export default function PurchasePage() {
   const [showBarcodePrint, setShowBarcodePrint] = useState(false);
   const [billDetailsOpen, setBillDetailsOpen] = useState(true);
   const [isMobileSheetOpen, setIsMobileSheetOpen] = useState(false);
+  const billDetailsOpenRef = useRef(billDetailsOpen);
+  const [showPurchaseSettings, setShowPurchaseSettings] = useState(false);
+  const [purchaseUiSettings, setPurchaseUiSettings] =
+    useState<PurchaseUiSettings>(DEFAULT_PURCHASE_UI_SETTINGS);
 
   const [transactionTypes, setTransactionTypes] = useState<
     Array<{ id: string; name: string; isDefault: number }>
@@ -239,6 +291,13 @@ export default function PurchasePage() {
   const [batchConfirmOpen, setBatchConfirmOpen] = useState(false);
   const barcodeEnabled = canUseBarcode();
 
+  useEffect(() => {
+    rowsRef.current = rows;
+    headerRef.current = header;
+    editingPurchaseIdRef.current = editingPurchaseId;
+    billDetailsOpenRef.current = billDetailsOpen;
+  });
+
   // Initialize from localStorage
   useEffect(() => {
     setIsClient(true);
@@ -247,6 +306,7 @@ export default function PurchasePage() {
       setLicenseId(localStorage.getItem("licenseId") || "demo-license");
       setUserId(localStorage.getItem("userName") || "admin");
       setShopName(localStorage.getItem("shopName") || "My Shop");
+      setPurchaseUiSettings(loadPurchaseUiSettings());
     }
   }, []);
 
@@ -286,12 +346,13 @@ export default function PurchasePage() {
   }, []);
 
   async function reloadProductsAndMasters() {
-    const [productsResult, categoriesResult, brandsResult, rateTypeResult] = await Promise.all([
-      platform.getProducts(licenseId, { page: 1, pageSize: 1000 }),
-      platform.listCategories(licenseId),
-      platform.listBrands(licenseId),
-      platform.listRateTypes(licenseId, false),
-    ]);
+    const [productsResult, categoriesResult, brandsResult, rateTypeResult] =
+      await Promise.all([
+        platform.getProducts(licenseId, { page: 1, pageSize: 1000 }),
+        platform.listCategories(licenseId),
+        platform.listBrands(licenseId),
+        platform.listRateTypes(licenseId, false),
+      ]);
 
     const nextProducts = productsResult.products as Product[];
     setProducts(nextProducts);
@@ -1319,6 +1380,11 @@ export default function PurchasePage() {
     }
   };
 
+  const handleSaveRef = useRef(handleSave);
+  useEffect(() => {
+    handleSaveRef.current = handleSave;
+  });
+
   const handleCancel = () => {
     if (!isDirty) {
       resetAll();
@@ -1327,6 +1393,13 @@ export default function PurchasePage() {
 
     setCancelConfirmOpen(true);
   };
+
+  const handleCancelRef = useRef(handleCancel);
+  const handleHoldRef = useRef(handleHold);
+  useEffect(() => {
+    handleCancelRef.current = handleCancel;
+    handleHoldRef.current = handleHold;
+  });
 
   useEffect(() => {
     const snap = makeSnapshot(header, rows);
@@ -1370,13 +1443,54 @@ export default function PurchasePage() {
     setIsDirty(false);
   }
 
-  function openBillDetailsAndFocus() {
+  const focusBillDetails = useCallback(() => {
     setBillDetailsOpen(true);
-    setTimeout(() => {
-      const el = document.getElementById("bill-details-billno");
-      if (el) el.focus();
-    }, 50);
-  }
+    queuePurchaseFocus(() => document.getElementById("bill-details-billno"));
+  }, []);
+
+  const focusLastBillDetail = useCallback(() => {
+    setBillDetailsOpen(true);
+    queuePurchaseFocus(() => {
+      const billNo = document.getElementById("bill-details-billno");
+      const root = billNo?.closest<HTMLElement>("section");
+      if (!root) return billNo;
+
+      const fields = visiblePurchaseHeaderFields(root);
+      return fields.at(-1) ?? billNo;
+    });
+  }, []);
+
+  const focusItemEntry = useCallback(() => {
+    const currentRows = rowsRef.current;
+    let rowIndex = currentRows.findIndex((row) => !row.productId);
+
+    if (rowIndex < 0) {
+      rowIndex = currentRows.length;
+      const nextRows = [...currentRows, createEmptyRow(currentRows.length + 1)];
+      rowsRef.current = nextRows;
+      setRows(nextRows);
+    }
+
+    const targetRowIndex = rowIndex;
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        focusCell(targetRowIndex, "product");
+      });
+    });
+  }, []);
+
+  const requestPrintCurrentPurchase = useCallback(() => {
+    const purchaseId = editingPurchaseIdRef.current;
+
+    if (!purchaseId) {
+      setValidationMsgs(["Save the purchase before printing."]);
+      setValidationOpen(true);
+      return;
+    }
+
+    setPendingPrintId(purchaseId);
+    setPrintConfirmOpen(true);
+  }, []);
 
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
@@ -1388,32 +1502,114 @@ export default function PurchasePage() {
     return () => window.removeEventListener("beforeunload", handler);
   }, [isDirty]);
 
-  // Ctrl/⌘+S → open bill details if panel is closed, then save
-  // Ctrl+\   → toggle bill details panel
+  const hasBlockingOverlay =
+    showPurchaseSettings ||
+    showSupplierModal ||
+    showProductModal ||
+    showHolds ||
+    showReports ||
+    showTitlePrompt ||
+    batchConfirmOpen ||
+    Boolean(batchPicker) ||
+    printConfirmOpen ||
+    cancelConfirmOpen ||
+    leaveOpen ||
+    validationOpen ||
+    showBarcodePrint ||
+    isMobileSheetOpen;
+
+  // Purchase keyboard map:
+  // F3 Item | F4 Bill | F6 Reports | F7 Settings | F8 Holds | F9 Hold
+  // Ctrl/Cmd+S Save | Ctrl/Cmd+P Print | Ctrl/Cmd+N New/Clear
+  // Ctrl/Cmd+\ Toggle Bill Details | Ctrl/Cmd+B Back (navigation component)
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      // Toggle panel
-      if ((e.ctrlKey || e.metaKey) && e.key === "\\") {
-        e.preventDefault();
-        setBillDetailsOpen((v) => !v);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.repeat || hasBlockingOverlay) return;
+      if (event.altKey) return;
+
+      const modifier = event.ctrlKey || event.metaKey;
+      const key = event.key.toLowerCase();
+
+      if (modifier && key === "\\") {
+        event.preventDefault();
+        setBillDetailsOpen((current) => !current);
         return;
       }
-      // Save — auto-open panel if required fields missing
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
-        e.preventDefault();
-        const missingBillNo = !header.billNo?.trim();
+
+      if (modifier && key === "s") {
+        event.preventDefault();
+        const currentHeader = headerRef.current;
+        const missingBillNo = !currentHeader.billNo?.trim();
         const missingSupplier =
-          header.purchaseType === "CREDIT" && !header.supplier;
-        if (!billDetailsOpen && (missingBillNo || missingSupplier)) {
-          openBillDetailsAndFocus();
+          currentHeader.purchaseType === "CREDIT" && !currentHeader.supplier;
+
+        if (!billDetailsOpenRef.current && (missingBillNo || missingSupplier)) {
+          focusBillDetails();
           return;
         }
-        handleSave();
+
+        void handleSaveRef.current();
+        return;
+      }
+
+      if (modifier && key === "p") {
+        event.preventDefault();
+        requestPrintCurrentPurchase();
+        return;
+      }
+
+      if (modifier && key === "n") {
+        event.preventDefault();
+        handleCancelRef.current();
+        return;
+      }
+
+      if (modifier) return;
+
+      if (event.key === "F3") {
+        event.preventDefault();
+        focusItemEntry();
+        return;
+      }
+
+      if (event.key === "F4") {
+        event.preventDefault();
+        focusBillDetails();
+        return;
+      }
+
+      if (event.key === "F6") {
+        event.preventDefault();
+        setShowReports(true);
+        return;
+      }
+
+      if (event.key === "F7") {
+        event.preventDefault();
+        setShowPurchaseSettings(true);
+        return;
+      }
+
+      if (event.key === "F8") {
+        event.preventDefault();
+        if (!editingPurchaseIdRef.current) setShowHolds(true);
+        return;
+      }
+
+      if (event.key === "F9") {
+        event.preventDefault();
+        if (!editingPurchaseIdRef.current) handleHoldRef.current();
       }
     };
+
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [header, rows, billDetailsOpen]);
+  }, [
+    focusBillDetails,
+    focusItemEntry,
+    hasBlockingOverlay,
+    requestPrintCurrentPurchase,
+  ]);
 
   function updateRow(index: number, patch: Partial<ItemRow>) {
     setRows((prev) =>
@@ -1435,7 +1631,11 @@ export default function PurchasePage() {
 
   return (
     <div className="flex h-screen flex-col bg-gray-50">
-      <PurchaseNavigation onNavigate={tryNavigate} title="Purchase" />
+      <PurchaseNavigation
+        onNavigate={tryNavigate}
+        title="Purchase"
+        keyboardEnabled={!hasBlockingOverlay}
+      />
 
       <div className="flex-1 min-h-0 overflow-hidden p-0">
         {editingPurchaseId && (
@@ -1444,25 +1644,14 @@ export default function PurchasePage() {
 
             <button
               type="button"
-              onClick={async () => {
-                try {
-                  const res = await printPurchaseBill(editingPurchaseId, {
-                    preview: true,
-                  });
-                  if (!res?.success) {
-                    setValidationMsgs([res?.error || "Print failed"]);
-                    setValidationOpen(true);
-                  }
-                } catch (e: any) {
-                  setValidationMsgs([
-                    "Print failed: " + String(e?.message || e),
-                  ]);
-                  setValidationOpen(true);
-                }
-              }}
-              className="px-3 py-1.5 rounded-md bg-[#1e3a5f] text-white text-sm hover:bg-[#16304f] transition-colors"
+              onClick={requestPrintCurrentPurchase}
+              title="Print Bill (Ctrl+P)"
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md bg-[#1e3a5f] text-white text-sm hover:bg-[#16304f] transition-colors"
             >
-              Print Bill
+              <span>Print Bill</span>
+              <kbd className="ml-1 rounded border border-white/15 bg-white/10 px-1 py-0.5 font-mono text-[8px] text-white/65">
+                Ctrl+P
+              </kbd>
             </button>
 
             <BarcodePrintCenterButton
@@ -1480,10 +1669,14 @@ export default function PurchasePage() {
 
             <button
               type="button"
-              onClick={() => resetAll()}
-              className="px-3 py-1.5 rounded-md border border-slate-200 bg-white text-sm text-slate-600 hover:bg-slate-50 transition-colors"
+              onClick={handleCancel}
+              title="New Bill (Ctrl+N)"
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md border border-slate-200 bg-white text-sm text-slate-600 hover:bg-slate-50 transition-colors"
             >
-              New Bill
+              <span>New Bill</span>
+              <kbd className="rounded border border-slate-200 bg-slate-100 px-1 py-0.5 font-mono text-[8px] text-slate-500">
+                Ctrl+N
+              </kbd>
             </button>
           </div>
         )}
@@ -1521,6 +1714,8 @@ export default function PurchasePage() {
               isOpen={billDetailsOpen}
               onToggle={() => setBillDetailsOpen((v) => !v)}
               transactionTypes={transactionTypes}
+              uiSettings={purchaseUiSettings}
+              onFocusItems={focusItemEntry}
             />
           </div>
 
@@ -1529,6 +1724,7 @@ export default function PurchasePage() {
               mode="PURCHASE"
               rows={rows}
               products={products}
+              rateTypes={rateTypes}
               onAddProduct={handleAddInlineProduct}
               onSelectProduct={handleSelectProduct}
               onUpdateRow={updateRow}
@@ -1540,6 +1736,13 @@ export default function PurchasePage() {
               onHold={handleHold}
               onShowHolds={handleShowHolds}
               onShowReports={() => setShowReports(true)}
+              onOpenSettings={() => setShowPurchaseSettings(true)}
+              onFocusItems={focusItemEntry}
+              onFocusBillDetails={focusBillDetails}
+              onFocusPreviousSection={focusLastBillDetail}
+              onPrintBill={requestPrintCurrentPurchase}
+              canPrint={Boolean(editingPurchaseId)}
+              uiSettings={purchaseUiSettings}
               showHoldControls={!editingPurchaseId}
               onRequestBatchSelect={handleRequestBatchSelect}
               onBarcodeCommit={handleBarcodeCommit}
@@ -1608,10 +1811,23 @@ export default function PurchasePage() {
               isOpen={true}
               onToggle={() => {}}
               transactionTypes={transactionTypes}
+              uiSettings={purchaseUiSettings}
+              onFocusItems={focusItemEntry}
             />
           </div>
         </div>
       )}
+
+      <PurchaseEntrySettingsModal
+        open={showPurchaseSettings}
+        settings={purchaseUiSettings}
+        onClose={() => setShowPurchaseSettings(false)}
+        onSave={(nextSettings) => {
+          setPurchaseUiSettings(nextSettings);
+          savePurchaseUiSettings(nextSettings);
+          setShowPurchaseSettings(false);
+        }}
+      />
 
       {/* Supplier modal */}
       {showSupplierModal && (
@@ -1960,7 +2176,7 @@ export default function PurchasePage() {
       <ConfirmModal
         isOpen={printConfirmOpen}
         title="Print bill?"
-        message="Purchase saved. Open print preview now?"
+        message="Open the print preview for this purchase?"
         confirmText="Print"
         cancelText="Skip"
         onConfirm={handlePrintConfirm}

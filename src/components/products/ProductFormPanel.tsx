@@ -100,15 +100,13 @@ function buildPickerOptions(categories: CategoryRecord[]): PickerOption[] {
 
   const standalone = categories
     .filter((c) => !c.parentId && !childIds.has(c.id))
-    .map(
-      (c): PickerOption => ({
-        id: c.id,
-        name: c.name,
-        parentId: null,
-        parentName: null,
-        isSubcategory: false,
-      }),
-    )
+    .map((c): PickerOption => ({
+      id: c.id,
+      name: c.name,
+      parentId: null,
+      parentName: null,
+      isSubcategory: false,
+    }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
   const subcats = categories
@@ -307,6 +305,7 @@ export default function ProductFormPanel({
   const hsnRef = useRef<HTMLInputElement>(null);
   const costRef = useRef<HTMLInputElement>(null);
   const saleRef = useRef<HTMLInputElement>(null);
+  const rateInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   // ── Keyboard navigation ───────────────────────────────────────────────────
 
@@ -409,11 +408,76 @@ export default function ProductFormPanel({
     }
   }
 
+  function focusSellingRate(index: number) {
+    window.setTimeout(() => {
+      const rateType = rateTypes[index];
+      const target = rateType
+        ? (rateInputRefs.current[rateType.id] ?? null)
+        : null;
+
+      if (!target) return;
+
+      target.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+        inline: "nearest",
+      });
+
+      window.setTimeout(() => {
+        target.focus({ preventScroll: true });
+        target.select();
+      }, 80);
+    }, 0);
+  }
+
+  function handleSellingRateKeyDown(
+    event: React.KeyboardEvent<HTMLInputElement>,
+    index: number,
+  ) {
+    if (event.key !== "Enter") return;
+
+    event.preventDefault();
+
+    if (event.shiftKey) {
+      if (index > 0) {
+        focusSellingRate(index - 1);
+      } else {
+        focusField(IDX.COST);
+      }
+      return;
+    }
+
+    if (index < rateTypes.length - 1) {
+      focusSellingRate(index + 1);
+      return;
+    }
+
+    const form = document.getElementById(formId) as HTMLFormElement | null;
+    form?.requestSubmit();
+  }
   // ── Ctrl/Cmd + S shortcut ─────────────────────────────────────────────────
 
   useEffect(() => {
     if (!isOpen || activeTab !== "single") return;
     function handleGlobalKeyDown(e: KeyboardEvent) {
+      if (e.key === "F2") {
+        e.preventDefault();
+        const target = productNameRef.current;
+        if (!target) return;
+
+        target.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+          inline: "nearest",
+        });
+
+        window.requestAnimationFrame(() => {
+          target.focus({ preventScroll: true });
+          target.select();
+        });
+        return;
+      }
+
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();
         const form = document.getElementById(formId) as HTMLFormElement | null;
@@ -1426,6 +1490,20 @@ export default function ProductFormPanel({
             <span className="hidden sm:inline-flex items-center rounded-lg bg-white/10 border border-white/15 px-2.5 py-1 font-mono text-[11px] font-semibold text-white/70 tracking-wider">
               #{code}
             </span>
+            <span
+              title="Focus Product Name (F2) | Save Item (Ctrl/Cmd + S)"
+              className="hidden lg:inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/[0.07] px-2 py-1 text-[9px] font-medium text-white/65"
+            >
+              <kbd className="rounded bg-white/10 px-1 py-0.5 font-mono text-[8px] font-semibold text-white/80">
+                F2
+              </kbd>
+              Name
+              <span className="h-3 w-px bg-white/15" />
+              <kbd className="rounded bg-white/10 px-1 py-0.5 font-mono text-[8px] font-semibold text-white/80">
+                Ctrl+S
+              </kbd>
+              Save
+            </span>
           </div>
           <button
             type="button"
@@ -1639,7 +1717,15 @@ export default function ProductFormPanel({
             </div>
 
             <div>
-              <label className={labelClass}>Product Name</label>
+              <label className={labelClass}>
+                Product Name
+                <kbd
+                  title="Focus Product Name (F2)"
+                  className="ml-1 rounded border border-slate-200 bg-slate-100 px-1 py-0.5 font-mono text-[8px] font-semibold normal-case tracking-normal text-slate-500"
+                >
+                  F2
+                </kbd>
+              </label>
               <input
                 ref={productNameRef}
                 type="text"
@@ -1863,7 +1949,6 @@ export default function ProductFormPanel({
                 />
               </div>
             </div>
-
           </div>
 
           <div className="rounded-[14px] border border-sky-200 bg-sky-50/40 p-3">
@@ -1873,7 +1958,8 @@ export default function ProductFormPanel({
                   Selling Rates
                 </h3>
                 <p className="text-[10px] text-slate-500">
-                  Blank rates remain unconfigured. Enter zero to save zero.
+                  Blank rates remain unconfigured. Enter moves through rates;
+                  Ctrl/Cmd + S saves.
                 </p>
               </div>
               {findDefaultRateType(rateTypes) && (
@@ -1909,7 +1995,12 @@ export default function ProductFormPanel({
                         ₹
                       </span>
                       <input
-                        ref={rateType.isDefault ? saleRef : undefined}
+                        ref={(node) => {
+                          rateInputRefs.current[rateType.id] = node;
+                          if (rateType.isDefault) {
+                            saleRef.current = node;
+                          }
+                        }}
                         type="number"
                         value={rateValues[rateType.id] ?? ""}
                         onChange={(event) => {
@@ -1919,11 +2010,9 @@ export default function ProductFormPanel({
                             [rateType.id]: value,
                           }));
                         }}
-                        onKeyDown={(event) => {
-                          if (index === rateTypes.length - 1) {
-                            handleKeyDown(event, IDX.SALE);
-                          }
-                        }}
+                        onKeyDown={(event) =>
+                          handleSellingRateKeyDown(event, index)
+                        }
                         min="0"
                         step="0.01"
                         placeholder="Not configured"
@@ -2336,9 +2425,15 @@ export default function ProductFormPanel({
               tabIndex={-1}
               form={formId}
               onClick={() => setSaveMode("close")}
-              className="flex-1 rounded-xl bg-slate-900 py-2 text-xs font-semibold text-white shadow-[0_4px_12px_rgba(15,23,42,0.18)] transition hover:bg-slate-800 active:scale-[0.98]"
+              className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-slate-900 py-2 text-xs font-semibold text-white shadow-[0_4px_12px_rgba(15,23,42,0.18)] transition hover:bg-slate-800 active:scale-[0.98]"
             >
-              {editProduct ? "Update Item" : "Save Item"}
+              <span>{editProduct ? "Update Item" : "Save Item"}</span>
+              <kbd
+                title="Save Item (Ctrl/Cmd + S)"
+                className="hidden rounded-md border border-white/15 bg-white/10 px-1.5 py-0.5 font-mono text-[8px] font-semibold text-white/65 sm:inline-flex"
+              >
+                Ctrl+S
+              </kbd>
             </button>
           </div>
         </div>

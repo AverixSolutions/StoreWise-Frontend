@@ -14,10 +14,15 @@ import {
   ChevronRight,
   Layers,
 } from "lucide-react";
+import { useMemo, useRef } from "react";
 import { HeaderForm } from "./types";
 import SearchableDropdown from "@/components/ui/SearchableDropdown";
 import Dropdown from "@/components/ui/Dropdown";
 import { toLocalDate, toLocalTime, fromDateTime } from "./utils";
+import {
+  FULL_PURCHASE_UI_SETTINGS,
+  type PurchaseUiSettings,
+} from "./purchaseUiSettings";
 
 interface BillDetailsSectionProps {
   header: HeaderForm;
@@ -34,6 +39,8 @@ interface BillDetailsSectionProps {
   isOpen: boolean;
   onToggle: () => void;
   transactionTypes: Array<{ id: string; name: string; isDefault: number }>;
+  uiSettings?: PurchaseUiSettings;
+  onFocusItems?: () => void;
 }
 
 const labelCls =
@@ -52,6 +59,19 @@ const inputWithIcon = inputBase + " pl-6";
 // Shared height token used for buttons/dropdowns that must match inputs
 const H = "h-7";
 
+type HeaderField =
+  | "purchaseType"
+  | "transactionType"
+  | "billNo"
+  | "supplier"
+  | "purchaseDate"
+  | "purchaseTime"
+  | "entryDate"
+  | "department"
+  | "debitAccount"
+  | "natureOfEntry"
+  | "headerDiscount";
+
 export default function BillDetailsSection({
   header,
   setHeader,
@@ -66,7 +86,116 @@ export default function BillDetailsSection({
   isOpen,
   onToggle,
   transactionTypes,
+  isEditing = false,
+  uiSettings = FULL_PURCHASE_UI_SETTINGS,
+  onFocusItems,
 }: BillDetailsSectionProps) {
+  const sectionRef = useRef<HTMLElement>(null);
+
+  const headerFields = useMemo<HeaderField[]>(() => {
+    const fields: HeaderField[] = ["purchaseType"];
+
+    if (uiSettings.showTransactionType && transactionTypes.length > 0) {
+      fields.push("transactionType");
+    }
+
+    fields.push("billNo", "supplier", "purchaseDate");
+
+    if (uiSettings.showPurchaseTime) fields.push("purchaseTime");
+    if (uiSettings.showEntryDate) fields.push("entryDate");
+    if (uiSettings.showDepartment) fields.push("department");
+    if (uiSettings.showDebitAccount) fields.push("debitAccount");
+    if (uiSettings.showNatureOfEntry) fields.push("natureOfEntry");
+    if (uiSettings.showHeaderDiscount) fields.push("headerDiscount");
+
+    return fields;
+  }, [transactionTypes.length, uiSettings]);
+
+  function focusHeaderField(field: HeaderField) {
+    window.setTimeout(() => {
+      const root = sectionRef.current;
+      if (!root) return;
+
+      let target: HTMLElement | null = null;
+
+      if (field === "purchaseType") {
+        target = root.querySelector<HTMLElement>(
+          '[data-purchase-header-field="purchaseType"][aria-pressed="true"]',
+        );
+      } else if (field === "transactionType") {
+        target = root.querySelector<HTMLElement>(
+          '[data-purchase-header-field-wrapper="transactionType"] button',
+        );
+        target?.setAttribute("data-purchase-header-field", "transactionType");
+      } else {
+        target = root.querySelector<HTMLElement>(
+          `[data-purchase-header-field="${field}"]`,
+        );
+      }
+
+      if (!target) return;
+
+      target.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+        inline: "nearest",
+      });
+
+      window.requestAnimationFrame(() => {
+        target?.focus({ preventScroll: true });
+        if (target instanceof HTMLInputElement) target.select();
+      });
+    }, 0);
+  }
+
+  function moveHeaderFocus(field: HeaderField, direction: 1 | -1) {
+    const index = headerFields.indexOf(field);
+    if (index < 0) return;
+
+    const nextIndex = index + direction;
+
+    if (nextIndex < 0) {
+      focusHeaderField(headerFields[0]);
+      return;
+    }
+
+    if (nextIndex >= headerFields.length) {
+      onFocusItems?.();
+      return;
+    }
+
+    focusHeaderField(headerFields[nextIndex]);
+  }
+
+  function handleHeaderKeyDownCapture(event: React.KeyboardEvent<HTMLElement>) {
+    if (
+      event.key !== "Enter" &&
+      event.key !== "NumpadEnter" &&
+      event.key !== "Tab"
+    ) {
+      return;
+    }
+
+    const source = event.target as HTMLElement;
+    const target = source.closest<HTMLElement>("[data-purchase-header-field]");
+    const wrapper = source.closest<HTMLElement>(
+      "[data-purchase-header-field-wrapper]",
+    );
+    const field = (target?.dataset.purchaseHeaderField ??
+      wrapper?.dataset.purchaseHeaderFieldWrapper) as HeaderField | undefined;
+    if (!field) return;
+
+    const isDropdownTrigger = Boolean(
+      source.closest<HTMLElement>('[aria-haspopup="listbox"]'),
+    );
+    if (isDropdownTrigger && event.key !== "Tab" && !event.shiftKey) {
+      return;
+    }
+
+    event.preventDefault();
+    moveHeaderFocus(field, event.shiftKey ? -1 : 1);
+  }
+
   // ── COLLAPSED STRIP ──────────────────────────────────────────
   if (!isOpen) {
     return (
@@ -97,6 +226,8 @@ export default function BillDetailsSection({
   // ── EXPANDED PANEL ───────────────────────────────────────────
   return (
     <section
+      ref={sectionRef}
+      onKeyDownCapture={handleHeaderKeyDownCapture}
       className="col-span-1 bg-white w-full md:max-w-[240px] lg:max-w-[300px] border-r border-slate-200
                  shadow-lg -mt-px overflow-y-auto no-scrollbar
                  h-full flex flex-col transition-all duration-200"
@@ -113,6 +244,12 @@ export default function BillDetailsSection({
               #{entryNo}
             </span>
           )}
+          <kbd
+            title="Focus Bill Details (F4)"
+            className="hidden rounded border border-white/15 bg-white/10 px-1.5 py-0.5 font-mono text-[8px] font-semibold text-white/55 lg:inline-flex"
+          >
+            F4
+          </kbd>
         </div>
         <button
           type="button"
@@ -137,6 +274,19 @@ export default function BillDetailsSection({
           >
             <button
               type="button"
+              data-purchase-header-field="purchaseType"
+              aria-pressed={header.purchaseType === "CASH"}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+                  event.preventDefault();
+                  const purchaseType =
+                    event.key === "ArrowRight" && header.supplier
+                      ? "CREDIT"
+                      : "CASH";
+                  setHeader((state) => ({ ...state, purchaseType }));
+                  focusHeaderField("purchaseType");
+                }
+              }}
               onClick={() => setHeader((s) => ({ ...s, purchaseType: "CASH" }))}
               className={
                 `flex-1 ${H} text-xs transition-colors cursor-pointer font-medium ` +
@@ -149,6 +299,17 @@ export default function BillDetailsSection({
             </button>
             <button
               type="button"
+              data-purchase-header-field="purchaseType"
+              aria-pressed={header.purchaseType === "CREDIT"}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+                  event.preventDefault();
+                  const purchaseType =
+                    event.key === "ArrowLeft" ? "CASH" : "CREDIT";
+                  setHeader((state) => ({ ...state, purchaseType }));
+                  focusHeaderField("purchaseType");
+                }
+              }}
               disabled={!header.supplier}
               title={
                 !header.supplier ? "Select a supplier to enable CREDIT" : ""
@@ -169,8 +330,8 @@ export default function BillDetailsSection({
         </div>
 
         {/* Transaction Type */}
-        {transactionTypes.length > 0 && (
-          <div>
+        {uiSettings.showTransactionType && transactionTypes.length > 0 && (
+          <div data-purchase-header-field-wrapper="transactionType">
             <label className={labelCls}>
               <Layers className="w-3 h-3" />
               Transaction Type
@@ -188,6 +349,8 @@ export default function BillDetailsSection({
                 })),
               ]}
               placeholder="-- None --"
+              onEnter={() => moveHeaderFocus("transactionType", 1)}
+              buttonClassName="purchase-header-transaction-type"
               className={`[&_button]:${H} [&_button]:text-xs [&_button]:rounded [&_button]:px-2 [&_button]:border-slate-300 [&_button]:py-0`}
             />
           </div>
@@ -207,6 +370,7 @@ export default function BillDetailsSection({
             }
             placeholder="Enter bill number"
             id="bill-details-billno"
+            data-purchase-header-field="billNo"
           />
         </div>
 
@@ -231,6 +395,10 @@ export default function BillDetailsSection({
                 inputClassName={`${H} text-xs`}
                 optionClassName="text-xs"
                 menuClassName="text-xs"
+                onEnter={(direction) => moveHeaderFocus("supplier", direction)}
+                buttonProps={{
+                  "data-purchase-header-field": "supplier",
+                }}
               />
             </div>
             <button
@@ -255,6 +423,7 @@ export default function BillDetailsSection({
             <input
               className={inputBase + " px-1.5"}
               type="date"
+              data-purchase-header-field="purchaseDate"
               value={toLocalDate(header.purchaseDate)}
               onChange={(e) => {
                 const d = e.target.value;
@@ -263,8 +432,13 @@ export default function BillDetailsSection({
               }}
             />
             <input
-              className={inputBase + " px-1 min-w-0"}
+              className={
+                inputBase +
+                " px-1 min-w-0" +
+                (uiSettings.showPurchaseTime ? "" : " hidden")
+              }
               type="time"
+              data-purchase-header-field="purchaseTime"
               value={toLocalTime(header.purchaseDate)}
               onChange={(e) => {
                 const t = e.target.value;
@@ -276,7 +450,7 @@ export default function BillDetailsSection({
         </div>
 
         {/* Entry Date */}
-        <div>
+        <div className={uiSettings.showEntryDate ? "" : "hidden"}>
           <label className={labelCls}>
             <CalendarClock className="w-3 h-3" />
             Entry Date
@@ -284,6 +458,7 @@ export default function BillDetailsSection({
           <input
             className={inputBase + " px-1.5"}
             type="date"
+            data-purchase-header-field="entryDate"
             value={toLocalDate(header.entryTime)}
             onChange={(e) => {
               const d = e.target.value;
@@ -294,14 +469,25 @@ export default function BillDetailsSection({
         </div>
 
         {/* Dept + Debit A/c */}
-        <div className="grid grid-cols-2 gap-1.5">
-          <div>
+        <div
+          className={`grid gap-1.5 ${
+            uiSettings.showDepartment && uiSettings.showDebitAccount
+              ? "grid-cols-2"
+              : "grid-cols-1"
+          } ${
+            !uiSettings.showDepartment && !uiSettings.showDebitAccount
+              ? "hidden"
+              : ""
+          }`}
+        >
+          <div className={uiSettings.showDepartment ? "" : "hidden"}>
             <label className={labelCls}>
               <Building2 className="w-3 h-3" />
               Department
             </label>
             <input
               className={inputBase}
+              data-purchase-header-field="department"
               value={header.department}
               onChange={(e) =>
                 setHeader((s) => ({ ...s, department: e.target.value }))
@@ -309,13 +495,14 @@ export default function BillDetailsSection({
               placeholder="Dept"
             />
           </div>
-          <div>
+          <div className={uiSettings.showDebitAccount ? "" : "hidden"}>
             <label className={labelCls}>
               <Landmark className="w-3 h-3" />
               Debit A/c
             </label>
             <input
               className={inputBase}
+              data-purchase-header-field="debitAccount"
               value={header.debitAccount}
               onChange={(e) =>
                 setHeader((s) => ({ ...s, debitAccount: e.target.value }))
@@ -326,13 +513,14 @@ export default function BillDetailsSection({
         </div>
 
         {/* Nature of Entry */}
-        <div>
+        <div className={uiSettings.showNatureOfEntry ? "" : "hidden"}>
           <label className={labelCls}>
             <FileText className="w-3 h-3" />
             Nature of Entry
           </label>
           <input
             className={inputBase}
+            data-purchase-header-field="natureOfEntry"
             value={header.natureOfEntry}
             onChange={(e) =>
               setHeader((s) => ({ ...s, natureOfEntry: e.target.value }))
@@ -342,7 +530,7 @@ export default function BillDetailsSection({
         </div>
 
         {/* Header Discount */}
-        <div>
+        <div className={uiSettings.showHeaderDiscount ? "" : "hidden"}>
           <label className={labelCls}>
             <Percent className="w-3 h-3" />
             Header Discount (₹)
@@ -354,6 +542,7 @@ export default function BillDetailsSection({
             <input
               className={inputWithIcon}
               type="number"
+              data-purchase-header-field="headerDiscount"
               value={header.discount}
               min={0}
               step={1}
@@ -421,14 +610,20 @@ export default function BillDetailsSection({
           }
         >
           <Receipt className="w-3.5 h-3.5" />
-          Save
+          <span>Save</span>
+          <kbd className="rounded border border-white/15 bg-white/10 px-1 py-0.5 font-mono text-[8px] text-white/65">
+            Ctrl+S
+          </kbd>
         </button>
         <button
           onClick={onCancel}
-          className="flex-1 h-8 bg-white border border-slate-300 px-3 rounded
+          className="flex-1 h-8 bg-white border border-slate-300 px-3 rounded inline-flex items-center justify-center gap-1
                      hover:bg-slate-50 transition-colors font-semibold text-slate-600 text-xs cursor-pointer"
         >
-          Cancel
+          <span>{isEditing ? "New Bill" : "Clear"}</span>
+          <kbd className="ml-1 rounded border border-slate-300 bg-slate-100 px-1 py-0.5 font-mono text-[8px] text-slate-500">
+            Ctrl+N
+          </kbd>
         </button>
       </div>
     </section>
