@@ -7,13 +7,20 @@ import {
   FileText,
   Receipt,
   Printer,
+  Settings2,
 } from "lucide-react";
 import { ItemRow, Product, TransactionMode } from "./types";
+import type { RateTypeRecord } from "@/platform/types";
 import ItemsTable from "./ItemsTable";
+import {
+  FULL_PURCHASE_UI_SETTINGS,
+  type PurchaseUiSettings,
+} from "./purchaseUiSettings";
 
 interface ItemsTableSectionProps {
   rows: ItemRow[];
   products: Product[];
+  rateTypes?: RateTypeRecord[];
   onAddProduct?: () => void;
   onSelectProduct: (rowIndex: number, productId: string) => void;
   onUpdateRow: (index: number, patch: Partial<ItemRow>) => void;
@@ -37,11 +44,17 @@ interface ItemsTableSectionProps {
   hasMissingFields?: boolean;
   barcodeEnabled?: boolean;
   mode?: TransactionMode;
+  uiSettings?: PurchaseUiSettings;
+  onOpenSettings?: () => void;
+  onFocusItems?: () => void;
+  onFocusBillDetails?: () => void;
+  onFocusPreviousSection?: () => void;
 }
 
 export default function ItemsTableSection({
   rows,
   products,
+  rateTypes = [],
   onAddProduct,
   onSelectProduct,
   onUpdateRow,
@@ -65,6 +78,11 @@ export default function ItemsTableSection({
   hasMissingFields = false,
   barcodeEnabled = true,
   mode = "PURCHASE",
+  uiSettings = FULL_PURCHASE_UI_SETTINGS,
+  onOpenSettings,
+  onFocusItems,
+  onFocusBillDetails,
+  onFocusPreviousSection,
 }: ItemsTableSectionProps) {
   const itemCount = rows.filter((r) => r.productId).length;
 
@@ -94,6 +112,44 @@ export default function ItemsTableSection({
           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-white/15 text-white/90 border border-white/20">
             {itemCount} items
           </span>
+
+          <div className="hidden items-center gap-1.5 lg:flex">
+            {onFocusItems && (
+              <button
+                type="button"
+                onClick={onFocusItems}
+                title="Focus item picker (F3)"
+                className="inline-flex items-center gap-1 rounded border border-white/15 bg-white/[0.07] px-1.5 py-0.5 text-[9px] text-white/65 hover:bg-white/15"
+              >
+                <kbd className="font-mono text-[8px] font-semibold text-white/80">
+                  F3
+                </kbd>
+                Item
+              </button>
+            )}
+            {onFocusBillDetails && (
+              <button
+                type="button"
+                onClick={onFocusBillDetails}
+                title="Focus Bill Details (F4)"
+                className="inline-flex items-center gap-1 rounded border border-white/15 bg-white/[0.07] px-1.5 py-0.5 text-[9px] text-white/65 hover:bg-white/15"
+              >
+                <kbd className="font-mono text-[8px] font-semibold text-white/80">
+                  F4
+                </kbd>
+                Bill
+              </button>
+            )}
+            <span
+              title="Toggle Bill Details panel (Ctrl+\)"
+              className="hidden items-center gap-1 rounded border border-white/15 bg-white/[0.07] px-1.5 py-0.5 text-[9px] text-white/60 xl:inline-flex"
+            >
+              <kbd className="font-mono text-[8px] font-semibold text-white/80">
+                Ctrl+\
+              </kbd>
+              Panel
+            </span>
+          </div>
         </div>
 
         {/* Change 1 — Responsive toolbar with wrapped buttons and hidden labels */}
@@ -101,20 +157,40 @@ export default function ItemsTableSection({
           {barcodeEnabled && printBarcodesSlot}
           {offersSlot}
 
+          {onOpenSettings && (
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              className="inline-flex h-7 items-center justify-center gap-1 rounded-md border border-white/20 bg-white/10 px-2 text-white/90 transition hover:bg-white/20"
+              title="Purchase Settings (F7)"
+              aria-label="Open purchase settings"
+            >
+              <Settings2 className="h-3.5 w-3.5" />
+              <kbd className="font-mono text-[8px] font-semibold text-white/65">
+                F7
+              </kbd>
+            </button>
+          )}
+
           <button
             onClick={onShowReports}
             className="px-2 sm:px-3 py-1.5 rounded-md bg-white/10 border border-white/20 text-white/90 hover:bg-white/20 transition-colors flex items-center gap-1.5 text-xs font-medium cursor-pointer"
-            title="View Reports"
+            title="View Reports (F6)"
           >
             <FileText className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Reports</span>
+            <kbd className="hidden font-mono text-[8px] text-white/55 xl:inline-flex">
+              F6
+            </kbd>
           </button>
 
           {onPrintBill && (
             <button
               onClick={onPrintBill}
               disabled={!canPrint}
-              title={canPrint ? "Print Bill" : "Save bill before printing"}
+              title={
+                canPrint ? "Print Bill (Ctrl+P)" : "Save bill before printing"
+              }
               className={`px-2 sm:px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5 text-xs font-medium ${
                 canPrint
                   ? "bg-white/10 border border-white/20 text-white/90 hover:bg-white/20 cursor-pointer"
@@ -123,6 +199,9 @@ export default function ItemsTableSection({
             >
               <Printer className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Print</span>
+              <kbd className="hidden font-mono text-[8px] opacity-60 xl:inline-flex">
+                Ctrl+P
+              </kbd>
             </button>
           )}
 
@@ -131,19 +210,25 @@ export default function ItemsTableSection({
               <button
                 onClick={onHold}
                 className="px-2 sm:px-3 py-1.5 rounded-md bg-amber-500/20 border border-amber-400/30 text-amber-200 hover:bg-amber-500/30 transition-colors flex items-center gap-1.5 text-xs font-medium cursor-pointer"
-                title="Hold (save draft)"
+                title="Hold current purchase (F9)"
               >
                 <PauseCircle className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">Hold</span>
+                <kbd className="hidden font-mono text-[8px] text-amber-100/60 xl:inline-flex">
+                  F9
+                </kbd>
               </button>
 
               <button
                 onClick={onShowHolds}
                 className="px-2 sm:px-3 py-1.5 rounded-md bg-white/10 border border-white/20 text-white/90 hover:bg-white/20 transition-colors flex items-center gap-1.5 text-xs font-medium cursor-pointer"
-                title="View Holds"
+                title="View Holds (F8)"
               >
                 <List className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">Holds</span>
+                <kbd className="hidden font-mono text-[8px] text-white/55 xl:inline-flex">
+                  F8
+                </kbd>
               </button>
             </>
           )}
@@ -179,6 +264,7 @@ export default function ItemsTableSection({
         <ItemsTable
           rows={rows}
           products={products}
+          rateTypes={rateTypes}
           onSelectProduct={onSelectProduct}
           onUpdateRow={onUpdateRow}
           onRemoveRow={onRemoveRow}
@@ -187,6 +273,8 @@ export default function ItemsTableSection({
           onBarcodeCommit={onBarcodeCommit}
           barcodeEnabled={barcodeEnabled}
           mode={mode}
+          uiSettings={uiSettings}
+          onFocusPreviousSection={onFocusPreviousSection}
         />
       </div>
 

@@ -1,17 +1,12 @@
 "use client";
 
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
-import {
+  ArrowLeft,
   Check,
   ClipboardPaste,
   Edit3,
   LoaderCircle,
-  MoreVertical,
   Plus,
   Power,
   Rows3,
@@ -62,7 +57,9 @@ const inputClass =
   "w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-cyan-400 focus:ring-4 focus:ring-cyan-400/10 disabled:bg-slate-100 disabled:text-slate-400";
 
 function singleRateErrors(draft: RateDraft, existing: RateTypeRecord[]) {
-  const errors: Partial<Record<"name" | "code" | "sortOrder" | "isActive", string>> = {};
+  const errors: Partial<
+    Record<"name" | "code" | "sortOrder" | "isActive", string>
+  > = {};
   const name = draft.name.trim();
   const code = draft.code.trim().toUpperCase();
   const sortOrder = Number(draft.sortOrder);
@@ -70,17 +67,20 @@ function singleRateErrors(draft: RateDraft, existing: RateTypeRecord[]) {
   if (!name) errors.name = "Rate name is required.";
   else if (
     otherRows.some(
-      (row) => normalizeCaseInsensitive(row.name) === normalizeCaseInsensitive(name),
+      (row) =>
+        normalizeCaseInsensitive(row.name) === normalizeCaseInsensitive(name),
     )
   ) {
     errors.name = "A rate with this name already exists.";
   }
   if (!code) errors.code = "Rate code is required.";
   else if (!RATE_CODE_PATTERN.test(code)) {
-    errors.code = "Use 1-30 uppercase letters, numbers, hyphens or underscores.";
+    errors.code =
+      "Use 1-30 uppercase letters, numbers, hyphens or underscores.";
   } else if (
     otherRows.some(
-      (row) => normalizeCaseInsensitive(row.code) === normalizeCaseInsensitive(code),
+      (row) =>
+        normalizeCaseInsensitive(row.code) === normalizeCaseInsensitive(code),
     )
   ) {
     errors.code = "A rate with this code already exists.";
@@ -147,7 +147,10 @@ function RateEditorModal({
             <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/50">
               Selling Rate Master
             </p>
-            <h3 id="rate-editor-title" className="mt-0.5 text-base font-semibold">
+            <h3
+              id="rate-editor-title"
+              className="mt-0.5 text-base font-semibold"
+            >
               {draft.id ? "Edit Selling Rate" : "Add Selling Rate"}
             </h3>
           </div>
@@ -186,7 +189,9 @@ function RateEditorModal({
               className={inputClass}
               placeholder="e.g. Wholesale Price"
             />
-            {errors.name && <p className="mt-1 text-xs text-rose-600">{errors.name}</p>}
+            {errors.name && (
+              <p className="mt-1 text-xs text-rose-600">{errors.name}</p>
+            )}
           </label>
 
           <label>
@@ -207,7 +212,9 @@ function RateEditorModal({
               className={`${inputClass} font-mono uppercase`}
               placeholder="WHOLESALE_PRICE"
             />
-            {errors.code && <p className="mt-1 text-xs text-rose-600">{errors.code}</p>}
+            {errors.code && (
+              <p className="mt-1 text-xs text-rose-600">{errors.code}</p>
+            )}
           </label>
 
           <label>
@@ -219,7 +226,9 @@ function RateEditorModal({
               min="0"
               step="1"
               value={draft.sortOrder}
-              onChange={(event) => onChange({ ...draft, sortOrder: event.target.value })}
+              onChange={(event) =>
+                onChange({ ...draft, sortOrder: event.target.value })
+              }
               aria-invalid={Boolean(errors.sortOrder)}
               className={inputClass}
             />
@@ -233,14 +242,22 @@ function RateEditorModal({
               type="checkbox"
               checked={draft.isActive}
               disabled={draft.isDefault}
-              onChange={(event) => onChange({ ...draft, isActive: event.target.checked })}
+              onChange={(event) =>
+                onChange({ ...draft, isActive: event.target.checked })
+              }
               className="mt-0.5 h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-400"
             />
             <span>
-              <span className="block text-sm font-semibold text-slate-700">Active</span>
-              <span className="block text-xs text-slate-500">Available for new transactions.</span>
+              <span className="block text-sm font-semibold text-slate-700">
+                Active
+              </span>
+              <span className="block text-xs text-slate-500">
+                Available for new transactions.
+              </span>
               {errors.isActive && (
-                <span className="mt-1 block text-xs text-rose-600">{errors.isActive}</span>
+                <span className="mt-1 block text-xs text-rose-600">
+                  {errors.isActive}
+                </span>
               )}
             </span>
           </label>
@@ -260,7 +277,9 @@ function RateEditorModal({
               className="mt-0.5 h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-400"
             />
             <span>
-              <span className="block text-sm font-semibold text-slate-700">Make Default</span>
+              <span className="block text-sm font-semibold text-slate-700">
+                Make Default
+              </span>
               <span className="block text-xs text-slate-500">
                 {draft.id && draft.isDefault
                   ? "This is the current default."
@@ -284,7 +303,11 @@ function RateEditorModal({
             disabled={!valid || saving}
             className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#20b7ff] to-[#b026ff] px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {saving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+            {saving ? (
+              <LoaderCircle className="h-4 w-4 animate-spin" />
+            ) : (
+              <Check className="h-4 w-4" />
+            )}
             {draft.id ? "Save Changes" : "Add Rate"}
           </button>
         </div>
@@ -315,7 +338,10 @@ function PasteRateDialog({
   onAdd: (rows: BulkUiRow[]) => void;
 }) {
   const [text, setText] = useState("");
-  const parsed = useMemo(() => parseRatePaste(text, firstSortOrder), [firstSortOrder, text]);
+  const parsed = useMemo(
+    () => parseRatePaste(text, firstSortOrder),
+    [firstSortOrder, text],
+  );
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
@@ -335,14 +361,22 @@ function PasteRateDialog({
       >
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
           <div>
-            <h3 id="paste-rate-title" className="text-base font-semibold text-slate-900">
+            <h3
+              id="paste-rate-title"
+              className="text-base font-semibold text-slate-900"
+            >
               Paste Selling Rates
             </h3>
             <p className="mt-0.5 text-xs text-slate-500">
               One name per line, or name,code,sortOrder.
             </p>
           </div>
-          <button type="button" aria-label="Close paste dialog" onClick={onClose} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100">
+          <button
+            type="button"
+            aria-label="Close paste dialog"
+            onClick={onClose}
+            className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+          >
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -356,22 +390,33 @@ function PasteRateDialog({
             placeholder={"Wholesale\nDealer\nOnline,ONLINE,40"}
           />
           {parsed.errors.length > 0 && (
-            <div role="alert" className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+            <div
+              role="alert"
+              className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700"
+            >
               {parsed.errors.map((error) => (
-                <p key={`${error.line}-${error.message}`}>Line {error.line}: {error.message}</p>
+                <p key={`${error.line}-${error.message}`}>
+                  Line {error.line}: {error.message}
+                </p>
               ))}
             </div>
           )}
           {parsed.rows.length > 0 && (
             <div className="mt-4 overflow-hidden rounded-xl border border-slate-200">
               <div className="bg-slate-50 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                Preview · {parsed.rows.length} row{parsed.rows.length === 1 ? "" : "s"}
+                Preview · {parsed.rows.length} row
+                {parsed.rows.length === 1 ? "" : "s"}
               </div>
               <div className="max-h-44 divide-y divide-slate-100 overflow-y-auto">
                 {parsed.rows.map((row) => (
-                  <div key={row.line} className="grid grid-cols-[32px_1fr_1fr_60px] gap-2 px-3 py-2 text-xs text-slate-600">
+                  <div
+                    key={row.line}
+                    className="grid grid-cols-[32px_1fr_1fr_60px] gap-2 px-3 py-2 text-xs text-slate-600"
+                  >
                     <span className="text-slate-400">{row.line}</span>
-                    <span className="truncate font-medium text-slate-700">{row.name || "—"}</span>
+                    <span className="truncate font-medium text-slate-700">
+                      {row.name || "—"}
+                    </span>
                     <code className="truncate">{row.code || "—"}</code>
                     <span className="text-right">{row.sortOrder || "—"}</span>
                   </div>
@@ -381,7 +426,11 @@ function PasteRateDialog({
           )}
         </div>
         <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-3.5">
-          <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+          >
             Cancel
           </button>
           <button
@@ -416,11 +465,16 @@ function BulkRateModal({
   onClose: () => void;
   onCreated: (count: number) => Promise<void>;
 }) {
-  const [rows, setRows] = useState<BulkUiRow[]>(() => [makeBulkRow(nextRateSortOrder(existing))]);
+  const [rows, setRows] = useState<BulkUiRow[]>(() => [
+    makeBulkRow(nextRateSortOrder(existing)),
+  ]);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
-  const validation = useMemo(() => validateBulkRateRows(rows, existing), [existing, rows]);
+  const validation = useMemo(
+    () => validateBulkRateRows(rows, existing),
+    [existing, rows],
+  );
   const saveCount = validation.rows.length;
   const valid = validation.errors.length === 0 && saveCount > 0;
 
@@ -433,14 +487,18 @@ function BulkRateModal({
   }, [onClose, pasteOpen, saving]);
 
   const errorFor = (row: number, field: BulkRateField) =>
-    [...new Set(
-      validation.errors
-        .filter((error) => error.row === row && error.field === field)
-        .map((error) => error.message),
-    )].join(" ");
+    [
+      ...new Set(
+        validation.errors
+          .filter((error) => error.row === row && error.field === field)
+          .map((error) => error.message),
+      ),
+    ].join(" ");
 
   const replaceRow = (index: number, next: BulkUiRow) =>
-    setRows((current) => current.map((row, rowIndex) => (rowIndex === index ? next : row)));
+    setRows((current) =>
+      current.map((row, rowIndex) => (rowIndex === index ? next : row)),
+    );
 
   const nextOrder = nextRateSortOrder([...existing, ...rows]);
 
@@ -470,10 +528,20 @@ function BulkRateModal({
       >
         <div className="flex flex-wrap items-center justify-between gap-3 bg-[linear-gradient(135deg,#091120_0%,#0f1a31_60%,#16213d_100%)] px-5 py-4 text-white">
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/50">Selling Rate Master</p>
-            <h3 id="bulk-rate-title" className="mt-0.5 text-base font-semibold">Bulk Add Selling Rates</h3>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/50">
+              Selling Rate Master
+            </p>
+            <h3 id="bulk-rate-title" className="mt-0.5 text-base font-semibold">
+              Bulk Add Selling Rates
+            </h3>
           </div>
-          <button type="button" aria-label="Close bulk add" disabled={saving} onClick={onClose} className="rounded-lg p-2 text-white/70 hover:bg-white/10 hover:text-white disabled:opacity-40">
+          <button
+            type="button"
+            aria-label="Close bulk add"
+            disabled={saving}
+            onClick={onClose}
+            className="rounded-lg p-2 text-white/70 hover:bg-white/10 hover:text-white disabled:opacity-40"
+          >
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -481,7 +549,9 @@ function BulkRateModal({
         <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-3 sm:px-5">
           <button
             type="button"
-            onClick={() => setRows((current) => [...current, makeBulkRow(nextOrder)])}
+            onClick={() =>
+              setRows((current) => [...current, makeBulkRow(nextOrder)])
+            }
             className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
           >
             <Plus className="h-3.5 w-3.5" /> Add Row
@@ -493,18 +563,29 @@ function BulkRateModal({
           >
             <ClipboardPaste className="h-3.5 w-3.5" /> Paste List
           </button>
-          <span className="ml-auto text-xs text-slate-500">Select at most one default; a default is always active.</span>
+          <span className="ml-auto text-xs text-slate-500">
+            Select at most one default; a default is always active.
+          </span>
         </div>
 
         <div className="min-h-0 flex-1 overflow-auto p-4 sm:p-5">
           {serverError && (
-            <div role="alert" className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+            <div
+              role="alert"
+              className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700"
+            >
               {serverError}
             </div>
           )}
           <div className="min-w-[820px] overflow-hidden rounded-xl border border-slate-200">
             <div className="grid grid-cols-[48px_minmax(170px,1.2fr)_minmax(160px,1fr)_100px_80px_80px_48px] gap-2 bg-[#1e3a5f] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/75">
-              <span>Row</span><span>Name</span><span>Code</span><span>Order</span><span>Active</span><span>Default</span><span />
+              <span>Row</span>
+              <span>Name</span>
+              <span>Code</span>
+              <span>Order</span>
+              <span>Active</span>
+              <span>Default</span>
+              <span />
             </div>
             <div className="divide-y divide-slate-100">
               {rows.map((row, index) => {
@@ -514,8 +595,13 @@ function BulkRateModal({
                 const activeError = errorFor(index, "isActive");
                 const defaultError = errorFor(index, "isDefault");
                 return (
-                  <div key={row.key} className="grid grid-cols-[48px_minmax(170px,1.2fr)_minmax(160px,1fr)_100px_80px_80px_48px] items-start gap-2 px-3 py-2.5">
-                    <span className="pt-2 text-xs font-semibold text-slate-400">{index + 1}</span>
+                  <div
+                    key={row.key}
+                    className="grid grid-cols-[48px_minmax(170px,1.2fr)_minmax(160px,1fr)_100px_80px_80px_48px] items-start gap-2 px-3 py-2.5"
+                  >
+                    <span className="pt-2 text-xs font-semibold text-slate-400">
+                      {index + 1}
+                    </span>
                     <div>
                       <input
                         autoFocus={index === 0}
@@ -525,25 +611,43 @@ function BulkRateModal({
                           replaceRow(index, {
                             ...row,
                             name,
-                            code: codeAfterNameChange(name, row.code, row.codeManuallyEdited),
+                            code: codeAfterNameChange(
+                              name,
+                              row.code,
+                              row.codeManuallyEdited,
+                            ),
                           });
                         }}
                         aria-invalid={Boolean(nameError)}
                         className={`${inputClass} px-2.5 py-1.5 text-xs`}
                         placeholder="Wholesale"
                       />
-                      {nameError && <p className="mt-1 text-[10px] leading-4 text-rose-600">{nameError}</p>}
+                      {nameError && (
+                        <p className="mt-1 text-[10px] leading-4 text-rose-600">
+                          {nameError}
+                        </p>
+                      )}
                     </div>
                     <div>
                       <input
                         value={row.code}
-                        onChange={(event) => replaceRow(index, { ...row, code: event.target.value.toUpperCase(), codeManuallyEdited: true })}
+                        onChange={(event) =>
+                          replaceRow(index, {
+                            ...row,
+                            code: event.target.value.toUpperCase(),
+                            codeManuallyEdited: true,
+                          })
+                        }
                         maxLength={30}
                         aria-invalid={Boolean(codeError)}
                         className={`${inputClass} px-2.5 py-1.5 font-mono text-xs uppercase`}
                         placeholder="WHOLESALE"
                       />
-                      {codeError && <p className="mt-1 text-[10px] leading-4 text-rose-600">{codeError}</p>}
+                      {codeError && (
+                        <p className="mt-1 text-[10px] leading-4 text-rose-600">
+                          {codeError}
+                        </p>
+                      )}
                     </div>
                     <div>
                       <input
@@ -551,11 +655,20 @@ function BulkRateModal({
                         min="0"
                         step="1"
                         value={row.sortOrder}
-                        onChange={(event) => replaceRow(index, { ...row, sortOrder: event.target.value })}
+                        onChange={(event) =>
+                          replaceRow(index, {
+                            ...row,
+                            sortOrder: event.target.value,
+                          })
+                        }
                         aria-invalid={Boolean(orderError)}
                         className={`${inputClass} px-2.5 py-1.5 text-xs`}
                       />
-                      {orderError && <p className="mt-1 text-[10px] leading-4 text-rose-600">{orderError}</p>}
+                      {orderError && (
+                        <p className="mt-1 text-[10px] leading-4 text-rose-600">
+                          {orderError}
+                        </p>
+                      )}
                     </div>
                     <div className="pt-2 text-center">
                       <input
@@ -563,10 +676,19 @@ function BulkRateModal({
                         aria-label={`Row ${index + 1} active`}
                         checked={row.isActive}
                         disabled={row.isDefault}
-                        onChange={(event) => replaceRow(index, { ...row, isActive: event.target.checked })}
+                        onChange={(event) =>
+                          replaceRow(index, {
+                            ...row,
+                            isActive: event.target.checked,
+                          })
+                        }
                         className="h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-400"
                       />
-                      {activeError && <p className="mt-1 text-[10px] leading-4 text-rose-600">{activeError}</p>}
+                      {activeError && (
+                        <p className="mt-1 text-[10px] leading-4 text-rose-600">
+                          {activeError}
+                        </p>
+                      )}
                     </div>
                     <div className="pt-2 text-center">
                       <input
@@ -575,20 +697,35 @@ function BulkRateModal({
                         checked={row.isDefault}
                         onChange={(event) => {
                           const checked = event.target.checked;
-                          setRows((current) => current.map((item, rowIndex) => ({
-                            ...item,
-                            isDefault: rowIndex === index ? checked : false,
-                            isActive: rowIndex === index && checked ? true : item.isActive,
-                          })));
+                          setRows((current) =>
+                            current.map((item, rowIndex) => ({
+                              ...item,
+                              isDefault: rowIndex === index ? checked : false,
+                              isActive:
+                                rowIndex === index && checked
+                                  ? true
+                                  : item.isActive,
+                            })),
+                          );
                         }}
                         className="h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-400"
                       />
-                      {defaultError && <p className="mt-1 text-[10px] leading-4 text-rose-600">{defaultError}</p>}
+                      {defaultError && (
+                        <p className="mt-1 text-[10px] leading-4 text-rose-600">
+                          {defaultError}
+                        </p>
+                      )}
                     </div>
                     <button
                       type="button"
                       aria-label={`Remove row ${index + 1}`}
-                      onClick={() => setRows((current) => current.length === 1 ? [makeBulkRow("")] : current.filter((item) => item.key !== row.key))}
+                      onClick={() =>
+                        setRows((current) =>
+                          current.length === 1
+                            ? [makeBulkRow("")]
+                            : current.filter((item) => item.key !== row.key),
+                        )
+                      }
                       className="mt-0.5 rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -601,7 +738,14 @@ function BulkRateModal({
         </div>
 
         <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-4 py-3.5 sm:px-5">
-          <button type="button" onClick={onClose} disabled={saving} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-40">Cancel</button>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+          >
+            Cancel
+          </button>
           <button
             type="button"
             data-testid="save-bulk-rates"
@@ -609,7 +753,11 @@ function BulkRateModal({
             onClick={() => void save()}
             className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#20b7ff] to-[#b026ff] px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {saving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Rows3 className="h-4 w-4" />}
+            {saving ? (
+              <LoaderCircle className="h-4 w-4 animate-spin" />
+            ) : (
+              <Rows3 className="h-4 w-4" />
+            )}
             Save {saveCount} Rate{saveCount === 1 ? "" : "s"}
           </button>
         </div>
@@ -621,7 +769,10 @@ function BulkRateModal({
           onClose={() => setPasteOpen(false)}
           onAdd={(pastedRows) => {
             setRows((current) => {
-              const untouched = current.length === 1 && !current[0].name.trim() && !current[0].code.trim();
+              const untouched =
+                current.length === 1 &&
+                !current[0].name.trim() &&
+                !current[0].code.trim();
               return untouched ? pastedRows : [...current, ...pastedRows];
             });
             setPasteOpen(false);
@@ -639,7 +790,6 @@ export default function RateMaster({ onBack }: { onBack?: () => void }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [menuId, setMenuId] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<ConfirmAction | null>(null);
   const { showToast } = useToast();
   const licenseId = getActiveLicenseId();
@@ -669,19 +819,6 @@ export default function RateMaster({ onBack }: { onBack?: () => void }) {
     void load();
   }, [load]);
 
-  useEffect(() => {
-    const closeMenu = (event: KeyboardEvent | MouseEvent) => {
-      if (event instanceof KeyboardEvent && event.key !== "Escape") return;
-      setMenuId(null);
-    };
-    window.addEventListener("click", closeMenu);
-    window.addEventListener("keydown", closeMenu);
-    return () => {
-      window.removeEventListener("click", closeMenu);
-      window.removeEventListener("keydown", closeMenu);
-    };
-  }, []);
-
   function openAdd() {
     setDraft({
       name: "",
@@ -694,7 +831,6 @@ export default function RateMaster({ onBack }: { onBack?: () => void }) {
   }
 
   function openEdit(row: RateTypeRecord) {
-    setMenuId(null);
     setDraft({
       id: row.id,
       name: row.name,
@@ -707,7 +843,12 @@ export default function RateMaster({ onBack }: { onBack?: () => void }) {
   }
 
   async function saveDraft() {
-    if (!draft || !licenseId || Object.keys(singleRateErrors(draft, rows)).length > 0) return;
+    if (
+      !draft ||
+      !licenseId ||
+      Object.keys(singleRateErrors(draft, rows)).length > 0
+    )
+      return;
     setSaving(true);
     const result = await platform.saveRateType({
       id: draft.id,
@@ -725,7 +866,10 @@ export default function RateMaster({ onBack }: { onBack?: () => void }) {
     }
     const wasEditing = Boolean(draft.id);
     setDraft(null);
-    showToast("success", wasEditing ? "Selling rate updated." : "Selling rate created.");
+    showToast(
+      "success",
+      wasEditing ? "Selling rate updated." : "Selling rate created.",
+    );
     await load();
   }
 
@@ -743,182 +887,269 @@ export default function RateMaster({ onBack }: { onBack?: () => void }) {
   }
 
   function requestAction(action: ConfirmAction) {
-    setMenuId(null);
     setConfirmation(action);
   }
 
   return (
     <>
-      <section className="rounded-xl border border-slate-200/80 bg-white shadow-[0_4px_20px_rgba(3,10,24,0.06)]">
-        <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
+      <div className="space-y-4 pb-10 md:pb-0">
+        <section className="relative overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(135deg,#091120_0%,#0f1a31_58%,#16213d_100%)] px-5 py-5 text-white shadow-[0_22px_50px_rgba(5,10,20,0.18)] md:px-6 md:py-6">
+          <div className="pointer-events-none absolute -left-10 top-0 h-32 w-32 rounded-full bg-violet-400/10 blur-3xl" />
+          <div className="pointer-events-none absolute bottom-0 right-0 h-36 w-36 rounded-full bg-cyan-500/10 blur-3xl" />
+
+          <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <div className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-cyan-400/25 bg-cyan-500/10 px-3 py-1 text-[11px] font-semibold text-cyan-200">
+                <Rows3 className="h-3 w-3" />
+                Selling Rates
+              </div>
+              <h1 className="text-[26px] font-semibold tracking-[-0.04em] text-white md:text-[30px]">
+                Control <span className="kyn-brand-text">Selling Prices</span>
+              </h1>
+              <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-slate-300">
+                Manage named selling prices shared across products. One active
+                rate always remains the default.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
               {onBack && (
-                <button type="button" onClick={onBack} className="rounded-lg px-2 py-1 text-xs font-semibold text-slate-500 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400">
-                  Back
+                <button
+                  type="button"
+                  onClick={onBack}
+                  className="inline-flex items-center gap-2 rounded-2xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Master
                 </button>
               )}
-              <h2 className="text-lg font-semibold tracking-[-0.02em] text-slate-900">Selling Rate Master</h2>
+              <button
+                type="button"
+                onClick={() => setBulkOpen(true)}
+                disabled={!licenseId || loading}
+                className="inline-flex items-center gap-2 rounded-2xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Rows3 className="h-4 w-4" />
+                Bulk Add
+              </button>
+              <button
+                type="button"
+                onClick={openAdd}
+                disabled={!licenseId || loading}
+                className="inline-flex items-center gap-2 rounded-2xl bg-white px-4 py-2.5 text-sm font-semibold text-slate-900 shadow-[0_10px_24px_rgba(255,255,255,0.10)] transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Plus className="h-4 w-4" />
+                Add Rate
+              </button>
             </div>
-            <p className="mt-1 text-xs text-slate-500">Manage named selling prices shared across products. One active rate remains the default.</p>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setBulkOpen(true)}
-              disabled={!licenseId || loading}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 disabled:opacity-40"
-            >
-              <Rows3 className="h-3.5 w-3.5" /> Bulk Add
-            </button>
-            <button
-              type="button"
-              onClick={openAdd}
-              disabled={!licenseId || loading}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#20b7ff] to-[#b026ff] px-3 py-2 text-xs font-semibold text-white transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 disabled:opacity-40"
-            >
-              <Plus className="h-3.5 w-3.5" /> Add Rate
-            </button>
-          </div>
-        </div>
+        </section>
 
-        {error && (
-          <div role="alert" className="mx-4 mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 sm:mx-5">
-            {error}
-          </div>
-        )}
+        <section className="overflow-hidden rounded-[22px] border border-slate-200/80 bg-white/80 shadow-[0_4px_20px_rgba(3,10,24,0.06)]">
+          {error && (
+            <div
+              role="alert"
+              className="mx-4 mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 sm:mx-5"
+            >
+              {error}
+            </div>
+          )}
 
-        <div className="overflow-x-auto">
-          {loading ? (
-            <div className="space-y-2 p-5" aria-label="Loading selling rates">
-              {[1, 2, 3].map((value) => <div key={value} className="h-9 animate-pulse rounded-lg bg-slate-100" />)}
-            </div>
-          ) : rows.length === 0 ? (
-            <div className="px-5 py-10 text-center">
-              <Rows3 className="mx-auto h-7 w-7 text-slate-300" />
-              <p className="mt-2 text-sm font-semibold text-slate-600">No selling rates configured</p>
-              <p className="mt-1 text-xs text-slate-400">Add a rate to get started.</p>
-            </div>
-          ) : (
-            <table className="w-full min-w-[720px]">
-              <thead>
-                <tr className="bg-[#1e3a5f] text-left">
-                  {[
-                    ["Name", "w-[30%]"],
-                    ["Code", "w-[24%]"],
-                    ["Default", "w-[12%]"],
-                    ["Status", "w-[12%]"],
-                    ["Order", "w-[10%]"],
-                    ["Actions", "w-[12%] text-right"],
-                  ].map(([label, width]) => (
-                    <th key={label} className={`${width} px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/75`}>{label}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {rows.map((row, index) => (
-                  <tr key={row.id} className="text-sm transition hover:bg-slate-50/80">
-                    <td className="px-4 py-2.5 font-semibold text-slate-800">{row.name}</td>
-                    <td className="px-4 py-2.5"><code className="rounded-md bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">{row.code}</code></td>
-                    <td className="px-4 py-2.5">
-                      {row.isDefault ? (
-                        <span className="inline-flex items-center gap-1 rounded-full border border-cyan-200 bg-cyan-50 px-2 py-0.5 text-[10px] font-semibold text-cyan-700"><Star className="h-2.5 w-2.5 fill-current" /> Default</span>
-                      ) : <span className="text-xs text-slate-300">—</span>}
-                    </td>
-                    <td className="px-4 py-2.5">
-                      <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${row.isActive ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-100 text-slate-500"}`}>{row.isActive ? "Active" : "Inactive"}</span>
-                    </td>
-                    <td className="px-4 py-2.5 text-xs tabular-nums text-slate-500">{row.sortOrder}</td>
-                    <td className="relative px-4 py-2.5 text-right">
-                      <button
-                        type="button"
-                        aria-label={`Actions for ${row.name}`}
-                        aria-expanded={menuId === row.id}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setMenuId((current) => current === row.id ? null : row.id);
-                        }}
-                        className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+          <div className="overflow-x-auto">
+            {loading ? (
+              <div className="space-y-2 p-5" aria-label="Loading selling rates">
+                {[1, 2, 3].map((value) => (
+                  <div
+                    key={value}
+                    className="h-9 animate-pulse rounded-lg bg-slate-100"
+                  />
+                ))}
+              </div>
+            ) : rows.length === 0 ? (
+              <div className="px-5 py-10 text-center">
+                <Rows3 className="mx-auto h-7 w-7 text-slate-300" />
+                <p className="mt-2 text-sm font-semibold text-slate-600">
+                  No selling rates configured
+                </p>
+                <p className="mt-1 text-xs text-slate-400">
+                  Add a rate to get started.
+                </p>
+              </div>
+            ) : (
+              <table className="w-full min-w-[860px]">
+                <thead>
+                  <tr className="bg-[#1e3a5f] text-left">
+                    {[
+                      ["Name", "w-[26%]"],
+                      ["Code", "w-[20%]"],
+                      ["Default", "w-[12%]"],
+                      ["Status", "w-[12%]"],
+                      ["Order", "w-[8%]"],
+                      ["Actions", "w-[22%] text-right"],
+                    ].map(([label, width]) => (
+                      <th
+                        key={label}
+                        className={`${width} px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/75`}
                       >
-                        <MoreVertical className="h-4 w-4" />
-                      </button>
-                      {menuId === row.id && (
-                        <div
-                          role="menu"
-                          onClick={(event) => event.stopPropagation()}
-                          className={`absolute right-4 z-30 w-44 overflow-hidden rounded-xl border border-slate-200 bg-white p-1.5 text-left shadow-[0_14px_34px_rgba(15,23,42,0.18)] ${index >= rows.length - 2 ? "bottom-10" : "top-10"}`}
+                        {label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {rows.map((row) => (
+                    <tr
+                      key={row.id}
+                      className="text-sm transition hover:bg-slate-50/80"
+                    >
+                      <td className="px-4 py-2.5 font-semibold text-slate-800">
+                        {row.name}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <code className="rounded-md bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">
+                          {row.code}
+                        </code>
+                      </td>
+                      <td className="px-4 py-2.5">
+                        {row.isDefault ? (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-cyan-200 bg-cyan-50 px-2 py-0.5 text-[10px] font-semibold text-cyan-700">
+                            <Star className="h-2.5 w-2.5 fill-current" />{" "}
+                            Default
+                          </span>
+                        ) : (
+                          <span className="text-xs text-slate-300">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <span
+                          className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${row.isActive ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-100 text-slate-500"}`}
                         >
-                          <button type="button" role="menuitem" onClick={() => openEdit(row)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100"><Edit3 className="h-3.5 w-3.5" /> Edit</button>
+                          {row.isActive ? "Active" : "Inactive"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5 text-xs tabular-nums text-slate-500">
+                        {row.sortOrder}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            aria-label={`Edit ${row.name}`}
+                            title="Edit selling rate"
+                            onClick={() => openEdit(row)}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-cyan-200 hover:bg-cyan-50 hover:text-cyan-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+                          >
+                            <Edit3 className="h-3.5 w-3.5" />
+                          </button>
+
                           {!row.isDefault && row.isActive && (
                             <button
                               type="button"
-                              role="menuitem"
-                              onClick={() => requestAction({
-                                title: "Change default selling rate?",
-                                message: `${row.name} will become the default rate used by compatibility pricing. Historical transactions will not change.`,
-                                confirmText: "Set as Default",
-                                successMessage: "Default selling rate changed.",
-                                action: () => platform.setDefaultRateType(licenseId!, row.id),
-                              })}
-                              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium text-amber-700 hover:bg-amber-50"
-                            ><Star className="h-3.5 w-3.5" /> Set as Default</button>
+                              aria-label={`Set ${row.name} as default`}
+                              title="Set as default"
+                              onClick={() =>
+                                requestAction({
+                                  title: "Change default selling rate?",
+                                  message: `${row.name} will become the default rate used by compatibility pricing. Historical transactions will not change.`,
+                                  confirmText: "Set as Default",
+                                  successMessage:
+                                    "Default selling rate changed.",
+                                  action: () =>
+                                    platform.setDefaultRateType(
+                                      licenseId!,
+                                      row.id,
+                                    ),
+                                })
+                              }
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-amber-200 bg-amber-50/70 text-amber-700 transition hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+                            >
+                              <Star className="h-3.5 w-3.5" />
+                            </button>
                           )}
+
                           {row.isActive ? (
                             <button
                               type="button"
-                              role="menuitem"
+                              aria-label={`Deactivate ${row.name}`}
+                              title={
+                                row.isDefault
+                                  ? "Set another default before deactivating this rate"
+                                  : "Deactivate selling rate"
+                              }
                               disabled={row.isDefault}
-                              title={row.isDefault ? "Set another default before deactivating this rate" : undefined}
-                              onClick={() => requestAction({
-                                title: "Deactivate selling rate?",
-                                message: `${row.name} will no longer be available for new transactions. Saved transaction rate names and values remain unchanged.`,
-                                confirmText: "Deactivate",
-                                successMessage: "Selling rate deactivated.",
-                                action: () => platform.toggleRateType(licenseId!, row.id, false),
-                              })}
-                              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-35"
-                            ><Power className="h-3.5 w-3.5" /> Deactivate</button>
+                              onClick={() =>
+                                requestAction({
+                                  title: "Deactivate selling rate?",
+                                  message: `${row.name} will no longer be available for new transactions. Saved transaction rate names and values remain unchanged.`,
+                                  confirmText: "Deactivate",
+                                  successMessage: "Selling rate deactivated.",
+                                  action: () =>
+                                    platform.toggleRateType(
+                                      licenseId!,
+                                      row.id,
+                                      false,
+                                    ),
+                                })
+                              }
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-slate-300 hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-300 disabled:opacity-60"
+                            >
+                              <Power className="h-3.5 w-3.5" />
+                            </button>
                           ) : (
                             <button
                               type="button"
-                              role="menuitem"
-                              onClick={() => {
-                                setMenuId(null);
+                              aria-label={`Activate ${row.name}`}
+                              title="Activate selling rate"
+                              onClick={() =>
                                 void mutate({
                                   title: "",
                                   message: "",
                                   confirmText: "",
                                   successMessage: "Selling rate activated.",
-                                  action: () => platform.toggleRateType(licenseId!, row.id, true),
-                                });
-                              }}
-                              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium text-emerald-700 hover:bg-emerald-50"
-                            ><Power className="h-3.5 w-3.5" /> Activate</button>
+                                  action: () =>
+                                    platform.toggleRateType(
+                                      licenseId!,
+                                      row.id,
+                                      true,
+                                    ),
+                                })
+                              }
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50/70 text-emerald-700 transition hover:bg-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+                            >
+                              <Power className="h-3.5 w-3.5" />
+                            </button>
                           )}
+
                           {!row.isDefault && (
                             <button
                               type="button"
-                              role="menuitem"
-                              onClick={() => requestAction({
-                                title: "Delete selling rate?",
-                                message: `${row.name} will be soft-deleted. Historical transactions remain readable.`,
-                                confirmText: "Delete Rate",
-                                successMessage: "Selling rate deleted.",
-                                action: () => platform.deleteRateType(licenseId!, row.id),
-                              })}
-                              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium text-rose-600 hover:bg-rose-50"
-                            ><Trash2 className="h-3.5 w-3.5" /> Delete</button>
+                              aria-label={`Delete ${row.name}`}
+                              title="Delete selling rate"
+                              onClick={() =>
+                                requestAction({
+                                  title: "Delete selling rate?",
+                                  message: `${row.name} will be soft-deleted. Historical transactions remain readable.`,
+                                  confirmText: "Delete Rate",
+                                  successMessage: "Selling rate deleted.",
+                                  action: () =>
+                                    platform.deleteRateType(licenseId!, row.id),
+                                })
+                              }
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 bg-rose-50/70 text-rose-600 transition hover:bg-rose-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
                           )}
                         </div>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </section>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </section>
+      </div>
 
       {draft && (
         <RateEditorModal
@@ -940,7 +1171,10 @@ export default function RateMaster({ onBack }: { onBack?: () => void }) {
           onClose={() => setBulkOpen(false)}
           onCreated={async (count) => {
             setBulkOpen(false);
-            showToast("success", `${count} selling rate${count === 1 ? "" : "s"} created.`);
+            showToast(
+              "success",
+              `${count} selling rate${count === 1 ? "" : "s"} created.`,
+            );
             await load();
           }}
         />

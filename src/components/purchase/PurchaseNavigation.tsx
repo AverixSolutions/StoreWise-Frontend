@@ -8,11 +8,13 @@ import { ArrowLeft, Wifi, WifiOff } from "lucide-react";
 interface PurchaseNavigationProps {
   onNavigate: (path: string) => void;
   title?: string;
+  keyboardEnabled?: boolean;
 }
 
 export default function PurchaseNavigation({
   onNavigate,
   title,
+  keyboardEnabled = true,
 }: PurchaseNavigationProps) {
   const pathname = usePathname();
 
@@ -40,7 +42,10 @@ export default function PurchaseNavigation({
   }, []);
 
   useEffect(() => {
+    if (!keyboardEnabled) return;
+
     const onKey = (e: KeyboardEvent) => {
+      if (e.repeat) return;
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
         e.preventDefault();
         onNavigate("/dashboard/entries");
@@ -48,7 +53,7 @@ export default function PurchaseNavigation({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onNavigate]);
+  }, [keyboardEnabled, onNavigate]);
 
   return (
     <div className="sticky top-0 z-40 bg-[#1e3a5f] border-b border-[#1e3a5f]">
@@ -61,6 +66,9 @@ export default function PurchaseNavigation({
         >
           <ArrowLeft className="w-4 h-4" />
           <span className="text-sm font-medium">Entries</span>
+          <kbd className="hidden rounded border border-white/15 bg-white/10 px-1.5 py-0.5 font-mono text-[8px] font-semibold text-white/55 sm:inline-flex">
+            Ctrl+B
+          </kbd>
         </button>
 
         {/* Title */}

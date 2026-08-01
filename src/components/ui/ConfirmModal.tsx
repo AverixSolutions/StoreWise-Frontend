@@ -2,7 +2,7 @@
 "use client";
 
 import { createPortal } from "react-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface ConfirmModalProps {
   isOpen: boolean;
@@ -28,8 +28,38 @@ export default function ConfirmModal({
   onCancel,
 }: ConfirmModalProps) {
   const [mounted, setMounted] = useState(false);
+  const confirmRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => setMounted(true), []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      confirmRef.current?.focus();
+    });
+
+    const onKey = (event: KeyboardEvent) => {
+      if (event.repeat) return;
+
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCancel();
+        return;
+      }
+
+      if (event.key === "Enter" || event.key === "NumpadEnter") {
+        event.preventDefault();
+        onConfirm();
+      }
+    };
+
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [isOpen, onCancel, onConfirm]);
 
   if (!mounted || !isOpen) return null;
 
@@ -104,14 +134,17 @@ export default function ConfirmModal({
           <button
             type="button"
             onClick={onCancel}
-            className="h-10 rounded-xl border px-4 text-sm font-medium transition hover:brightness-110 cursor-pointer"
+            className="inline-flex h-10 items-center rounded-xl border px-4 text-sm font-medium transition hover:brightness-110 cursor-pointer"
             style={{
               borderColor: "var(--kyn-border)",
               background: "var(--kyn-surface-2)",
               color: "var(--kyn-text-soft)",
             }}
           >
-            {cancelText}
+            <span>{cancelText}</span>
+            <kbd className="ml-2 rounded border border-slate-300/40 px-1.5 py-0.5 font-mono text-[8px] opacity-60">
+              Esc
+            </kbd>
           </button>
 
           {/* Secondary (optional) */}
@@ -132,9 +165,10 @@ export default function ConfirmModal({
 
           {/* Confirm */}
           <button
+            ref={confirmRef}
             type="button"
             onClick={onConfirm}
-            className="h-10 rounded-xl px-4 text-sm font-semibold text-white transition hover:brightness-110 cursor-pointer"
+            className="inline-flex h-10 items-center rounded-xl px-4 text-sm font-semibold text-white transition hover:brightness-110 cursor-pointer"
             style={{
               background:
                 "linear-gradient(135deg, var(--kyn-brand-start) 0%, var(--kyn-brand-end) 100%)",
@@ -142,7 +176,10 @@ export default function ConfirmModal({
               border: "1px solid rgba(255,255,255,0.12)",
             }}
           >
-            {confirmText}
+            <span>{confirmText}</span>
+            <kbd className="ml-2 rounded border border-white/20 bg-white/10 px-1.5 py-0.5 font-mono text-[8px] text-white/70">
+              Enter
+            </kbd>
           </button>
         </div>
       </div>

@@ -100,8 +100,11 @@ function ProductNameCell({
   variant: ProductsTableVariant;
 }) {
   return (
-    <div className="min-w-0">
-      <p className="truncate text-[13px] font-semibold text-slate-900">
+    <div className="w-full min-w-0 overflow-hidden">
+      <p
+        title={product.name}
+        className="truncate text-[13px] font-semibold text-slate-900"
+      >
         {product.name}
       </p>
     </div>
@@ -122,7 +125,7 @@ function ActionButtons({
   onDelete: (id: string, name: string) => void;
 }) {
   return (
-    <div className="flex items-center justify-end gap-1">
+    <div className="flex shrink-0 items-center justify-end gap-1 whitespace-nowrap">
       <button
         onClick={() => onView(product)}
         title="View"
@@ -335,8 +338,19 @@ export default function ProductsTable({
     >
       <div className="no-scrollbar hidden min-h-0 flex-1 overflow-y-auto md:block">
         <table
-          className={`w-full ${variant === "compact" ? "min-w-[340px]" : "min-w-[960px]"}`}
+          className={`w-full ${
+            variant === "compact"
+              ? "min-w-[340px] table-fixed"
+              : "min-w-[960px]"
+          }`}
         >
+          {variant === "compact" && (
+            <colgroup>
+              <col className="w-[68px]" />
+              <col />
+              <col className="w-[144px]" />
+            </colgroup>
+          )}
           <thead>
             <tr className="bg-[#1e3a5f]">
               {headers.map((header) => (
@@ -366,11 +380,11 @@ export default function ProductsTable({
                       <CodeChip product={product} />
                     </td>
 
-                    <td className="min-w-0 px-1.5 py-2.5">
+                    <td className="min-w-0 overflow-hidden px-1.5 py-2.5">
                       <ProductNameCell product={product} variant={variant} />
                     </td>
 
-                    <td className="w-[124px] py-2.5 pl-1.5 pr-3">
+                    <td className="w-[144px] min-w-[144px] py-2.5 pl-2 pr-2">
                       <ActionButtons
                         product={product}
                         onView={onView}

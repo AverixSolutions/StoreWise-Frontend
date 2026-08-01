@@ -4,7 +4,16 @@ import { ItemRow, Product, TransactionMode } from "./types";
 import { toDateInput, fromDateInput, round2 } from "./utils";
 import SearchableDropdown from "@/components/ui/SearchableDropdown";
 import CompactDropdown from "@/components/ui/CompactDropdown";
-import { focusCell, nextCell } from "./keyboardGrid";
+import {
+  focusCell,
+  nextCell,
+  type GridNavigationOptions,
+} from "./keyboardGrid";
+import PurchaseSellingRatesCell from "./PurchaseSellingRatesCell";
+import {
+  FULL_PURCHASE_UI_SETTINGS,
+  type PurchaseUiSettings,
+} from "./purchaseUiSettings";
 
 const cellInput =
   "w-full h-8 px-2 text-xs border border-gray-300 rounded " +
@@ -59,6 +68,8 @@ interface ItemTableRowProps {
   onBarcodeCommit?: (rowIndex: number) => void;
   barcodeEnabled?: boolean;
   mode?: TransactionMode;
+  uiSettings?: PurchaseUiSettings;
+  gridNavigation?: GridNavigationOptions;
 }
 
 export default function ItemTableRow({
@@ -76,6 +87,8 @@ export default function ItemTableRow({
   onBarcodeCommit,
   barcodeEnabled = true,
   mode = "PURCHASE",
+  uiSettings = FULL_PURCHASE_UI_SETTINGS,
+  gridNavigation = { barcodeEnabled },
 }: ItemTableRowProps) {
   const taxOptions = [
     { value: "NT", label: "No Tax" },
@@ -105,12 +118,7 @@ export default function ItemTableRow({
       : "bg-slate-50";
 
   const goFrom = (col: import("./keyboardGrid").ColKey, dir: 1 | -1 = 1) => {
-    const { rowIndex: nr, col: nc } = nextCell(
-      idx,
-      col,
-      dir,
-      barcodeEnabled,
-    );
+    const { rowIndex: nr, col: nc } = nextCell(idx, col, dir, gridNavigation);
     if (nr >= rowsLength && dir === 1 && onAddRow) {
       onAddRow();
       setTimeout(() => focusCell(nr, nc), 0);
@@ -125,7 +133,9 @@ export default function ItemTableRow({
       className={`transition-all duration-200 hover:bg-blue-50/30 border-b border-gray-100 divide-x divide-gray-100 ${rowBg}`}
     >
       {/* Sl.NO */}
-      <td className={`px-2.5 py-2 sticky left-0 ${rowBg} z-40 w-[52px] min-w-[52px] border-r border-gray-200`}>
+      <td
+        className={`px-2.5 py-2 sticky left-0 ${rowBg} z-40 w-[52px] min-w-[52px] border-r border-gray-200`}
+      >
         <div className="flex items-center justify-center">
           <span className="inline-flex items-center justify-center w-7 h-5 rounded bg-gray-100 text-gray-800 text-xs font-mono font-medium">
             {r.lineNo}
@@ -134,7 +144,9 @@ export default function ItemTableRow({
       </td>
 
       {/* Product */}
-      <td className={`px-2.5 py-2 min-w-[300px] sticky [left:var(--slw)] ${rowBg} z-40 border-r border-gray-200`}>
+      <td
+        className={`px-2.5 py-2 min-w-[300px] sticky [left:var(--slw)] ${rowBg} z-40 border-r border-gray-200`}
+      >
         <div className="w-full">
           <SearchableDropdown
             value={r.productId}
@@ -235,22 +247,26 @@ export default function ItemTableRow({
         />
       </td>
 
-      {/* Unit */}
-      <td className="px-2.5 py-2 min-w-[74px]">
-        <CompactDropdown
-          value={r.unit || ""}
-          onChange={(val) => onUpdateRow(idx, { unit: val as any })}
-          onEnter={(dir) => goFrom("unit", dir)}
-          autoOpenOnFocus
-          options={unitOptions}
-          placeholder="Unit"
-          className="w-full [&_*]:text-xs [&_button]:h-8 [&_select]:h-8 [&_button]:px-2 [&_select]:px-2"
-          buttonProps={{
-            "data-cell": `${idx}:unit`,
-            onKeyDown: (e: any) => onGridKey(e, idx, "unit"),
-          }}
-        />
-      </td>
+      {mode !== "PURCHASE" || uiSettings.showUnit ? (
+        <>
+          {/* Unit */}
+          <td className="px-2.5 py-2 min-w-[74px]">
+            <CompactDropdown
+              value={r.unit || ""}
+              onChange={(val) => onUpdateRow(idx, { unit: val as any })}
+              onEnter={(dir) => goFrom("unit", dir)}
+              autoOpenOnFocus
+              options={unitOptions}
+              placeholder="Unit"
+              className="w-full [&_*]:text-xs [&_button]:h-8 [&_select]:h-8 [&_button]:px-2 [&_select]:px-2"
+              buttonProps={{
+                "data-cell": `${idx}:unit`,
+                onKeyDown: (e: any) => onGridKey(e, idx, "unit"),
+              }}
+            />
+          </td>
+        </>
+      ) : null}
 
       {/* Rate */}
       <td className="px-2.5 py-2 min-w-[84px]">
@@ -283,439 +299,350 @@ export default function ItemTableRow({
         />
       </td>
 
-      {/* Tax */}
-      <td className="px-2.5 py-2 min-w-[84px]">
-        <CompactDropdown
-          value={r.taxPercent}
-          onChange={(val) => onUpdateRow(idx, { taxPercent: val as any })}
-          onEnter={(dir) => goFrom("tax", dir)}
-          autoOpenOnFocus
-          options={taxOptions}
-          placeholder="Tax"
-          className="w-full [&_*]:text-xs [&_button]:h-8 [&_select]:h-8 [&_button]:px-2 [&_select]:px-2"
-          buttonProps={{
-            "data-cell": `${idx}:tax`,
-            onKeyDown: (e: any) => onGridKey(e, idx, "tax"),
-          }}
-        />
-      </td>
-
-      {/* Discount */}
-      <td className="px-2.5 py-2 min-w-[130px]">
-        <div className="flex items-center gap-2">
-          <div className="inline-flex overflow-hidden rounded border border-gray-300">
-            <button
-              type="button"
-              tabIndex={-1}
-              onClick={() => onUpdateRow(idx, { discountType: "ABS" })}
-              className={
-                "px-2 h-8 text-xs transition-colors " +
-                (r.discountType === "ABS"
-                  ? "bg-[#1e3a5f] text-white"
-                  : "bg-white text-gray-700 hover:bg-gray-50")
-              }
-              title="Amount"
-            >
-              ₹
-            </button>
-            <button
-              type="button"
-              tabIndex={-1}
-              onClick={() => onUpdateRow(idx, { discountType: "PCT" })}
-              className={
-                "px-2 h-8 text-xs border-l border-gray-300 transition-colors " +
-                (r.discountType === "PCT"
-                  ? "bg-[#1e3a5f] text-white"
-                  : "bg-white text-gray-700 hover:bg-gray-50")
-              }
-              title="Percent"
-            >
-              %
-            </button>
-          </div>
-
-          <div className="relative flex-1 min-w-[80px]">
-            {r.discountType === "ABS" ? (
-              <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[11px] text-gray-500">
-                ₹
-              </span>
-            ) : (
-              <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-gray-500">
-                %
-              </span>
-            )}
-            <input
-              className={
-                cellInput +
-                " h-8 " +
-                (r.discountType === "ABS"
-                  ? "pl-5 text-right pr-2"
-                  : "pr-5 text-right pl-2")
-              }
-              type="number"
-              step={r.discountType === "PCT" ? "0.01" : "1"}
-              value={asDisplay2(r.discount)}
-              onChange={(e) =>
-                onUpdateRow(idx, { discount: parseRoundedNum(e) ?? 0 })
-              }
-              min={0}
-              inputMode={r.discountType === "PCT" ? "decimal" : "numeric"}
-              onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
-              placeholder="0"
-              data-cell={`${idx}:discount`}
-              onKeyDown={(e) => {
-                const lower = e.key.toLowerCase();
-                if (e.altKey && (lower === "d" || lower === "t")) {
-                  e.preventDefault();
-                  onUpdateRow(idx, {
-                    discountType: r.discountType === "ABS" ? "PCT" : "ABS",
-                  });
-                  return;
-                }
-                if (e.altKey && lower === "p") {
-                  e.preventDefault();
-                  onUpdateRow(idx, { discountType: "PCT" });
-                  return;
-                }
-                if (e.key === "%") {
-                  e.preventDefault();
-                  onUpdateRow(idx, { discountType: "PCT" });
-                  return;
-                }
-                if (e.altKey && lower === "a") {
-                  e.preventDefault();
-                  onUpdateRow(idx, { discountType: "ABS" });
-                  return;
-                }
-                if (e.key === "₹" || e.key === "$") {
-                  e.preventDefault();
-                  onUpdateRow(idx, { discountType: "ABS" });
-                  return;
-                }
-                if (e.key === "e" || e.key === "+" || e.key === "-") {
-                  e.preventDefault();
-                  return;
-                }
-                if (e.key === "Enter" || (e as any).key === "NumpadEnter") {
-                  onGridKey(e as any, idx, "discount");
-                  return;
-                }
-                if (e.key === "ArrowUp" || e.key === "ArrowDown") {
-                  e.preventDefault();
-                  const cur = Number(
-                    (e.currentTarget as HTMLInputElement).value || 0,
-                  );
-                  const step = r.discountType === "ABS" ? 1 : 0.01;
-                  onUpdateRow(idx, {
-                    discount:
-                      e.key === "ArrowUp"
-                        ? round2(cur + step)
-                        : Math.max(0, round2(cur - step)),
-                  });
-                }
+      {mode !== "PURCHASE" || uiSettings.showTax ? (
+        <>
+          {/* Tax */}
+          <td className="px-2.5 py-2 min-w-[84px]">
+            <CompactDropdown
+              value={r.taxPercent}
+              onChange={(val) => onUpdateRow(idx, { taxPercent: val as any })}
+              onEnter={(dir) => goFrom("tax", dir)}
+              autoOpenOnFocus
+              options={taxOptions}
+              placeholder="Tax"
+              className="w-full [&_*]:text-xs [&_button]:h-8 [&_select]:h-8 [&_button]:px-2 [&_select]:px-2"
+              buttonProps={{
+                "data-cell": `${idx}:tax`,
+                onKeyDown: (e: any) => onGridKey(e, idx, "tax"),
               }}
             />
-          </div>
-        </div>
-      </td>
+          </td>
+        </>
+      ) : null}
+
+      {mode !== "PURCHASE" || uiSettings.showLineDiscount ? (
+        <>
+          {/* Discount */}
+          <td className="px-2.5 py-2 min-w-[130px]">
+            <div className="flex items-center gap-2">
+              <div className="inline-flex overflow-hidden rounded border border-gray-300">
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={() => onUpdateRow(idx, { discountType: "ABS" })}
+                  className={
+                    "px-2 h-8 text-xs transition-colors " +
+                    (r.discountType === "ABS"
+                      ? "bg-[#1e3a5f] text-white"
+                      : "bg-white text-gray-700 hover:bg-gray-50")
+                  }
+                  title="Amount"
+                >
+                  ₹
+                </button>
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={() => onUpdateRow(idx, { discountType: "PCT" })}
+                  className={
+                    "px-2 h-8 text-xs border-l border-gray-300 transition-colors " +
+                    (r.discountType === "PCT"
+                      ? "bg-[#1e3a5f] text-white"
+                      : "bg-white text-gray-700 hover:bg-gray-50")
+                  }
+                  title="Percent"
+                >
+                  %
+                </button>
+              </div>
+
+              <div className="relative flex-1 min-w-[80px]">
+                {r.discountType === "ABS" ? (
+                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[11px] text-gray-500">
+                    ₹
+                  </span>
+                ) : (
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-gray-500">
+                    %
+                  </span>
+                )}
+                <input
+                  className={
+                    cellInput +
+                    " h-8 " +
+                    (r.discountType === "ABS"
+                      ? "pl-5 text-right pr-2"
+                      : "pr-5 text-right pl-2")
+                  }
+                  type="number"
+                  step={r.discountType === "PCT" ? "0.01" : "1"}
+                  value={asDisplay2(r.discount)}
+                  onChange={(e) =>
+                    onUpdateRow(idx, { discount: parseRoundedNum(e) ?? 0 })
+                  }
+                  min={0}
+                  inputMode={r.discountType === "PCT" ? "decimal" : "numeric"}
+                  onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
+                  placeholder="0"
+                  data-cell={`${idx}:discount`}
+                  onKeyDown={(e) => {
+                    const lower = e.key.toLowerCase();
+                    if (e.altKey && (lower === "d" || lower === "t")) {
+                      e.preventDefault();
+                      onUpdateRow(idx, {
+                        discountType: r.discountType === "ABS" ? "PCT" : "ABS",
+                      });
+                      return;
+                    }
+                    if (e.altKey && lower === "p") {
+                      e.preventDefault();
+                      onUpdateRow(idx, { discountType: "PCT" });
+                      return;
+                    }
+                    if (e.key === "%") {
+                      e.preventDefault();
+                      onUpdateRow(idx, { discountType: "PCT" });
+                      return;
+                    }
+                    if (e.altKey && lower === "a") {
+                      e.preventDefault();
+                      onUpdateRow(idx, { discountType: "ABS" });
+                      return;
+                    }
+                    if (e.key === "₹" || e.key === "$") {
+                      e.preventDefault();
+                      onUpdateRow(idx, { discountType: "ABS" });
+                      return;
+                    }
+                    if (e.key === "e" || e.key === "+" || e.key === "-") {
+                      e.preventDefault();
+                      return;
+                    }
+                    if (e.key === "Enter" || (e as any).key === "NumpadEnter") {
+                      onGridKey(e as any, idx, "discount");
+                      return;
+                    }
+                    if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+                      e.preventDefault();
+                      const cur = Number(
+                        (e.currentTarget as HTMLInputElement).value || 0,
+                      );
+                      const step = r.discountType === "ABS" ? 1 : 0.01;
+                      onUpdateRow(idx, {
+                        discount:
+                          e.key === "ArrowUp"
+                            ? round2(cur + step)
+                            : Math.max(0, round2(cur - step)),
+                      });
+                    }
+                  }}
+                />
+              </div>
+            </div>
+          </td>
+        </>
+      ) : null}
 
       {/* Sale Price + Profit % */}
-      <td className="px-2.5 py-2 min-w-[200px]">
-        {mode === "SALE" || mode === "QUOTATION" ? (
-          <div className="space-y-1">
-            <select
-              className={cellInput}
-              value={r.rateSource === "CUSTOM" ? "__CUSTOM__" : r.rateTypeId || ""}
-              onChange={(event) => {
-                if (event.target.value === "__CUSTOM__") {
+      {mode !== "PURCHASE" ? (
+        <td className="px-2.5 py-2 min-w-[200px]">
+          {mode === "SALE" || mode === "QUOTATION" ? (
+            <div className="space-y-1">
+              <select
+                className={cellInput}
+                value={
+                  r.rateSource === "CUSTOM" ? "__CUSTOM__" : r.rateTypeId || ""
+                }
+                onChange={(event) => {
+                  if (event.target.value === "__CUSTOM__") {
+                    onUpdateRow(idx, {
+                      rateTypeId: null,
+                      rateTypeCode: null,
+                      rateTypeName: "Custom",
+                      rateSource: "CUSTOM",
+                      originalRate: r.rate,
+                      originalSalePrice: r.rate,
+                      appliedRate: null,
+                      offerId: null,
+                      offerName: null,
+                      offerType: null,
+                      offerDiscountAmount: 0,
+                      offerMeta: null,
+                    });
+                    return;
+                  }
+                  const selected = r.availableRates?.find(
+                    (rate) => rate.rateTypeId === event.target.value,
+                  );
+                  if (!selected?.configured || selected.amount == null) return;
                   onUpdateRow(idx, {
-                    rateTypeId: null,
-                    rateTypeCode: null,
-                    rateTypeName: "Custom",
-                    rateSource: "CUSTOM",
-                    originalRate: r.rate,
-                    originalSalePrice: r.rate,
+                    rateTypeId: selected.rateTypeId,
+                    rateTypeCode: selected.code,
+                    rateTypeName: selected.name,
+                    rateSource: "MASTER",
+                    rate: selected.amount,
+                    salePrice: selected.amount,
+                    originalRate: selected.amount,
+                    originalSalePrice: selected.amount,
                     appliedRate: null,
                     offerId: null,
                     offerName: null,
                     offerType: null,
                     offerDiscountAmount: 0,
+                    offerMessage: null,
                     offerMeta: null,
                   });
-                  return;
-                }
-                const selected = r.availableRates?.find(
-                  (rate) => rate.rateTypeId === event.target.value,
-                );
-                if (!selected?.configured || selected.amount == null) return;
-                onUpdateRow(idx, {
-                  rateTypeId: selected.rateTypeId,
-                  rateTypeCode: selected.code,
-                  rateTypeName: selected.name,
-                  rateSource: "MASTER",
-                  rate: selected.amount,
-                  salePrice: selected.amount,
-                  originalRate: selected.amount,
-                  originalSalePrice: selected.amount,
-                  appliedRate: null,
-                  offerId: null,
-                  offerName: null,
-                  offerType: null,
-                  offerDiscountAmount: 0,
-                  offerMessage: null,
-                  offerMeta: null,
-                });
-              }}
-              aria-label={`Rate type for row ${r.lineNo}`}
-            >
-              {!r.rateTypeId && r.rateSource !== "CUSTOM" && (
-                <option value="">Legacy</option>
-              )}
-              {(r.availableRates || []).map((rate) => (
-                <option
-                  key={rate.rateTypeId}
-                  value={rate.rateTypeId}
-                  disabled={!rate.configured}
-                >
-                  {rate.name}
-                  {rate.configured ? ` — ₹${rate.amount}` : " — Not configured"}
-                </option>
-              ))}
-              <option value="__CUSTOM__">Custom rate</option>
-            </select>
-            <div className="text-[10px] text-slate-500">
-              {r.rateSource === "CUSTOM"
-                ? "Manual custom rate"
-                : r.rateTypeName || "Legacy saved rate"}
+                }}
+                aria-label={`Rate type for row ${r.lineNo}`}
+              >
+                {!r.rateTypeId && r.rateSource !== "CUSTOM" && (
+                  <option value="">Legacy</option>
+                )}
+                {(r.availableRates || []).map((rate) => (
+                  <option
+                    key={rate.rateTypeId}
+                    value={rate.rateTypeId}
+                    disabled={!rate.configured}
+                  >
+                    {rate.name}
+                    {rate.configured
+                      ? ` - Rs. ${rate.amount}`
+                      : " - Not configured"}
+                  </option>
+                ))}
+                <option value="__CUSTOM__">Custom rate</option>
+              </select>
+              <div className="text-[10px] text-slate-500">
+                {r.rateSource === "CUSTOM"
+                  ? "Manual custom rate"
+                  : r.rateTypeName || "Legacy saved rate"}
+              </div>
             </div>
-          </div>
-        ) : (
-        <div className="space-y-1">
-        <div className="grid grid-cols-[1fr_96px] gap-2 items-center">
-          <div className="flex items-center gap-1">
-            <span className="text-[11px] text-gray-500">P%</span>
+          ) : null}
+        </td>
+      ) : uiSettings.showSellingRates ? (
+        <td className="min-w-0 px-2.5 py-2 align-middle">
+          <PurchaseSellingRatesCell
+            row={r}
+            rowIndex={idx}
+            onUpdateRow={onUpdateRow}
+            onGridKey={onGridKey}
+          />
+        </td>
+      ) : null}
+
+      {mode !== "PURCHASE" || uiSettings.showMrp ? (
+        <>
+          {/* MRP */}
+          <td className="px-2.5 py-2 min-w-[84px]">
             <input
-              className={cellInput + " text-right"}
+              className={cellInput}
               type="number"
               step={1}
-              value={asDisplay2(r.profitPercent)}
-              onChange={(e) =>
-                onUpdateRow(idx, { profitPercent: parseRoundedNum(e) ?? 0 })
-              }
+              value={asDisplayInt(r.mrp)}
+              onChange={(e) => onUpdateRow(idx, { mrp: parseIntNum(e) ?? 0 })}
               min={0}
               inputMode="numeric"
+              pattern="\d*"
               onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
-              placeholder="0"
-              data-cell={`${idx}:profitPercent`}
               onKeyDown={(e) => {
-                const el = e.currentTarget;
-                if (e.key === "ArrowUp") {
+                if (e.key === "e" || e.key === "+" || e.key === "-") {
                   e.preventDefault();
-                  onUpdateRow(idx, {
-                    profitPercent: round2(Number(el.value || 0) + 1),
-                  });
-                } else if (e.key === "ArrowDown") {
-                  e.preventDefault();
-                  onUpdateRow(idx, {
-                    profitPercent: Math.max(
-                      0,
-                      round2(Number(el.value || 0) - 1),
-                    ),
-                  });
-                } else if (e.key === "e" || e.key === "+" || e.key === "-") {
-                  e.preventDefault();
-                } else if (
-                  e.key === "Enter" ||
-                  (e as any).key === "NumpadEnter"
-                ) {
-                  onGridKey(e as any, idx, "profitPercent");
+                }
+                if (e.key === "Enter" || (e as any).key === "NumpadEnter") {
+                  onGridKey(e as any, idx, "mrp");
                 }
               }}
+              placeholder="0"
+              data-cell={`${idx}:mrp`}
             />
-          </div>
-          <input
-            className={cellInput + " text-right"}
-            type="number"
-            step="0.01"
-            value={asDisplay2(r.salePrice)}
-            onChange={(e) =>
-              onUpdateRow(idx, { salePrice: parseRoundedNum(e) ?? 0 })
-            }
-            min={0}
-            inputMode="decimal"
-            onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
-            placeholder="Sale"
-            data-cell={`${idx}:salePrice`}
-            onKeyDown={(e) => {
-              const el = e.currentTarget;
-              if (e.key === "ArrowUp") {
-                e.preventDefault();
-                onUpdateRow(idx, {
-                  salePrice: round2(Number(el.value || 0) + 1),
-                });
-              } else if (e.key === "ArrowDown") {
-                e.preventDefault();
-                onUpdateRow(idx, {
-                  salePrice: Math.max(0, round2(Number(el.value || 0) - 1)),
-                });
-              } else if (e.key === "e" || e.key === "+" || e.key === "-") {
-                e.preventDefault();
-              } else if (
-                e.key === "Enter" ||
-                (e as any).key === "NumpadEnter"
-              ) {
-                onGridKey(e as any, idx, "salePrice");
+          </td>
+        </>
+      ) : null}
+
+      {mode !== "PURCHASE" || uiSettings.showLineType ? (
+        <>
+          {/* Line Type */}
+          <td className="px-2.5 py-2 min-w-[80px] hidden lg:table-cell text-center">
+            <CompactDropdown
+              value={r.lineType || "VALUED"}
+              onChange={(val) =>
+                onUpdateRow(idx, { lineType: (val as any) || "VALUED" })
               }
-            }}
-          />
-        </div>
-        {mode === "PURCHASE" && (r.availableRates?.length || 0) > 0 && (
-          <details className="rounded border border-slate-200 bg-slate-50 px-1.5 py-1">
-            <summary className="cursor-pointer text-[10px] font-medium text-slate-600">
-              All selling rates
-            </summary>
-            <div className="mt-1 space-y-1">
-              {(r.availableRates || []).map((namedRate) => (
-                <label
-                  key={namedRate.rateTypeId}
-                  className="grid grid-cols-[1fr_78px] items-center gap-1 text-[10px] text-slate-600"
-                >
-                  <span title={namedRate.code}>
-                    {namedRate.name}
-                    {namedRate.isDefault ? " (Default)" : ""}
-                  </span>
-                  <input
-                    className={cellInput + " h-7 text-right"}
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={namedRate.amount ?? ""}
-                    placeholder="Blank"
-                    onChange={(event) => {
-                      const raw = event.target.value;
-                      const amount =
-                        raw === "" ? null : Math.max(0, round2(Number(raw)));
-                      const nextRates = (r.availableRates || []).map((rate) =>
-                        rate.rateTypeId === namedRate.rateTypeId
-                          ? {
-                              ...rate,
-                              amount,
-                              configured: amount != null,
-                            }
-                          : rate,
-                      );
-                      onUpdateRow(idx, {
-                        availableRates: nextRates,
-                        sellingRatesJson: JSON.stringify(
-                          nextRates.map((rate) => ({
-                            rateTypeId: rate.rateTypeId,
-                            code: rate.code,
-                            name: rate.name,
-                            amount: rate.amount,
-                            isDefault: Boolean(rate.isDefault),
-                          })),
-                        ),
-                        ...(namedRate.isDefault ? { salePrice: amount } : {}),
-                      });
-                    }}
-                  />
-                </label>
-              ))}
-            </div>
-          </details>
-        )}
-        </div>
-        )}
-      </td>
+              onEnter={(dir) => goFrom("lineType", dir)}
+              autoOpenOnFocus
+              options={lineTypeOptions}
+              placeholder="Type"
+              className="w-full [&_*]:text-xs [&_button]:h-8 [&_select]:h-8 [&_button]:px-2 [&_select]:px-2"
+              buttonProps={{
+                "data-cell": `${idx}:lineType`,
+                onKeyDown: (e: any) => onGridKey(e, idx, "lineType"),
+              }}
+            />
+          </td>
+        </>
+      ) : null}
 
-      {/* MRP */}
-      <td className="px-2.5 py-2 min-w-[84px]">
-        <input
-          className={cellInput}
-          type="number"
-          step={1}
-          value={asDisplayInt(r.mrp)}
-          onChange={(e) => onUpdateRow(idx, { mrp: parseIntNum(e) ?? 0 })}
-          min={0}
-          inputMode="numeric"
-          pattern="\d*"
-          onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
-          onKeyDown={(e) => {
-            if (e.key === "e" || e.key === "+" || e.key === "-") {
-              e.preventDefault();
-            }
-            if (e.key === "Enter" || (e as any).key === "NumpadEnter") {
-              onGridKey(e as any, idx, "mrp");
-            }
-          }}
-          placeholder="0"
-          data-cell={`${idx}:mrp`}
-        />
-      </td>
+      {mode !== "PURCHASE" || uiSettings.showMfgDate ? (
+        <>
+          {/* MFG Date */}
+          <td className="px-2.5 py-2 min-w-[120px] hidden md:table-cell">
+            <input
+              type="date"
+              className={cellInput}
+              value={toDateInput(r.mfgDate)}
+              onChange={(e) =>
+                onUpdateRow(idx, { mfgDate: fromDateInput(e.target.value) })
+              }
+              data-cell={`${idx}:mfgDate`}
+              onKeyDown={(e) => onGridKey(e, idx, "mfgDate")}
+            />
+          </td>
+        </>
+      ) : null}
 
-      {/* Line Type */}
-      <td className="px-2.5 py-2 min-w-[80px] hidden lg:table-cell text-center">
-        <CompactDropdown
-          value={r.lineType || "VALUED"}
-          onChange={(val) =>
-            onUpdateRow(idx, { lineType: (val as any) || "VALUED" })
-          }
-          onEnter={(dir) => goFrom("lineType", dir)}
-          autoOpenOnFocus
-          options={lineTypeOptions}
-          placeholder="Type"
-          className="w-full [&_*]:text-xs [&_button]:h-8 [&_select]:h-8 [&_button]:px-2 [&_select]:px-2"
-          buttonProps={{
-            "data-cell": `${idx}:lineType`,
-            onKeyDown: (e: any) => onGridKey(e, idx, "lineType"),
-          }}
-        />
-      </td>
+      {mode !== "PURCHASE" || uiSettings.showExpiryDate ? (
+        <>
+          {/* Expiry Date */}
+          <td className="px-2.5 py-2 min-w-[120px] hidden md:table-cell">
+            <input
+              type="date"
+              className={cellInput}
+              value={toDateInput(r.expiryDate)}
+              onChange={(e) =>
+                onUpdateRow(idx, { expiryDate: fromDateInput(e.target.value) })
+              }
+              data-cell={`${idx}:expiryDate`}
+              onKeyDown={(e) => onGridKey(e, idx, "expiryDate")}
+            />
+          </td>
+        </>
+      ) : null}
 
-      {/* MFG Date */}
-      <td className="px-2.5 py-2 min-w-[120px] hidden md:table-cell">
-        <input
-          type="date"
-          className={cellInput}
-          value={toDateInput(r.mfgDate)}
-          onChange={(e) =>
-            onUpdateRow(idx, { mfgDate: fromDateInput(e.target.value) })
-          }
-          data-cell={`${idx}:mfgDate`}
-          onKeyDown={(e) => onGridKey(e, idx, "mfgDate")}
-        />
-      </td>
-
-      {/* Expiry Date */}
-      <td className="px-2.5 py-2 min-w-[120px] hidden md:table-cell">
-        <input
-          type="date"
-          className={cellInput}
-          value={toDateInput(r.expiryDate)}
-          onChange={(e) =>
-            onUpdateRow(idx, { expiryDate: fromDateInput(e.target.value) })
-          }
-          data-cell={`${idx}:expiryDate`}
-          onKeyDown={(e) => onGridKey(e, idx, "expiryDate")}
-        />
-      </td>
-
-      {/* Unit Billed */}
-      <td className="px-2.5 py-2 min-w-[110px] hidden lg:table-cell text-center">
-        <span className="inline-flex items-center px-2 py-1 rounded-md bg-cyan-50 text-cyan-700 ring-1 ring-cyan-200/70 text-xs font-semibold">
-          ₹{round2(r.unitBilled || 0).toFixed(2)}
-        </span>
-      </td>
+      {mode !== "PURCHASE" || uiSettings.showUnitBilled ? (
+        <>
+          {/* Unit Billed */}
+          <td className="px-2.5 py-2 min-w-[110px] hidden lg:table-cell text-center">
+            <span className="inline-flex items-center px-2 py-1 rounded-md bg-cyan-50 text-cyan-700 ring-1 ring-cyan-200/70 text-xs font-semibold">
+              ₹{round2(r.unitBilled || 0).toFixed(2)}
+            </span>
+          </td>
+        </>
+      ) : null}
 
       {/* Total */}
-      <td className={`px-2.5 py-2 min-w-[90px] sticky [right:var(--actw)] ${rowBg} z-40 border-l border-gray-200 text-center`}>
+      <td
+        className={`px-2.5 py-2 min-w-[90px] sticky [right:var(--actw)] ${rowBg} z-40 border-l border-gray-200 text-center`}
+      >
         <span className="inline-flex items-center px-2 py-1 rounded-md bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200/60 text-xs font-semibold">
           ₹{round2(r.billedValue || 0).toFixed(2)}
         </span>
       </td>
 
       {/* Action */}
-      <td className={`px-2.5 py-2 sticky right-0 ${rowBg} z-40 w-[56px] min-w-[56px] border-l border-gray-200`}>
+      <td
+        className={`px-2.5 py-2 sticky right-0 ${rowBg} z-40 w-[56px] min-w-[56px] border-l border-gray-200`}
+      >
         <div className="flex justify-center">
           <button
             onClick={() => onRemoveRow(idx)}
