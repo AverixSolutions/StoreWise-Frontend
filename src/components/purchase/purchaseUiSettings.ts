@@ -20,25 +20,6 @@ export type PurchaseUiSettings = {
 };
 
 export const DEFAULT_PURCHASE_UI_SETTINGS: PurchaseUiSettings = {
-  showTransactionType: false,
-  showPurchaseTime: false,
-  showEntryDate: false,
-  showDepartment: false,
-  showDebitAccount: false,
-  showNatureOfEntry: false,
-  showHeaderDiscount: true,
-  showUnit: false,
-  showTax: false,
-  showLineDiscount: false,
-  showSellingRates: false,
-  showMrp: true,
-  showLineType: false,
-  showMfgDate: false,
-  showExpiryDate: false,
-  showUnitBilled: false,
-};
-
-export const FULL_PURCHASE_UI_SETTINGS: PurchaseUiSettings = {
   showTransactionType: true,
   showPurchaseTime: true,
   showEntryDate: true,
@@ -57,7 +38,13 @@ export const FULL_PURCHASE_UI_SETTINGS: PurchaseUiSettings = {
   showUnitBilled: true,
 };
 
-const STORAGE_KEY = "kynflow.purchase.ui.v1";
+export const FULL_PURCHASE_UI_SETTINGS: PurchaseUiSettings = {
+  ...DEFAULT_PURCHASE_UI_SETTINGS,
+};
+
+// v2 intentionally resets the former compact-by-default layout once.
+// From this version onward every field is visible until the user hides it.
+const STORAGE_KEY = "kynflow.purchase.ui.v2";
 
 export function loadPurchaseUiSettings(): PurchaseUiSettings {
   if (typeof window === "undefined") return DEFAULT_PURCHASE_UI_SETTINGS;

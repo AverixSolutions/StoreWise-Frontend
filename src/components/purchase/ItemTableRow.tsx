@@ -17,7 +17,7 @@ import {
 
 const cellInput =
   "w-full h-8 px-2 text-xs border border-gray-300 rounded " +
-  "bg-white text-slate-800 placeholder:text-slate-400 " +
+  "purchase-grid-input bg-white text-slate-800 placeholder:text-slate-400 selection:bg-[#1e3a5f] selection:text-white " +
   "focus:border-[#20b7ff] focus:ring-1 focus:ring-[#20b7ff]/20 " +
   "outline-none transition-colors";
 
@@ -116,6 +116,7 @@ export default function ItemTableRow({
     : idx % 2 === 0
       ? "bg-white"
       : "bg-slate-50";
+  const stickyRowBg = `${rowBg} group-hover:bg-slate-200 group-focus-within:bg-[#1e3a5f]`;
 
   const goFrom = (col: import("./keyboardGrid").ColKey, dir: 1 | -1 = 1) => {
     const { rowIndex: nr, col: nc } = nextCell(idx, col, dir, gridNavigation);
@@ -130,11 +131,11 @@ export default function ItemTableRow({
 
   return (
     <tr
-      className={`transition-all duration-200 hover:bg-blue-50/30 border-b border-gray-100 divide-x divide-gray-100 ${rowBg}`}
+      className={`group border-b border-slate-200 text-slate-900 transition-colors duration-150 hover:bg-slate-200 focus-within:bg-[#1e3a5f] focus-within:text-white divide-x divide-slate-500 ${rowBg}`}
     >
       {/* Sl.NO */}
       <td
-        className={`px-2.5 py-2 sticky left-0 ${rowBg} z-40 w-[52px] min-w-[52px] border-r border-gray-200`}
+        className={`px-2.5 py-2 sticky left-0 ${stickyRowBg} z-40 w-[52px] min-w-[52px] border-r border-slate-300 transition-colors`}
       >
         <div className="flex items-center justify-center">
           <span className="inline-flex items-center justify-center w-7 h-5 rounded bg-gray-100 text-gray-800 text-xs font-mono font-medium">
@@ -145,7 +146,7 @@ export default function ItemTableRow({
 
       {/* Product */}
       <td
-        className={`px-2.5 py-2 min-w-[300px] sticky [left:var(--slw)] ${rowBg} z-40 border-r border-gray-200`}
+        className={`px-2.5 py-2 min-w-[300px] sticky [left:var(--slw)] ${stickyRowBg} z-40 border-r border-slate-300 transition-colors`}
       >
         <div className="w-full">
           <SearchableDropdown
@@ -632,7 +633,7 @@ export default function ItemTableRow({
 
       {/* Total */}
       <td
-        className={`px-2.5 py-2 min-w-[90px] sticky [right:var(--actw)] ${rowBg} z-40 border-l border-gray-200 text-center`}
+        className={`px-2.5 py-2 min-w-[90px] sticky [right:var(--actw)] ${stickyRowBg} z-40 border-l border-slate-300 text-center transition-colors`}
       >
         <span className="inline-flex items-center px-2 py-1 rounded-md bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200/60 text-xs font-semibold">
           ₹{round2(r.billedValue || 0).toFixed(2)}
@@ -641,7 +642,7 @@ export default function ItemTableRow({
 
       {/* Action */}
       <td
-        className={`px-2.5 py-2 sticky right-0 ${rowBg} z-40 w-[56px] min-w-[56px] border-l border-gray-200`}
+        className={`px-2.5 py-2 sticky right-0 ${stickyRowBg} z-40 w-[56px] min-w-[56px] border-l border-slate-300 transition-colors`}
       >
         <div className="flex justify-center">
           <button
