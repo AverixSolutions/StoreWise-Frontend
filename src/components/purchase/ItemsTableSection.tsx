@@ -7,7 +7,7 @@ import {
   FileText,
   Receipt,
   Printer,
-  Settings2,
+  Settings,
 } from "lucide-react";
 import { ItemRow, Product, TransactionMode } from "./types";
 import type { RateTypeRecord } from "@/platform/types";
@@ -131,24 +131,15 @@ export default function ItemsTableSection({
               <button
                 type="button"
                 onClick={onFocusBillDetails}
-                title="Focus Bill Details (F4)"
+                title="Toggle Bill Details (F4 or Ctrl+\)"
                 className="inline-flex items-center gap-1 rounded border border-white/15 bg-white/[0.07] px-1.5 py-0.5 text-[9px] text-white/65 hover:bg-white/15"
               >
                 <kbd className="font-mono text-[8px] font-semibold text-white/80">
                   F4
                 </kbd>
-                Bill
+                Panel
               </button>
             )}
-            <span
-              title="Toggle Bill Details panel (Ctrl+\)"
-              className="hidden items-center gap-1 rounded border border-white/15 bg-white/[0.07] px-1.5 py-0.5 text-[9px] text-white/60 xl:inline-flex"
-            >
-              <kbd className="font-mono text-[8px] font-semibold text-white/80">
-                Ctrl+\
-              </kbd>
-              Panel
-            </span>
           </div>
         </div>
 
@@ -165,7 +156,7 @@ export default function ItemsTableSection({
               title="Purchase Settings (F7)"
               aria-label="Open purchase settings"
             >
-              <Settings2 className="h-3.5 w-3.5" />
+              <Settings className="h-3.5 w-3.5" />
               <kbd className="font-mono text-[8px] font-semibold text-white/65">
                 F7
               </kbd>

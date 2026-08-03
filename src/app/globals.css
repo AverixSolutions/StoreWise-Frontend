@@ -177,3 +177,14 @@ main::-webkit-scrollbar-thumb:hover {
     0 12px 30px rgba(32, 183, 255, 0.14),
     0 10px 26px rgba(176, 38, 255, 0.1);
 }
+
+/* KYNFLOW purchase-grid active-value contrast v1 */
+.purchase-grid-input::selection {
+  background-color: #1e3a5f;
+  color: #ffffff;
+}
+
+.purchase-grid-input::-moz-selection {
+  background-color: #1e3a5f;
+  color: #ffffff;
+}

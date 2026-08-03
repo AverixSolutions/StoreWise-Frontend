@@ -1073,23 +1073,31 @@ export default function PurchasePage() {
     setIsDirty(false);
   }
 
+  async function executePurchasePrint(purchaseId: string) {
+    try {
+      const result = await printPurchaseBill(purchaseId);
+
+      if (!result?.success) {
+        setValidationMsgs([result?.error || "Print failed"]);
+        setValidationOpen(true);
+        return false;
+      }
+
+      return true;
+    } catch (error: any) {
+      setValidationMsgs(["Print failed: " + String(error?.message || error)]);
+      setValidationOpen(true);
+      return false;
+    }
+  }
+
   async function handlePrintConfirm() {
     if (!pendingPrintId) return;
 
-    try {
-      const res = await printPurchaseBill(pendingPrintId, { preview: true });
-
-      if (!res?.success) {
-        setValidationMsgs([res?.error || "Print failed"]);
-        setValidationOpen(true);
-      }
-    } catch (e: any) {
-      setValidationMsgs(["Print failed: " + String(e?.message || e)]);
-      setValidationOpen(true);
-    } finally {
-      setPrintConfirmOpen(false);
-      setPendingPrintId(null);
-    }
+    const purchaseId = pendingPrintId;
+    setPrintConfirmOpen(false);
+    setPendingPrintId(null);
+    await executePurchasePrint(purchaseId);
   }
 
   async function checkBatchConflicts(
@@ -1437,6 +1445,7 @@ export default function PurchasePage() {
     setEditingPurchaseId(null);
     setEditingSlNo(null);
     setResumedHoldId(null);
+    billDetailsOpenRef.current = true;
     setBillDetailsOpen(true);
 
     initialSnapshot.current = makeSnapshot(freshHeader, freshRows);
@@ -1444,11 +1453,23 @@ export default function PurchasePage() {
   }
 
   const focusBillDetails = useCallback(() => {
+    billDetailsOpenRef.current = true;
     setBillDetailsOpen(true);
     queuePurchaseFocus(() => document.getElementById("bill-details-billno"));
   }, []);
 
+  const toggleBillDetails = useCallback(() => {
+    if (billDetailsOpenRef.current) {
+      billDetailsOpenRef.current = false;
+      setBillDetailsOpen(false);
+      return;
+    }
+
+    focusBillDetails();
+  }, [focusBillDetails]);
+
   const focusLastBillDetail = useCallback(() => {
+    billDetailsOpenRef.current = true;
     setBillDetailsOpen(true);
     queuePurchaseFocus(() => {
       const billNo = document.getElementById("bill-details-billno");
@@ -1488,8 +1509,7 @@ export default function PurchasePage() {
       return;
     }
 
-    setPendingPrintId(purchaseId);
-    setPrintConfirmOpen(true);
+    void executePurchasePrint(purchaseId);
   }, []);
 
   useEffect(() => {
@@ -1519,22 +1539,29 @@ export default function PurchasePage() {
     isMobileSheetOpen;
 
   // Purchase keyboard map:
-  // F3 Item | F4 Bill | F6 Reports | F7 Settings | F8 Holds | F9 Hold
+  // F3 Item | F4 Toggle Bill Details | F6 Reports | F7 Settings | F8 Holds | F9 Hold
   // Ctrl/Cmd+S Save | Ctrl/Cmd+P Print | Ctrl/Cmd+N New/Clear
   // Ctrl/Cmd+\ Toggle Bill Details | Ctrl/Cmd+B Back (navigation component)
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.repeat || hasBlockingOverlay) return;
-      if (event.altKey) return;
+      if (event.repeat || hasBlockingOverlay) return;
 
       const modifier = event.ctrlKey || event.metaKey;
       const key = event.key.toLowerCase();
+      const billDetailsShortcut =
+        event.code === "F4" ||
+        event.key === "F4" ||
+        (modifier &&
+          (event.code === "Backslash" || key === "\\" || key === "|"));
 
-      if (modifier && key === "\\") {
+      if (billDetailsShortcut) {
         event.preventDefault();
-        setBillDetailsOpen((current) => !current);
+        event.stopPropagation();
+        toggleBillDetails();
         return;
       }
+
+      if (event.defaultPrevented || event.altKey) return;
 
       if (modifier && key === "s") {
         event.preventDefault();
@@ -1572,12 +1599,6 @@ export default function PurchasePage() {
         return;
       }
 
-      if (event.key === "F4") {
-        event.preventDefault();
-        focusBillDetails();
-        return;
-      }
-
       if (event.key === "F6") {
         event.preventDefault();
         setShowReports(true);
@@ -1602,13 +1623,14 @@ export default function PurchasePage() {
       }
     };
 
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, [
     focusBillDetails,
     focusItemEntry,
     hasBlockingOverlay,
     requestPrintCurrentPurchase,
+    toggleBillDetails,
   ]);
 
   function updateRow(index: number, patch: Partial<ItemRow>) {
@@ -1635,61 +1657,22 @@ export default function PurchasePage() {
         onNavigate={tryNavigate}
         title="Purchase"
         keyboardEnabled={!hasBlockingOverlay}
+        savedBillOpen={Boolean(editingPurchaseId)}
+        onPrintBill={requestPrintCurrentPurchase}
+        onNewBill={handleCancel}
       />
 
       <div className="flex-1 min-h-0 overflow-hidden p-0">
-        {editingPurchaseId && (
-          <div className="px-4 py-2 border-b bg-slate-50 border-slate-200 flex items-center gap-3 flex-wrap">
-            <span className="text-sm text-gray-500">Saved bill open</span>
-
-            <button
-              type="button"
-              onClick={requestPrintCurrentPurchase}
-              title="Print Bill (Ctrl+P)"
-              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md bg-[#1e3a5f] text-white text-sm hover:bg-[#16304f] transition-colors"
-            >
-              <span>Print Bill</span>
-              <kbd className="ml-1 rounded border border-white/15 bg-white/10 px-1 py-0.5 font-mono text-[8px] text-white/65">
-                Ctrl+P
-              </kbd>
-            </button>
-
-            <BarcodePrintCenterButton
-              licenseId={licenseId}
-              initialRows={
-                showBarcodePrint ? getPrintCenterRowsFromPurchaseRows() : []
-              }
-              defaultShopName={shopName}
-              buttonText="Print Barcodes"
-              className="inline-flex items-center gap-2 rounded border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-              open={showBarcodePrint}
-              onOpen={() => setShowBarcodePrint(true)}
-              onClose={() => setShowBarcodePrint(false)}
-            />
-
-            <button
-              type="button"
-              onClick={handleCancel}
-              title="New Bill (Ctrl+N)"
-              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md border border-slate-200 bg-white text-sm text-slate-600 hover:bg-slate-50 transition-colors"
-            >
-              <span>New Bill</span>
-              <kbd className="rounded border border-slate-200 bg-slate-100 px-1 py-0.5 font-mono text-[8px] text-slate-500">
-                Ctrl+N
-              </kbd>
-            </button>
-          </div>
-        )}
         <div
           className={[
             "grid overflow-hidden transition-all duration-200",
-            editingPurchaseId ? "h-[calc(100%-41px)]" : "h-full",
+            "h-full",
             // Mobile: single column always
             "grid-cols-1",
             // md+: side panel visible
             billDetailsOpen
-              ? "md:grid-cols-[240px_1fr] lg:grid-cols-[300px_1fr]"
-              : "md:grid-cols-[40px_1fr]  lg:grid-cols-[40px_1fr]",
+              ? "md:grid-cols-[280px_1fr] lg:grid-cols-[320px_1fr]"
+              : "md:grid-cols-[44px_1fr] lg:grid-cols-[44px_1fr]",
           ]
             .join(" ")
             .trim()}
@@ -1712,7 +1695,7 @@ export default function PurchasePage() {
               requireSupplier={header.purchaseType === "CREDIT"}
               isEditing={Boolean(editingPurchaseId)}
               isOpen={billDetailsOpen}
-              onToggle={() => setBillDetailsOpen((v) => !v)}
+              onToggle={toggleBillDetails}
               transactionTypes={transactionTypes}
               uiSettings={purchaseUiSettings}
               onFocusItems={focusItemEntry}
@@ -1738,10 +1721,8 @@ export default function PurchasePage() {
               onShowReports={() => setShowReports(true)}
               onOpenSettings={() => setShowPurchaseSettings(true)}
               onFocusItems={focusItemEntry}
-              onFocusBillDetails={focusBillDetails}
+              onFocusBillDetails={toggleBillDetails}
               onFocusPreviousSection={focusLastBillDetail}
-              onPrintBill={requestPrintCurrentPurchase}
-              canPrint={Boolean(editingPurchaseId)}
               uiSettings={purchaseUiSettings}
               showHoldControls={!editingPurchaseId}
               onRequestBatchSelect={handleRequestBatchSelect}
@@ -2176,7 +2157,7 @@ export default function PurchasePage() {
       <ConfirmModal
         isOpen={printConfirmOpen}
         title="Print bill?"
-        message="Open the print preview for this purchase?"
+        message="Print this purchase using the current A4/thermal and preview settings?"
         confirmText="Print"
         cancelText="Skip"
         onConfirm={handlePrintConfirm}

@@ -44,20 +44,19 @@ interface BillDetailsSectionProps {
 }
 
 const labelCls =
-  "text-[10px] text-slate-500 font-semibold uppercase tracking-[0.1em] mb-0.5 flex items-center gap-1";
+  "mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-600";
 
-// Single source of truth for all input heights — h-7 = 28px
+// Single source of truth for all input heights.
 const inputBase =
-  "w-full h-7 px-2 text-xs border border-slate-300 rounded " +
-  "bg-white text-slate-800 outline-none transition-colors " +
-  "focus:border-[#20b7ff] focus:ring-1 focus:ring-[#20b7ff]/20";
+  "h-8 w-full rounded-md border border-slate-200 bg-white px-2.5 text-xs text-slate-900 " +
+  "shadow-sm outline-none transition focus:border-[#20b7ff] focus:ring-2 focus:ring-[#20b7ff]/15";
 const fieldWrap = "relative";
 const leftIcon =
   "absolute inset-y-0 left-2 flex items-center text-slate-400 pointer-events-none";
 const inputWithIcon = inputBase + " pl-6";
 
 // Shared height token used for buttons/dropdowns that must match inputs
-const H = "h-7";
+const H = "h-8";
 
 type HeaderField =
   | "purchaseType"
@@ -200,11 +199,9 @@ export default function BillDetailsSection({
   if (!isOpen) {
     return (
       <aside
-        className="w-10 bg-[#1e3a5f] flex flex-col items-center py-3 gap-4
-                   border-r border-slate-300 cursor-pointer select-none
-                   transition-all duration-200"
+        className="flex w-11 cursor-pointer select-none flex-col items-center gap-4 border-r border-slate-700 bg-slate-900 py-3 transition-all duration-200"
         onClick={onToggle}
-        title="Show Bill Details (Ctrl+\\)"
+        title="Show Bill Details (F4 or Ctrl+\\)"
       >
         <ChevronRight className="w-4 h-4 text-white/70 flex-shrink-0" />
         <span
@@ -228,12 +225,10 @@ export default function BillDetailsSection({
     <section
       ref={sectionRef}
       onKeyDownCapture={handleHeaderKeyDownCapture}
-      className="col-span-1 bg-white w-full md:max-w-[240px] lg:max-w-[300px] border-r border-slate-200
-                 shadow-lg -mt-px overflow-y-auto no-scrollbar
-                 h-full flex flex-col transition-all duration-200"
+      className="col-span-1 -mt-px flex h-full w-full flex-col overflow-hidden border-r border-slate-200 bg-white shadow-[8px_0_24px_rgba(15,23,42,0.08)] transition-all duration-200 md:max-w-[280px] lg:max-w-[320px]"
     >
       {/* Title bar */}
-      <div className="flex items-center justify-between px-3 py-2 bg-[#1e3a5f] shrink-0">
+      <div className="flex shrink-0 items-center justify-between border-b border-white/10 bg-[#1e3a5f] px-3.5 py-2.5">
         <div className="flex items-center gap-1.5">
           <Receipt className="w-3.5 h-3.5 text-white/70" />
           <h2 className="text-xs font-semibold text-white tracking-wide">
@@ -245,7 +240,7 @@ export default function BillDetailsSection({
             </span>
           )}
           <kbd
-            title="Focus Bill Details (F4)"
+            title="Toggle Bill Details (F4)"
             className="hidden rounded border border-white/15 bg-white/10 px-1.5 py-0.5 font-mono text-[8px] font-semibold text-white/55 lg:inline-flex"
           >
             F4
@@ -254,7 +249,7 @@ export default function BillDetailsSection({
         <button
           type="button"
           onClick={onToggle}
-          title="Hide Bill Details (Ctrl+\\)"
+          title="Hide Bill Details (F4 or Ctrl+\\)"
           className="text-white/60 hover:text-white transition-colors cursor-pointer"
         >
           <ChevronLeft className="w-4 h-4" />
@@ -262,315 +257,328 @@ export default function BillDetailsSection({
       </div>
 
       {/* Fields */}
-      <div className="flex-1 overflow-y-auto no-scrollbar p-2.5 space-y-2">
-        {/* Purchase Type */}
-        <div>
-          <label className={labelCls}>
-            <Wallet className="w-3 h-3" />
-            Purchase Type
-          </label>
-          <div
-            className={`inline-flex w-full rounded overflow-hidden border border-slate-300 ${H}`}
-          >
-            <button
-              type="button"
-              data-purchase-header-field="purchaseType"
-              aria-pressed={header.purchaseType === "CASH"}
-              onKeyDown={(event) => {
-                if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-                  event.preventDefault();
-                  const purchaseType =
-                    event.key === "ArrowRight" && header.supplier
-                      ? "CREDIT"
-                      : "CASH";
-                  setHeader((state) => ({ ...state, purchaseType }));
-                  focusHeaderField("purchaseType");
-                }
-              }}
-              onClick={() => setHeader((s) => ({ ...s, purchaseType: "CASH" }))}
-              className={
-                `flex-1 ${H} text-xs transition-colors cursor-pointer font-medium ` +
-                (header.purchaseType === "CASH"
-                  ? "bg-[#1e3a5f] text-white"
-                  : "bg-white text-slate-600 hover:bg-slate-50")
-              }
-            >
-              Cash
-            </button>
-            <button
-              type="button"
-              data-purchase-header-field="purchaseType"
-              aria-pressed={header.purchaseType === "CREDIT"}
-              onKeyDown={(event) => {
-                if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-                  event.preventDefault();
-                  const purchaseType =
-                    event.key === "ArrowLeft" ? "CASH" : "CREDIT";
-                  setHeader((state) => ({ ...state, purchaseType }));
-                  focusHeaderField("purchaseType");
-                }
-              }}
-              disabled={!header.supplier}
-              title={
-                !header.supplier ? "Select a supplier to enable CREDIT" : ""
-              }
-              onClick={() =>
-                setHeader((s) => ({ ...s, purchaseType: "CREDIT" }))
-              }
-              className={
-                `flex-1 ${H} text-xs border-l border-slate-300 transition-colors font-medium ` +
-                (header.purchaseType === "CREDIT"
-                  ? "bg-[#1e3a5f] text-white cursor-pointer"
-                  : "bg-white text-slate-600 hover:bg-slate-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed")
-              }
-            >
-              Credit
-            </button>
-          </div>
-        </div>
-
-        {/* Transaction Type */}
-        {uiSettings.showTransactionType && transactionTypes.length > 0 && (
-          <div data-purchase-header-field-wrapper="transactionType">
+      <div className="no-scrollbar flex-1 overflow-y-auto">
+        <div className="space-y-3 bg-white px-3 py-3">
+          {/* Purchase Type */}
+          <div>
             <label className={labelCls}>
-              <Layers className="w-3 h-3" />
-              Transaction Type
+              <Wallet className="w-3 h-3" />
+              Purchase Type
             </label>
-            <Dropdown
-              value={header.typeId || ""}
-              onChange={(val) =>
-                setHeader((s) => ({ ...s, typeId: val || null }))
+            <div
+              className={`inline-flex w-full rounded overflow-hidden border border-slate-300 ${H}`}
+            >
+              <button
+                type="button"
+                data-purchase-header-field="purchaseType"
+                aria-pressed={header.purchaseType === "CASH"}
+                onKeyDown={(event) => {
+                  if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+                    event.preventDefault();
+                    const purchaseType =
+                      event.key === "ArrowRight" && header.supplier
+                        ? "CREDIT"
+                        : "CASH";
+                    setHeader((state) => ({ ...state, purchaseType }));
+                    focusHeaderField("purchaseType");
+                  }
+                }}
+                onClick={() =>
+                  setHeader((s) => ({ ...s, purchaseType: "CASH" }))
+                }
+                className={
+                  `flex-1 ${H} text-xs transition-colors cursor-pointer font-medium ` +
+                  (header.purchaseType === "CASH"
+                    ? "bg-[#1e3a5f] text-white"
+                    : "bg-white text-slate-600 hover:bg-slate-50")
+                }
+              >
+                Cash
+              </button>
+              <button
+                type="button"
+                data-purchase-header-field="purchaseType"
+                aria-pressed={header.purchaseType === "CREDIT"}
+                onKeyDown={(event) => {
+                  if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+                    event.preventDefault();
+                    const purchaseType =
+                      event.key === "ArrowLeft" ? "CASH" : "CREDIT";
+                    setHeader((state) => ({ ...state, purchaseType }));
+                    focusHeaderField("purchaseType");
+                  }
+                }}
+                disabled={!header.supplier}
+                title={
+                  !header.supplier ? "Select a supplier to enable CREDIT" : ""
+                }
+                onClick={() =>
+                  setHeader((s) => ({ ...s, purchaseType: "CREDIT" }))
+                }
+                className={
+                  `flex-1 ${H} text-xs border-l border-slate-300 transition-colors font-medium ` +
+                  (header.purchaseType === "CREDIT"
+                    ? "bg-[#1e3a5f] text-white cursor-pointer"
+                    : "bg-white text-slate-600 hover:bg-slate-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed")
+                }
+              >
+                Credit
+              </button>
+            </div>
+          </div>
+
+          {/* Transaction Type */}
+          {uiSettings.showTransactionType && transactionTypes.length > 0 && (
+            <div data-purchase-header-field-wrapper="transactionType">
+              <label className={labelCls}>
+                <Layers className="w-3 h-3" />
+                Transaction Type
+              </label>
+              <Dropdown
+                value={header.typeId || ""}
+                onChange={(val) =>
+                  setHeader((s) => ({ ...s, typeId: val || null }))
+                }
+                options={[
+                  { value: "", label: "-- None --" },
+                  ...transactionTypes.map((t) => ({
+                    value: t.id,
+                    label: t.name,
+                  })),
+                ]}
+                placeholder="-- None --"
+                onEnter={() => moveHeaderFocus("transactionType", 1)}
+                buttonClassName="purchase-header-transaction-type"
+                className={`[&_button]:${H} [&_button]:text-xs [&_button]:rounded [&_button]:px-2 [&_button]:border-slate-300 [&_button]:py-0`}
+              />
+            </div>
+          )}
+
+          {/* Bill No */}
+          <div>
+            <label className={labelCls}>
+              <Receipt className="w-3 h-3" />
+              Bill No <span className="text-rose-500">*</span>
+            </label>
+            <input
+              className={inputBase}
+              value={header.billNo}
+              onChange={(e) =>
+                setHeader((s) => ({ ...s, billNo: e.target.value }))
               }
-              options={[
-                { value: "", label: "-- None --" },
-                ...transactionTypes.map((t) => ({
-                  value: t.id,
-                  label: t.name,
-                })),
-              ]}
-              placeholder="-- None --"
-              onEnter={() => moveHeaderFocus("transactionType", 1)}
-              buttonClassName="purchase-header-transaction-type"
-              className={`[&_button]:${H} [&_button]:text-xs [&_button]:rounded [&_button]:px-2 [&_button]:border-slate-300 [&_button]:py-0`}
+              placeholder="Enter bill number"
+              id="bill-details-billno"
+              data-purchase-header-field="billNo"
             />
           </div>
-        )}
 
-        {/* Bill No */}
-        <div>
-          <label className={labelCls}>
-            <Receipt className="w-3 h-3" />
-            Bill No <span className="text-rose-500">*</span>
-          </label>
-          <input
-            className={inputBase}
-            value={header.billNo}
-            onChange={(e) =>
-              setHeader((s) => ({ ...s, billNo: e.target.value }))
-            }
-            placeholder="Enter bill number"
-            id="bill-details-billno"
-            data-purchase-header-field="billNo"
-          />
-        </div>
+          {/* Supplier */}
+          <div>
+            <label className={labelCls}>
+              <UserRound className="w-3 h-3" />
+              Supplier
+              {requireSupplier ? (
+                <span className="text-rose-500">*</span>
+              ) : null}
+            </label>
+            <div className="flex gap-1.5 items-center">
+              <div className="flex-1 min-w-0">
+                <SearchableDropdown
+                  value={header.supplier?.id || ""}
+                  onChange={(v) => {
+                    const sup = suppliers.find((s) => s.id === v);
+                    setHeader((s) => ({ ...s, supplier: sup || null }));
+                  }}
+                  options={suppliers.map((s) => ({
+                    value: s.id,
+                    label: s.name,
+                  }))}
+                  placeholder="Select supplier..."
+                  controlClassName={`${H} text-xs px-2`}
+                  inputClassName={`${H} text-xs`}
+                  optionClassName="text-xs"
+                  menuClassName="text-xs"
+                  onEnter={(direction) =>
+                    moveHeaderFocus("supplier", direction)
+                  }
+                  buttonProps={{
+                    "data-purchase-header-field": "supplier",
+                  }}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSupplierModal(true)}
+                className={`px-2 ${H} rounded bg-[#1e3a5f] text-white hover:bg-[#16304f]
+                         transition-colors inline-flex items-center justify-center cursor-pointer shrink-0`}
+                title="Add New Supplier"
+              >
+                <Plus className="w-4 h-6" />
+              </button>
+            </div>
+          </div>
 
-        {/* Supplier */}
-        <div>
-          <label className={labelCls}>
-            <UserRound className="w-3 h-3" />
-            Supplier
-            {requireSupplier ? <span className="text-rose-500">*</span> : null}
-          </label>
-          <div className="flex gap-1.5 items-center">
-            <div className="flex-1 min-w-0">
-              <SearchableDropdown
-                value={header.supplier?.id || ""}
-                onChange={(v) => {
-                  const sup = suppliers.find((s) => s.id === v);
-                  setHeader((s) => ({ ...s, supplier: sup || null }));
+          {/* Purchase Date */}
+          <div>
+            <label className={labelCls}>
+              <CalendarClock className="w-3 h-3" />
+              Purchase Date
+            </label>
+            <div className="grid grid-cols-[1fr_80px] gap-1">
+              <input
+                className={inputBase + " px-1.5"}
+                type="date"
+                data-purchase-header-field="purchaseDate"
+                value={toLocalDate(header.purchaseDate)}
+                onChange={(e) => {
+                  const d = e.target.value;
+                  const t = toLocalTime(header.purchaseDate);
+                  setHeader((s) => ({
+                    ...s,
+                    purchaseDate: fromDateTime(d, t),
+                  }));
                 }}
-                options={suppliers.map((s) => ({ value: s.id, label: s.name }))}
-                placeholder="Select supplier..."
-                controlClassName={`${H} text-xs px-2`}
-                inputClassName={`${H} text-xs`}
-                optionClassName="text-xs"
-                menuClassName="text-xs"
-                onEnter={(direction) => moveHeaderFocus("supplier", direction)}
-                buttonProps={{
-                  "data-purchase-header-field": "supplier",
+              />
+              <input
+                className={
+                  inputBase +
+                  " px-1 min-w-0" +
+                  (uiSettings.showPurchaseTime ? "" : " hidden")
+                }
+                type="time"
+                data-purchase-header-field="purchaseTime"
+                value={toLocalTime(header.purchaseDate)}
+                onChange={(e) => {
+                  const t = e.target.value;
+                  const d = toLocalDate(header.purchaseDate);
+                  setHeader((s) => ({
+                    ...s,
+                    purchaseDate: fromDateTime(d, t),
+                  }));
                 }}
               />
             </div>
-            <button
-              type="button"
-              onClick={() => setShowSupplierModal(true)}
-              className={`px-2 ${H} rounded bg-[#1e3a5f] text-white hover:bg-[#16304f]
-                         transition-colors inline-flex items-center justify-center cursor-pointer shrink-0`}
-              title="Add New Supplier"
-            >
-              <Plus className="w-4 h-6" />
-            </button>
           </div>
-        </div>
 
-        {/* Purchase Date */}
-        <div>
-          <label className={labelCls}>
-            <CalendarClock className="w-3 h-3" />
-            Purchase Date
-          </label>
-          <div className="grid grid-cols-[1fr_80px] gap-1">
+          {/* Entry Date */}
+          <div className={uiSettings.showEntryDate ? "" : "hidden"}>
+            <label className={labelCls}>
+              <CalendarClock className="w-3 h-3" />
+              Entry Date
+            </label>
             <input
               className={inputBase + " px-1.5"}
               type="date"
-              data-purchase-header-field="purchaseDate"
-              value={toLocalDate(header.purchaseDate)}
+              data-purchase-header-field="entryDate"
+              value={toLocalDate(header.entryTime)}
               onChange={(e) => {
                 const d = e.target.value;
-                const t = toLocalTime(header.purchaseDate);
-                setHeader((s) => ({ ...s, purchaseDate: fromDateTime(d, t) }));
-              }}
-            />
-            <input
-              className={
-                inputBase +
-                " px-1 min-w-0" +
-                (uiSettings.showPurchaseTime ? "" : " hidden")
-              }
-              type="time"
-              data-purchase-header-field="purchaseTime"
-              value={toLocalTime(header.purchaseDate)}
-              onChange={(e) => {
-                const t = e.target.value;
-                const d = toLocalDate(header.purchaseDate);
-                setHeader((s) => ({ ...s, purchaseDate: fromDateTime(d, t) }));
+                const t = toLocalTime(header.entryTime);
+                setHeader((s) => ({ ...s, entryTime: fromDateTime(d, t) }));
               }}
             />
           </div>
-        </div>
 
-        {/* Entry Date */}
-        <div className={uiSettings.showEntryDate ? "" : "hidden"}>
-          <label className={labelCls}>
-            <CalendarClock className="w-3 h-3" />
-            Entry Date
-          </label>
-          <input
-            className={inputBase + " px-1.5"}
-            type="date"
-            data-purchase-header-field="entryDate"
-            value={toLocalDate(header.entryTime)}
-            onChange={(e) => {
-              const d = e.target.value;
-              const t = toLocalTime(header.entryTime);
-              setHeader((s) => ({ ...s, entryTime: fromDateTime(d, t) }));
-            }}
-          />
-        </div>
-
-        {/* Dept + Debit A/c */}
-        <div
-          className={`grid gap-1.5 ${
-            uiSettings.showDepartment && uiSettings.showDebitAccount
-              ? "grid-cols-2"
-              : "grid-cols-1"
-          } ${
-            !uiSettings.showDepartment && !uiSettings.showDebitAccount
-              ? "hidden"
-              : ""
-          }`}
-        >
-          <div className={uiSettings.showDepartment ? "" : "hidden"}>
-            <label className={labelCls}>
-              <Building2 className="w-3 h-3" />
-              Department
-            </label>
-            <input
-              className={inputBase}
-              data-purchase-header-field="department"
-              value={header.department}
-              onChange={(e) =>
-                setHeader((s) => ({ ...s, department: e.target.value }))
-              }
-              placeholder="Dept"
-            />
-          </div>
-          <div className={uiSettings.showDebitAccount ? "" : "hidden"}>
-            <label className={labelCls}>
-              <Landmark className="w-3 h-3" />
-              Debit A/c
-            </label>
-            <input
-              className={inputBase}
-              data-purchase-header-field="debitAccount"
-              value={header.debitAccount}
-              onChange={(e) =>
-                setHeader((s) => ({ ...s, debitAccount: e.target.value }))
-              }
-              placeholder="A/c"
-            />
-          </div>
-        </div>
-
-        {/* Nature of Entry */}
-        <div className={uiSettings.showNatureOfEntry ? "" : "hidden"}>
-          <label className={labelCls}>
-            <FileText className="w-3 h-3" />
-            Nature of Entry
-          </label>
-          <input
-            className={inputBase}
-            data-purchase-header-field="natureOfEntry"
-            value={header.natureOfEntry}
-            onChange={(e) =>
-              setHeader((s) => ({ ...s, natureOfEntry: e.target.value }))
-            }
-            placeholder="Nature of entry"
-          />
-        </div>
-
-        {/* Header Discount */}
-        <div className={uiSettings.showHeaderDiscount ? "" : "hidden"}>
-          <label className={labelCls}>
-            <Percent className="w-3 h-3" />
-            Header Discount (₹)
-          </label>
-          <div className={fieldWrap}>
-            <div className={leftIcon}>
-              <IndianRupee className="w-3 h-3" />
+          {/* Dept + Debit A/c */}
+          <div
+            className={`grid grid-cols-1 gap-3 ${
+              !uiSettings.showDepartment && !uiSettings.showDebitAccount
+                ? "hidden"
+                : ""
+            }`}
+          >
+            <div className={uiSettings.showDepartment ? "" : "hidden"}>
+              <label className={labelCls}>
+                <Building2 className="w-3 h-3" />
+                Department
+              </label>
+              <input
+                className={inputBase}
+                data-purchase-header-field="department"
+                value={header.department}
+                onChange={(e) =>
+                  setHeader((s) => ({ ...s, department: e.target.value }))
+                }
+                placeholder="Dept"
+              />
             </div>
+            <div className={uiSettings.showDebitAccount ? "" : "hidden"}>
+              <label className={labelCls}>
+                <Landmark className="w-3 h-3" />
+                Debit A/c
+              </label>
+              <input
+                className={inputBase}
+                data-purchase-header-field="debitAccount"
+                value={header.debitAccount}
+                onChange={(e) =>
+                  setHeader((s) => ({ ...s, debitAccount: e.target.value }))
+                }
+                placeholder="A/c"
+              />
+            </div>
+          </div>
+
+          {/* Nature of Entry */}
+          <div className={uiSettings.showNatureOfEntry ? "" : "hidden"}>
+            <label className={labelCls}>
+              <FileText className="w-3 h-3" />
+              Nature of Entry
+            </label>
             <input
-              className={inputWithIcon}
-              type="number"
-              data-purchase-header-field="headerDiscount"
-              value={header.discount}
-              min={0}
-              step={1}
-              inputMode="numeric"
-              onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
-              onKeyDown={(e) => {
-                if (
-                  e.key === "-" ||
-                  e.key === "+" ||
-                  e.key.toLowerCase() === "e"
-                )
-                  e.preventDefault();
-              }}
-              onChange={(e) => {
-                const n = e.currentTarget.valueAsNumber;
-                const clamped = Number.isFinite(n)
-                  ? Math.max(0, Math.min(n, subTotal))
-                  : 0;
-                setHeader((s) => ({ ...s, discount: clamped }));
-              }}
-              placeholder="0.00"
+              className={inputBase}
+              data-purchase-header-field="natureOfEntry"
+              value={header.natureOfEntry}
+              onChange={(e) =>
+                setHeader((s) => ({ ...s, natureOfEntry: e.target.value }))
+              }
+              placeholder="Nature of entry"
             />
+          </div>
+
+          {/* Header Discount */}
+          <div className={uiSettings.showHeaderDiscount ? "" : "hidden"}>
+            <label className={labelCls}>
+              <Percent className="w-3 h-3" />
+              Header Discount (₹)
+            </label>
+            <div className={fieldWrap}>
+              <div className={leftIcon}>
+                <IndianRupee className="w-3 h-3" />
+              </div>
+              <input
+                className={inputWithIcon}
+                type="number"
+                data-purchase-header-field="headerDiscount"
+                value={header.discount}
+                min={0}
+                step={1}
+                inputMode="numeric"
+                onWheel={(e) => (e.currentTarget as HTMLInputElement).blur()}
+                onKeyDown={(e) => {
+                  if (
+                    e.key === "-" ||
+                    e.key === "+" ||
+                    e.key.toLowerCase() === "e"
+                  )
+                    e.preventDefault();
+                }}
+                onChange={(e) => {
+                  const n = e.currentTarget.valueAsNumber;
+                  const clamped = Number.isFinite(n)
+                    ? Math.max(0, Math.min(n, subTotal))
+                    : 0;
+                  setHeader((s) => ({ ...s, discount: clamped }));
+                }}
+                placeholder="0.00"
+              />
+            </div>
           </div>
         </div>
       </div>
 
       {/* Summary card */}
-      <div className="shrink-0 mx-2.5 mb-2 rounded-lg border border-slate-200 bg-slate-50 overflow-hidden">
+      <div className="mx-3 mb-3 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="h-0.5 bg-gradient-to-r from-[#20b7ff] to-[#b026ff]" />
         <div className="px-3 py-2 space-y-1">
           <div className="flex justify-between text-[11px]">
@@ -597,13 +605,12 @@ export default function BillDetailsSection({
       </div>
 
       {/* Actions */}
-      <div className="shrink-0 flex gap-2 px-2.5 pb-2.5">
+      <div className="flex shrink-0 gap-2 border-t border-slate-200 bg-white px-3 py-3">
         <button
           onClick={onSave}
           disabled={header.purchaseType === "CREDIT" && !header.supplier}
           className={
-            "flex-1 h-8 px-3 rounded transition-colors font-semibold inline-flex " +
-            "items-center justify-center gap-1.5 text-xs " +
+            "inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-colors " +
             (header.purchaseType === "CREDIT" && !header.supplier
               ? "bg-slate-200 text-slate-400 cursor-not-allowed"
               : "bg-[#1e3a5f] text-white hover:bg-[#16304f] cursor-pointer")
@@ -617,8 +624,7 @@ export default function BillDetailsSection({
         </button>
         <button
           onClick={onCancel}
-          className="flex-1 h-8 bg-white border border-slate-300 px-3 rounded inline-flex items-center justify-center gap-1
-                     hover:bg-slate-50 transition-colors font-semibold text-slate-600 text-xs cursor-pointer"
+          className="inline-flex h-9 flex-1 cursor-pointer items-center justify-center gap-1 rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50"
         >
           <span>{isEditing ? "New Bill" : "Clear"}</span>
           <kbd className="ml-1 rounded border border-slate-300 bg-slate-100 px-1 py-0.5 font-mono text-[8px] text-slate-500">
@@ -654,7 +660,7 @@ export function MobileBillSheet({
         <div className="flex justify-center pt-3 pb-1">
           <div className="w-10 h-1 rounded-full bg-slate-300" />
         </div>
-        <div className="overflow-y-auto flex-1 px-4 pb-6">
+        <div className="flex-1 overflow-y-auto pb-6">
           <BillDetailsSection {...props} isOpen={true} onToggle={onClose} />
         </div>
       </div>
