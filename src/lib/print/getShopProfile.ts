@@ -33,10 +33,15 @@ function resolveLogoUrl(settings: Record<string, any>): string | null {
   return null;
 }
 
-export async function getShopProfile(): Promise<ShopProfile> {
+export async function getShopProfile(
+  licenseIdOverride?: string,
+): Promise<ShopProfile> {
   if (typeof window === "undefined") return { name: "My Shop" };
 
-  const licenseId = localStorage.getItem("licenseId") || "demo-license";
+  const licenseId =
+    cleanString(licenseIdOverride) ||
+    cleanString(localStorage.getItem("licenseId")) ||
+    "demo-license";
   const isDesktop = !!(window as any).electronAPI;
 
   let s: Record<string, any> = {};

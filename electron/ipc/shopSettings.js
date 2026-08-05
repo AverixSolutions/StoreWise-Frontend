@@ -98,7 +98,11 @@ function registerShopSettingsHandlers() {
       updatedAt: ts,
     });
 
-    return { success: true };
+    const settings = db
+      .prepare(`SELECT * FROM shop_settings WHERE licenseId = ?`)
+      .get(payload.licenseId);
+
+    return { success: true, settings };
   });
 
   // ── Sync handlers ───────────────────────────────────────────────────────────
@@ -155,7 +159,9 @@ function registerShopSettingsHandlers() {
         )
         ON CONFLICT(licenseId) DO UPDATE SET
           shopName             = excluded.shopName,
-          logoDataUrl          = excluded.logoDataUrl,
+          -- logoDataUrl is a desktop device-local base64 image.
+          -- Cloud records normally omit it, so a pull must not erase it.
+          logoDataUrl          = COALESCE(shop_settings.logoDataUrl, excluded.logoDataUrl),
           logoUrl              = excluded.logoUrl,
           addressLine1         = excluded.addressLine1,
           addressLine2         = excluded.addressLine2,

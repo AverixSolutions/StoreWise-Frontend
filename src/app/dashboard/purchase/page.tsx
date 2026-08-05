@@ -1459,14 +1459,10 @@ export default function PurchasePage() {
   }, []);
 
   const toggleBillDetails = useCallback(() => {
-    if (billDetailsOpenRef.current) {
-      billDetailsOpenRef.current = false;
-      setBillDetailsOpen(false);
-      return;
-    }
-
-    focusBillDetails();
-  }, [focusBillDetails]);
+    const nextOpen = !billDetailsOpenRef.current;
+    billDetailsOpenRef.current = nextOpen;
+    setBillDetailsOpen(nextOpen);
+  }, []);
 
   const focusLastBillDetail = useCallback(() => {
     billDetailsOpenRef.current = true;
@@ -1539,7 +1535,7 @@ export default function PurchasePage() {
     isMobileSheetOpen;
 
   // Purchase keyboard map:
-  // F3 Item | F4 Toggle Bill Details | F6 Reports | F7 Settings | F8 Holds | F9 Hold
+  // F3 Item | F4 Focus Bill Number | F6 Reports | F7 Settings | F8 Holds | F9 Hold
   // Ctrl/Cmd+S Save | Ctrl/Cmd+P Print | Ctrl/Cmd+N New/Clear
   // Ctrl/Cmd+\ Toggle Bill Details | Ctrl/Cmd+B Back (navigation component)
   useEffect(() => {
@@ -1548,13 +1544,18 @@ export default function PurchasePage() {
 
       const modifier = event.ctrlKey || event.metaKey;
       const key = event.key.toLowerCase();
-      const billDetailsShortcut =
-        event.code === "F4" ||
-        event.key === "F4" ||
-        (modifier &&
-          (event.code === "Backslash" || key === "\\" || key === "|"));
+      const focusBillNumberShortcut = event.code === "F4" || event.key === "F4";
+      const toggleBillDetailsShortcut =
+        modifier && (event.code === "Backslash" || key === "\\" || key === "|");
 
-      if (billDetailsShortcut) {
+      if (focusBillNumberShortcut) {
+        event.preventDefault();
+        event.stopPropagation();
+        focusBillDetails();
+        return;
+      }
+
+      if (toggleBillDetailsShortcut) {
         event.preventDefault();
         event.stopPropagation();
         toggleBillDetails();
@@ -1721,7 +1722,8 @@ export default function PurchasePage() {
               onShowReports={() => setShowReports(true)}
               onOpenSettings={() => setShowPurchaseSettings(true)}
               onFocusItems={focusItemEntry}
-              onFocusBillDetails={toggleBillDetails}
+              onFocusBillDetails={focusBillDetails}
+              onToggleBillDetails={toggleBillDetails}
               onFocusPreviousSection={focusLastBillDetail}
               uiSettings={purchaseUiSettings}
               showHoldControls={!editingPurchaseId}
@@ -1806,7 +1808,6 @@ export default function PurchasePage() {
         onSave={(nextSettings) => {
           setPurchaseUiSettings(nextSettings);
           savePurchaseUiSettings(nextSettings);
-          setShowPurchaseSettings(false);
         }}
       />
 

@@ -201,7 +201,7 @@ export default function BillDetailsSection({
       <aside
         className="flex w-11 cursor-pointer select-none flex-col items-center gap-4 border-r border-slate-700 bg-slate-900 py-3 transition-all duration-200"
         onClick={onToggle}
-        title="Show Bill Details (F4 or Ctrl+\\)"
+        title="Show Bill Details (Ctrl+\\)"
       >
         <ChevronRight className="w-4 h-4 text-white/70 flex-shrink-0" />
         <span
@@ -240,16 +240,16 @@ export default function BillDetailsSection({
             </span>
           )}
           <kbd
-            title="Toggle Bill Details (F4)"
-            className="hidden rounded border border-white/15 bg-white/10 px-1.5 py-0.5 font-mono text-[8px] font-semibold text-white/55 lg:inline-flex"
+            title="Toggle Bill Details (Ctrl+\)"
+            className="hidden rounded border border-white/35 bg-white/20 px-1.5 py-0.5 font-mono text-[8px] font-semibold text-white lg:inline-flex"
           >
-            F4
+            Ctrl+\
           </kbd>
         </div>
         <button
           type="button"
           onClick={onToggle}
-          title="Hide Bill Details (F4 or Ctrl+\\)"
+          title="Hide Bill Details (Ctrl+\\)"
           className="text-white/60 hover:text-white transition-colors cursor-pointer"
         >
           <ChevronLeft className="w-4 h-4" />
@@ -359,6 +359,12 @@ export default function BillDetailsSection({
             <label className={labelCls}>
               <Receipt className="w-3 h-3" />
               Bill No <span className="text-rose-500">*</span>
+              <kbd
+                title="Focus Bill Number (F4)"
+                className="ml-auto rounded border border-slate-200 bg-slate-100 px-1 py-0.5 font-mono text-[8px] font-semibold normal-case tracking-normal text-slate-500"
+              >
+                F4
+              </kbd>
             </label>
             <input
               className={inputBase}
@@ -618,7 +624,7 @@ export default function BillDetailsSection({
         >
           <Receipt className="w-3.5 h-3.5" />
           <span>Save</span>
-          <kbd className="rounded border border-white/15 bg-white/10 px-1 py-0.5 font-mono text-[8px] text-white/65">
+          <kbd className="rounded border border-white/30 bg-white/15 px-1 py-0.5 font-mono text-[8px] text-white">
             Ctrl+S
           </kbd>
         </button>

@@ -14,7 +14,7 @@ type PurchaseSellingRatesCellProps = {
 };
 
 const inputClass =
-  "h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-right text-xs text-slate-800 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/15";
+  "purchase-grid-input h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-right text-xs text-slate-800 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/15";
 
 function display(value?: number | null) {
   return value === 0 || value ? String(round2(value)) : "";

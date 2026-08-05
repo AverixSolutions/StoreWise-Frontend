@@ -4,15 +4,23 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Printer, LogOut, ArrowRight, Monitor, Globe } from "lucide-react";
+import {
+  Building2,
+  Printer,
+  LogOut,
+  ArrowRight,
+  Monitor,
+  Globe,
+} from "lucide-react";
 import { platform } from "@/platform";
 import { logout } from "@/hooks/useAuth";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import PrintSettingsSection from "@/components/settings/sections/PrintSettingsSection";
+import ShopSettingsPanel from "@/components/master/ShopSettingsPanel";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type SettingsSection = "dashboard" | "printSettings";
+type SettingsSection = "dashboard" | "businessProfile" | "printSettings";
 
 type SectionDef = {
   id: SettingsSection;
@@ -30,19 +38,26 @@ type SectionDef = {
 
 const settingsSections: SectionDef[] = [
   {
+    id: "businessProfile",
+    title: "Business Profile",
+    description: "Logo, business identity, address, GSTIN and invoice footer",
+    icon: Building2,
+    accent: "bg-orange-100",
+    accentText: "text-orange-600",
+    border: "border-orange-200",
+    hoverBg: "hover:bg-orange-50/70",
+  },
+  {
     id: "printSettings",
-    title: "Print Settings",
-    description: "Assign printers per task — purchase, sales, returns",
+    title: "Print & Documents",
+    description: "Printers, preview mode, paper size and bill templates",
     icon: Printer,
     accent: "bg-sky-100",
     accentText: "text-sky-600",
     border: "border-sky-200",
     hoverBg: "hover:bg-sky-50/70",
   },
-  // ── Add future sections here, e.g.:
-  // { id: "notifications", title: "Notifications", ... }
-  // { id: "security",      title: "Security & Access", ... }
-  // { id: "appearance",    title: "Appearance", ... }
+  // Add future settings categories here.
 ];
 
 // ── Settings tile ─────────────────────────────────────────────────────────────
@@ -111,7 +126,7 @@ function SettingsDashboard({
             App settings & <span className="kyn-brand-text">preferences.</span>
           </h1>
           <p className="mt-2 text-sm text-slate-400">
-            Printers, appearance, security and more.
+            Business profile, documents, printers and app preferences.
           </p>
 
           <div className="mt-3 inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300">
@@ -196,6 +211,13 @@ export default function SettingsPage() {
 
   const renderSection = () => {
     switch (currentSection) {
+      case "businessProfile":
+        return (
+          <ShopSettingsPanel
+            onBack={() => setCurrentSection("dashboard")}
+            backLabel="Settings"
+          />
+        );
       case "printSettings":
         return (
           <PrintSettingsSection onBack={() => setCurrentSection("dashboard")} />

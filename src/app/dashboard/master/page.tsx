@@ -5,7 +5,6 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import {
   Users,
-  Building2,
   Truck,
   Settings,
   Percent,
@@ -27,7 +26,7 @@ import SuppliersTable from "@/components/suppliers/SuppliersTable";
 import CustomersTable from "@/components/customers/CustomersTable";
 import AccountMaster from "@/components/accounts/AccountMaster";
 import TaxSettings from "@/components/master/TaxSettings";
-import ShopSettingsPanel from "@/components/master/ShopSettingsPanel";
+
 import LabelPrintSettings from "@/components/master/LabelPrintSettings";
 import BrandsCategoriesManager from "@/components/master/BrandsCategoriesManager";
 import UnitsManager from "@/components/master/UnitsManager";
@@ -40,7 +39,6 @@ type MasterSection =
   | "suppliers"
   | "customers"
   | "brandCategory"
-  | "shopSettings"
   | "accounts"
   | "tax"
   | "labelPrint"
@@ -90,19 +88,7 @@ const masterSections: SectionDef[] = [
     countBg: "bg-emerald-100",
     countText: "text-emerald-700",
   },
-  {
-    id: "shopSettings",
-    title: "Shop Settings",
-    shortName: "Shop Settings",
-    description: "Profile, logo, GST & print details",
-    icon: Building2,
-    iconBg: "bg-orange-100",
-    iconText: "text-orange-600",
-    border: "border-orange-200",
-    hoverBg: "hover:bg-orange-50/60",
-    countBg: "bg-orange-100",
-    countText: "text-orange-700",
-  },
+
   {
     id: "brandCategory",
     title: "Brands & Categories",
@@ -210,7 +196,6 @@ const masterSections: SectionDef[] = [
 ];
 
 const webSafeSections: MasterSection[] = [
-  "shopSettings",
   "brandCategory",
   "units",
   "tax",
@@ -226,7 +211,7 @@ const sectionTitles: Record<MasterSection, string> = {
   suppliers: "Suppliers",
   customers: "Customers",
   brandCategory: "Brands & Categories",
-  shopSettings: "Shop Settings",
+
   accounts: "Account Master",
   tax: "Tax Settings",
   labelPrint: "Label Print Settings",
@@ -432,7 +417,9 @@ export default function MasterPage() {
 
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-4">
             {masterSections
-              .filter((section) => section.id !== "labelPrint" || barcodeEnabled)
+              .filter(
+                (section) => section.id !== "labelPrint" || barcodeEnabled,
+              )
               .map((section) => (
                 <MasterTile
                   key={section.id}
@@ -458,10 +445,7 @@ export default function MasterPage() {
         return <AccountMaster />;
       case "tax":
         return <TaxSettings onBack={() => setCurrentSection("dashboard")} />;
-      case "shopSettings":
-        return (
-          <ShopSettingsPanel onBack={() => setCurrentSection("dashboard")} />
-        );
+
       case "labelPrint":
         return <LabelPrintSettings />;
       case "brandCategory":
@@ -491,7 +475,6 @@ export default function MasterPage() {
     <main className="">
       {currentSection !== "dashboard" &&
         currentSection !== "brandCategory" &&
-        currentSection !== "shopSettings" &&
         currentSection !== "tax" &&
         currentSection !== "transactionTypes" &&
         currentSection !== "customers" &&

@@ -1,113 +1,114 @@
 // src/app/dashboard/settings/sections/PrintSettingsSection.tsx
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Printer,
-  ChevronLeft,
+  ArrowRight,
   CheckCircle2,
-  AlertCircle,
-  Globe,
-  RefreshCw,
+  ChevronLeft,
   Eye,
   EyeOff,
+  Globe,
+  LayoutTemplate,
+  Printer,
+  ReceiptText,
+  RefreshCw,
+  RotateCcw,
+  ShoppingCart,
+  Undo2,
+  type LucideIcon,
 } from "lucide-react";
 import { platform } from "@/platform";
+import SearchableDropdown from "@/components/ui/SearchableDropdown";
+import SettingsOverlay from "@/components/settings/SettingsOverlay";
+import PurchasePrintCustomizationPanel from "@/components/print/PurchasePrintCustomizationPanel";
 import {
+  clearAllPrefs,
   getTaskPref,
   setTaskPref,
-  clearAllPrefs,
-  type PrintTask,
   type PaperSize,
+  type PrintTask,
 } from "@/lib/print/printPreferences";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-type PrinterInfo = { name: string; displayName: string; isDefault: boolean };
+type PrinterInfo = {
+  name: string;
+  displayName: string;
+  isDefault: boolean;
+};
 
 type ResolvedPref = {
   printer: string | null;
   preview: boolean;
   paperSize: PaperSize;
 };
-type AllResolved = Partial<Record<PrintTask, ResolvedPref>>;
 
-// ── Task definitions ──────────────────────────────────────────────────────────
+type TaskDefinition = {
+  key: PrintTask;
+  label: string;
+  description: string;
+  icon: LucideIcon;
+  accent: string;
+  customizable?: boolean;
+};
 
-const PRINT_TASKS: { key: PrintTask; label: string; sub: string }[] = [
+const DEFAULT_TASK: TaskDefinition = {
+  key: "default",
+  label: "Default output",
+  description: "Fallback printer, preview mode and paper size.",
+  icon: Printer,
+  accent: "bg-sky-100 text-sky-600",
+};
+
+const DOCUMENT_TASKS: TaskDefinition[] = [
   {
-    key: "default",
-    label: "Default",
-    sub: "Fallback when no task-specific printer is set",
+    key: "purchase",
+    label: "Purchase Bill",
+    description: "Supplier Purchase documents.",
+    icon: ShoppingCart,
+    accent: "bg-cyan-100 text-cyan-700",
+    customizable: true,
   },
-  { key: "purchase", label: "Purchase Bills", sub: "Invoice on purchase save" },
-  { key: "sales", label: "Sales / POS", sub: "Receipt on sale completion" },
+  {
+    key: "sales",
+    label: "Sales Invoice",
+    description: "Sales and POS documents.",
+    icon: ReceiptText,
+    accent: "bg-emerald-100 text-emerald-700",
+  },
   {
     key: "purchaseReturn",
-    label: "Purchase Returns",
-    sub: "Invoice on purchase return",
+    label: "Purchase Return",
+    description: "Supplier return documents.",
+    icon: Undo2,
+    accent: "bg-amber-100 text-amber-700",
   },
   {
     key: "salesReturn",
-    label: "Sales Returns",
-    sub: "Invoice on sales return",
+    label: "Sales Return",
+    description: "Customer return documents.",
+    icon: RotateCcw,
+    accent: "bg-violet-100 text-violet-700",
   },
 ];
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function loadAll(): AllResolved {
-  const out: AllResolved = {};
-  for (const { key } of PRINT_TASKS) out[key] = getTaskPref(key);
-  return out;
-}
-
-// ── Sub-components ────────────────────────────────────────────────────────────
-
-function Toggle({
-  value,
-  onChange,
-}: {
-  value: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={() => onChange(!value)}
-      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-200 focus:outline-none ${
-        value ? "bg-sky-500" : "bg-slate-200"
-      }`}
-      aria-checked={value}
-      role="switch"
-    >
-      <span
-        className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${
-          value ? "translate-x-6" : "translate-x-1"
-        }`}
-      />
-    </button>
-  );
-}
 
 function PaperPills({
   value,
   onChange,
 }: {
   value: PaperSize;
-  onChange: (v: PaperSize) => void;
+  onChange: (value: PaperSize) => void;
 }) {
   return (
-    <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+    <div className="grid grid-cols-2 rounded-xl border border-slate-200 bg-slate-100 p-1">
       {(["A4", "thermal"] as PaperSize[]).map((size) => (
         <button
           key={size}
           type="button"
           onClick={() => onChange(size)}
-          className={`rounded-md px-3 py-1 text-xs font-semibold transition-all duration-150 ${
+          className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${
             value === size
-              ? "bg-white text-sky-600 shadow-sm border border-slate-200"
-              : "text-slate-400 hover:text-slate-600"
+              ? "bg-white text-slate-900 shadow-sm"
+              : "text-slate-500 hover:text-slate-800"
           }`}
         >
           {size === "A4" ? "A4" : "80mm"}
@@ -117,7 +118,116 @@ function PaperPills({
   );
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
+function Toggle({
+  value,
+  onChange,
+}: {
+  value: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!value)}
+      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${
+        value ? "bg-cyan-500" : "bg-slate-300"
+      }`}
+      aria-checked={value}
+      role="switch"
+    >
+      <span
+        className={`h-4 w-4 rounded-full bg-white shadow transition-transform ${
+          value ? "translate-x-6" : "translate-x-1"
+        }`}
+      />
+    </button>
+  );
+}
+
+function OutputCard({
+  definition,
+  pref,
+  printerLabel,
+  onConfigure,
+  onCustomize,
+}: {
+  definition: TaskDefinition;
+  pref: ResolvedPref;
+  printerLabel: string;
+  onConfigure: () => void;
+  onCustomize?: () => void;
+}) {
+  const Icon = definition.icon;
+
+  return (
+    <article className="flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300 hover:shadow-md">
+      <div className="flex items-start justify-between gap-3">
+        <span
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${definition.accent}`}
+        >
+          <Icon className="h-4 w-4" />
+        </span>
+        <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-500">
+          {pref.paperSize === "thermal" ? "80mm" : "A4"}
+        </span>
+      </div>
+
+      <div className="mt-3">
+        <h3 className="text-sm font-semibold text-slate-900">
+          {definition.label}
+        </h3>
+        <p className="mt-1 text-[10px] leading-4 text-slate-500">
+          {definition.description}
+        </p>
+      </div>
+
+      <dl className="mt-3 space-y-1.5 rounded-xl border border-slate-100 bg-slate-50 p-3">
+        <div className="flex items-center justify-between gap-3">
+          <dt className="text-[9px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+            Printer
+          </dt>
+          <dd className="max-w-[65%] truncate text-right text-[10px] font-semibold text-slate-700">
+            {printerLabel}
+          </dd>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <dt className="text-[9px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+            Mode
+          </dt>
+          <dd className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-700">
+            {pref.preview ? (
+              <Eye className="h-3 w-3 text-cyan-600" />
+            ) : (
+              <EyeOff className="h-3 w-3 text-slate-400" />
+            )}
+            {pref.preview ? "Preview" : "Direct print"}
+          </dd>
+        </div>
+      </dl>
+
+      <div className="mt-auto flex flex-wrap gap-2 pt-3">
+        <button
+          type="button"
+          onClick={onConfigure}
+          className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[10px] font-semibold text-white transition hover:bg-slate-800"
+        >
+          Configure
+          <ArrowRight className="h-3 w-3" />
+        </button>
+        {onCustomize && (
+          <button
+            type="button"
+            onClick={onCustomize}
+            className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-[10px] font-semibold text-cyan-700 transition hover:bg-cyan-100"
+          >
+            <LayoutTemplate className="h-3 w-3" />
+            Customize bill
+          </button>
+        )}
+      </div>
+    </article>
+  );
+}
 
 export default function PrintSettingsSection({
   onBack,
@@ -128,365 +238,363 @@ export default function PrintSettingsSection({
     typeof window !== "undefined" && !!(window as any).electronAPI;
 
   const [printers, setPrinters] = useState<PrinterInfo[]>([]);
-  const [prefs, setPrefs] = useState<AllResolved>(loadAll);
-  const [loading, setLoading] = useState(false);
-  const [saved, setSaved] = useState<string | null>(null);
+  const [loadingPrinters, setLoadingPrinters] = useState(false);
+  const [activeTask, setActiveTask] = useState<PrintTask | null>(null);
+  const [showPurchaseTemplate, setShowPurchaseTemplate] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [saved, setSaved] = useState(false);
 
   const loadPrinters = useCallback(async () => {
-    setLoading(true);
+    if (!isDesktop) return;
+    setLoadingPrinters(true);
     try {
-      const list = await platform.getPrinters?.();
-      setPrinters(list || []);
+      const rows = await platform.getPrinters?.();
+      setPrinters(rows || []);
     } finally {
-      setLoading(false);
+      setLoadingPrinters(false);
     }
-  }, []);
+  }, [isDesktop]);
 
   useEffect(() => {
-    if (isDesktop) loadPrinters();
-  }, [isDesktop, loadPrinters]);
+    void loadPrinters();
+  }, [loadPrinters]);
 
-  // Generic updater — any field of any task
-  function handleChange<K extends keyof ResolvedPref>(
+  const activeDefinition = useMemo(
+    () =>
+      activeTask === "default"
+        ? DEFAULT_TASK
+        : (DOCUMENT_TASKS.find((task) => task.key === activeTask) ?? null),
+    [activeTask],
+  );
+
+  function taskPref(task: PrintTask): ResolvedPref {
+    void refreshKey;
+    return getTaskPref(task);
+  }
+
+  function printerName(pref: ResolvedPref, task: PrintTask): string {
+    if (!isDesktop) return "Browser destination";
+    if (!pref.printer) {
+      return task === "default" ? "System default" : "Default output";
+    }
+
+    return (
+      printers.find((printer) => printer.name === pref.printer)?.displayName ||
+      pref.printer
+    );
+  }
+
+  function updateTask<K extends keyof ResolvedPref>(
     task: PrintTask,
-    field: K,
+    key: K,
     value: ResolvedPref[K],
   ) {
-    setTaskPref(task, { [field]: value });
-    setPrefs(loadAll());
-    setSaved(`${task}.${field}`);
-    setTimeout(() => setSaved(null), 1600);
+    setTaskPref(task, { [key]: value });
+    setRefreshKey((current) => current + 1);
+    setSaved(true);
+    window.setTimeout(() => setSaved(false), 1400);
   }
 
-  function handleClear() {
+  function resetTask(task: PrintTask) {
+    setTaskPref(task, {
+      printer: null,
+      preview: true,
+      paperSize: "A4",
+    });
+    setRefreshKey((current) => current + 1);
+    setSaved(true);
+    window.setTimeout(() => setSaved(false), 1400);
+  }
+
+  function resetEverything() {
     clearAllPrefs();
-    setPrefs(loadAll());
+    setRefreshKey((current) => current + 1);
+    setSaved(true);
+    window.setTimeout(() => setSaved(false), 1400);
   }
 
-  const taskPref = (task: PrintTask): ResolvedPref =>
-    prefs[task] ?? { printer: null, preview: true, paperSize: "A4" };
-
-  // ── Render ────────────────────────────────────────────────────────────────
+  const activePref = activeTask ? taskPref(activeTask) : null;
 
   return (
-    <div className="flex flex-col gap-4">
-      {/* ── Header card ── */}
-      <div className="relative overflow-hidden rounded-[24px] border border-white/10 bg-[linear-gradient(135deg,#0a1324_0%,#0f1e38_60%,#16213d_100%)] px-5 py-5 text-white shadow-lg">
-        <div className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-sky-400/10 blur-3xl" />
-        <div className="relative flex flex-col gap-4">
-          <button
-            type="button"
-            onClick={onBack}
-            className="inline-flex w-fit items-center gap-1.5 rounded-xl border border-white/15 bg-white/10 px-3 py-1.5 text-sm font-medium text-white/80 transition hover:bg-white/20 hover:text-white"
-          >
-            <ChevronLeft className="h-4 w-4" />
-            Settings
-          </button>
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-500/20 text-sky-300">
-              <Printer className="h-5 w-5" />
+    <>
+      <div className="flex flex-col gap-4">
+        <section className="relative overflow-hidden rounded-[24px] border border-white/10 bg-[linear-gradient(135deg,#0a1324_0%,#0f1e38_60%,#16213d_100%)] px-5 py-5 text-white shadow-lg">
+          <div className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-sky-400/10 blur-3xl" />
+          <div className="relative flex flex-col gap-4">
+            <div className="flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={onBack}
+                className="inline-flex w-fit items-center gap-1.5 rounded-xl border border-white/15 bg-white/10 px-3 py-1.5 text-sm font-medium text-white/80 transition hover:bg-white/20 hover:text-white"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Settings
+              </button>
+
+              <button
+                type="button"
+                onClick={resetEverything}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/10 px-2.5 py-1.5 text-[10px] font-semibold text-white/80 transition hover:bg-white/20 hover:text-white"
+              >
+                <RotateCcw className="h-3 w-3" />
+                Reset print settings
+              </button>
             </div>
-            <div>
-              <h1 className="text-lg font-semibold tracking-tight">
-                Print Settings
-              </h1>
-              <p className="text-sm text-slate-400">
-                Printer, preview mode and paper size — per document type
-              </p>
+
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-500/20 text-sky-300">
+                <Printer className="h-5 w-5" />
+              </div>
+              <div>
+                <h1 className="text-lg font-semibold tracking-tight">
+                  Print & Documents
+                </h1>
+                <p className="text-sm text-slate-400">
+                  Configure one output at a time instead of one long settings
+                  page.
+                </p>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
+        </section>
 
-      {/* ── Body ── */}
-      <div className="rounded-[20px] border border-slate-200 bg-white p-5 shadow-sm">
-        {!isDesktop ? (
-          /* Web-only notice */
-          <div className="flex flex-col gap-5">
-            <div className="flex flex-col items-center gap-3 py-6 text-center">
-              <Globe className="h-10 w-10 text-slate-300" />
-              <p className="text-sm font-medium text-slate-500">
-                Printer detection isn't available in the browser.
-              </p>
-              <p className="max-w-xs text-xs text-slate-400">
-                Your browser will show its own print dialog. Paper size and
-                preview preferences below still apply.
-              </p>
-            </div>
+        {saved && (
+          <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[10px] font-semibold text-emerald-700">
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            Print preference saved.
+          </div>
+        )}
 
-            {/* Still show preview + paper size controls in web mode */}
-            <WebModePrefs
-              tasks={PRINT_TASKS}
-              taskPref={taskPref}
-              saved={saved}
-              onChange={handleChange}
-              onClear={handleClear}
+        {!isDesktop && (
+          <div className="flex items-center gap-3 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3">
+            <Globe className="h-4 w-4 shrink-0 text-sky-600" />
+            <p className="text-xs text-sky-700">
+              Browser mode uses the browser print destination. Preview and paper
+              preferences still apply.
+            </p>
+          </div>
+        )}
+
+        <section>
+          <div className="mb-2">
+            <h2 className="text-sm font-semibold text-slate-900">
+              Default output
+            </h2>
+            <p className="text-[10px] text-slate-500">
+              Used whenever a document has no dedicated printer.
+            </p>
+          </div>
+          <div className="max-w-xl">
+            <OutputCard
+              definition={DEFAULT_TASK}
+              pref={taskPref("default")}
+              printerLabel={printerName(taskPref("default"), "default")}
+              onConfigure={() => setActiveTask("default")}
             />
           </div>
-        ) : loading ? (
-          <div className="flex items-center justify-center gap-2 py-10 text-slate-400 text-sm">
-            <RefreshCw className="h-4 w-4 animate-spin" />
-            Detecting printers…
+        </section>
+
+        <section className="rounded-[22px] border border-slate-200 bg-slate-50/70 p-4 shadow-sm">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-900">
+                Document outputs
+              </h2>
+              <p className="mt-0.5 text-[10px] text-slate-500">
+                Open only the document you need. Future templates can be added
+                without lengthening this page.
+              </p>
+            </div>
+            {loadingPrinters && (
+              <span className="inline-flex items-center gap-1.5 text-[10px] text-slate-500">
+                <RefreshCw className="h-3 w-3 animate-spin" />
+                Detecting printers
+              </span>
+            )}
           </div>
-        ) : (
-          <DesktopPrefs
-            tasks={PRINT_TASKS}
-            printers={printers}
-            taskPref={taskPref}
-            saved={saved}
-            onChange={handleChange}
-            onClear={handleClear}
-            onRetry={loadPrinters}
-          />
-        )}
-      </div>
-    </div>
-  );
-}
 
-// ── Desktop full prefs ────────────────────────────────────────────────────────
-
-function DesktopPrefs({
-  tasks,
-  printers,
-  taskPref,
-  saved,
-  onChange,
-  onClear,
-  onRetry,
-}: {
-  tasks: typeof PRINT_TASKS;
-  printers: PrinterInfo[];
-  taskPref: (t: PrintTask) => ResolvedPref;
-  saved: string | null;
-  onChange: <K extends keyof ResolvedPref>(
-    t: PrintTask,
-    f: K,
-    v: ResolvedPref[K],
-  ) => void;
-  onClear: () => void;
-  onRetry: () => void;
-}) {
-  return (
-    <div className="flex flex-col gap-1">
-      <div className="mb-4 flex items-center justify-between">
-        <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">
-          Per-task print configuration
-        </p>
-        <button
-          type="button"
-          onClick={onClear}
-          className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 hover:bg-red-50 hover:border-red-200 hover:text-red-500 transition"
-        >
-          Reset all
-        </button>
-      </div>
-
-      {printers.length === 0 && (
-        <div className="mb-4 flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
-          <AlertCircle className="h-4 w-4 shrink-0 text-amber-500" />
-          <p className="text-xs text-amber-700 flex-1">
-            No printers detected. Make sure a printer is installed.
-          </p>
-          <button
-            type="button"
-            onClick={onRetry}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-white px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 transition"
-          >
-            <RefreshCw className="h-3 w-3" />
-            Retry
-          </button>
-        </div>
-      )}
-
-      {/* Column headers */}
-      <div className="mb-1 hidden sm:grid sm:grid-cols-[1fr_220px_auto_auto] sm:gap-3 sm:px-1">
-        <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">
-          Task
-        </span>
-        <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">
-          Printer
-        </span>
-        <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">
-          Preview
-        </span>
-        <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">
-          Paper
-        </span>
-      </div>
-
-      <div className="divide-y divide-slate-100">
-        {tasks.map(({ key, label, sub }) => {
-          const pref = taskPref(key);
-          return (
-            <div
-              key={key}
-              className="flex flex-col gap-3 py-4 sm:grid sm:grid-cols-[1fr_220px_auto_auto] sm:items-center sm:gap-3"
-            >
-              {/* Label */}
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="text-sm font-medium text-slate-800">{label}</p>
-                  {(saved === `${key}.printer` ||
-                    saved === `${key}.preview` ||
-                    saved === `${key}.paperSize`) && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-600">
-                      <CheckCircle2 className="h-3 w-3" />
-                      Saved
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-slate-400 mt-0.5">{sub}</p>
-              </div>
-
-              {/* Printer */}
-              <div>
-                <label className="mb-1 block text-[10px] font-semibold uppercase tracking-widest text-slate-400 sm:hidden">
-                  Printer
-                </label>
-                <select
-                  value={pref.printer ?? ""}
-                  onChange={(e) =>
-                    onChange(key, "printer", e.target.value || null)
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {DOCUMENT_TASKS.map((definition) => {
+              const pref = taskPref(definition.key);
+              return (
+                <OutputCard
+                  key={definition.key}
+                  definition={definition}
+                  pref={pref}
+                  printerLabel={printerName(pref, definition.key)}
+                  onConfigure={() => setActiveTask(definition.key)}
+                  onCustomize={
+                    definition.customizable
+                      ? () => setShowPurchaseTemplate(true)
+                      : undefined
                   }
-                  className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 focus:border-sky-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-100 transition"
-                  disabled={printers.length === 0}
+                />
+              );
+            })}
+          </div>
+        </section>
+      </div>
+
+      <SettingsOverlay
+        open={Boolean(activeTask && activeDefinition && activePref)}
+        title={activeDefinition?.label || "Print output"}
+        description="Printer, preview mode and paper size"
+        icon={activeDefinition?.icon || Printer}
+        onClose={() => setActiveTask(null)}
+        width="lg"
+      >
+        {activeTask && activeDefinition && activePref && (
+          <div className="space-y-3">
+            <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-900">
+                    {activeDefinition.label}
+                  </h3>
+                  <p className="mt-1 text-[10px] text-slate-500">
+                    {activeDefinition.description}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => resetTask(activeTask)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[10px] font-semibold text-slate-600 transition hover:bg-slate-50"
                 >
-                  <option value="">
-                    {key === "default" ? "OS default" : "← Use default"}
-                  </option>
-                  {printers.map((p) => (
-                    <option key={p.name} value={p.name}>
-                      {p.displayName}
-                      {p.isDefault ? " ✓" : ""}
-                    </option>
-                  ))}
-                </select>
+                  <RotateCcw className="h-3 w-3" />
+                  Reset
+                </button>
               </div>
 
-              {/* Preview toggle */}
-              <div className="flex items-center gap-2 sm:flex-col sm:items-center sm:gap-1">
-                <label className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 sm:hidden">
-                  Preview
-                </label>
-                <div className="flex items-center gap-1.5">
-                  {pref.preview ? (
-                    <Eye className="h-3.5 w-3.5 text-sky-400 shrink-0" />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                  <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">
+                    Printer
+                  </label>
+                  {!isDesktop ? (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-xs text-slate-500">
+                      Browser print destination
+                    </div>
+                  ) : loadingPrinters ? (
+                    <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-xs text-slate-500">
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                      Detecting printers...
+                    </div>
                   ) : (
-                    <EyeOff className="h-3.5 w-3.5 text-slate-300 shrink-0" />
+                    <SearchableDropdown
+                      value={activePref.printer ?? ""}
+                      onChange={(value) =>
+                        updateTask(activeTask, "printer", value || null)
+                      }
+                      options={[
+                        {
+                          value: "",
+                          label:
+                            activeTask === "default"
+                              ? "System default printer"
+                              : "Use Default output",
+                        },
+                        ...printers.map((printer) => ({
+                          value: printer.name,
+                          label: `${printer.displayName}${
+                            printer.isDefault ? " (system default)" : ""
+                          }`,
+                        })),
+                      ]}
+                      placeholder={
+                        activeTask === "default"
+                          ? "System default printer"
+                          : "Use Default output"
+                      }
+                      autoOpenOnFocus
+                      className="w-full"
+                      controlClassName="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs text-slate-700 transition hover:border-slate-300 focus:border-cyan-400 focus:bg-white focus:ring-2 focus:ring-cyan-100"
+                      menuClassName="z-[1900] max-h-64 text-xs"
+                      buttonProps={{
+                        "aria-label": `${activeDefinition.label} printer`,
+                      }}
+                    />
                   )}
-                  <Toggle
-                    value={pref.preview}
-                    onChange={(v) => onChange(key, "preview", v)}
-                  />
                 </div>
-                <span className="text-[10px] text-slate-400">
-                  {pref.preview ? "On" : "Off"}
-                </span>
-              </div>
 
-              {/* Paper size */}
-              <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 sm:hidden">
-                  Paper
-                </label>
-                <PaperPills
-                  value={pref.paperSize}
-                  onChange={(v) => onChange(key, "paperSize", v)}
-                />
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <p className="mt-3 text-[11px] text-slate-400">
-        ✓ marks the system default printer. <strong>Preview off</strong> sends
-        directly to the printer — no dialog. Paper size applies to the print
-        job; layout is optimised per document type.
-      </p>
-    </div>
-  );
-}
-
-// ── Web-mode: no printer selector, still show preview + paper ────────────────
-
-function WebModePrefs({
-  tasks,
-  taskPref,
-  saved,
-  onChange,
-  onClear,
-}: {
-  tasks: typeof PRINT_TASKS;
-  taskPref: (t: PrintTask) => ResolvedPref;
-  saved: string | null;
-  onChange: <K extends keyof ResolvedPref>(
-    t: PrintTask,
-    f: K,
-    v: ResolvedPref[K],
-  ) => void;
-  onClear: () => void;
-}) {
-  return (
-    <div>
-      <div className="mb-3 flex items-center justify-between">
-        <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">
-          Preview &amp; paper size
-        </p>
-        <button
-          type="button"
-          onClick={onClear}
-          className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 hover:bg-red-50 hover:border-red-200 hover:text-red-500 transition"
-        >
-          Reset all
-        </button>
-      </div>
-      <div className="divide-y divide-slate-100">
-        {tasks.map(({ key, label, sub }) => {
-          const pref = taskPref(key);
-          return (
-            <div
-              key={key}
-              className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:gap-4"
-            >
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="text-sm font-medium text-slate-800">{label}</p>
-                  {(saved === `${key}.preview` ||
-                    saved === `${key}.paperSize`) && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-600">
-                      <CheckCircle2 className="h-3 w-3" />
-                      Saved
+                <div className="flex min-h-[76px] items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3">
+                  <span className="flex items-center gap-2.5">
+                    {activePref.preview ? (
+                      <Eye className="h-4 w-4 text-cyan-600" />
+                    ) : (
+                      <EyeOff className="h-4 w-4 text-slate-400" />
+                    )}
+                    <span>
+                      <span className="block text-xs font-semibold text-slate-800">
+                        Print preview
+                      </span>
+                      <span className="mt-0.5 block text-[10px] text-slate-500">
+                        {activePref.preview
+                          ? "Preview before printing."
+                          : "Print directly."}
+                      </span>
                     </span>
-                  )}
-                </div>
-                <p className="text-xs text-slate-400 mt-0.5">{sub}</p>
-              </div>
-              <div className="flex items-center gap-4 flex-wrap">
-                <div className="flex items-center gap-2">
-                  {pref.preview ? (
-                    <Eye className="h-3.5 w-3.5 text-sky-400" />
-                  ) : (
-                    <EyeOff className="h-3.5 w-3.5 text-slate-300" />
-                  )}
-                  <Toggle
-                    value={pref.preview}
-                    onChange={(v) => onChange(key, "preview", v)}
-                  />
-                  <span className="text-xs text-slate-400">
-                    {pref.preview ? "Preview on" : "Silent"}
                   </span>
+                  <Toggle
+                    value={activePref.preview}
+                    onChange={(value) =>
+                      updateTask(activeTask, "preview", value)
+                    }
+                  />
                 </div>
-                <PaperPills
-                  value={pref.paperSize}
-                  onChange={(v) => onChange(key, "paperSize", v)}
-                />
+
+                <div className="rounded-xl border border-slate-200 bg-white p-3">
+                  <label className="mb-2 block text-xs font-semibold text-slate-800">
+                    Paper format
+                  </label>
+                  <PaperPills
+                    value={activePref.paperSize}
+                    onChange={(value) =>
+                      updateTask(activeTask, "paperSize", value)
+                    }
+                  />
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
+            </section>
+
+            {activeTask === "purchase" && (
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTask(null);
+                  setShowPurchaseTemplate(true);
+                }}
+                className="flex w-full items-center justify-between gap-3 rounded-2xl border border-cyan-200 bg-cyan-50 p-4 text-left transition hover:bg-cyan-100"
+              >
+                <span className="flex items-center gap-3">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-600 text-white">
+                    <LayoutTemplate className="h-4 w-4" />
+                  </span>
+                  <span>
+                    <span className="block text-sm font-semibold text-cyan-900">
+                      Customize Purchase Bill
+                    </span>
+                    <span className="mt-0.5 block text-[10px] text-cyan-700">
+                      Style, logo visibility, document fields and footer.
+                    </span>
+                  </span>
+                </span>
+                <ArrowRight className="h-4 w-4 text-cyan-700" />
+              </button>
+            )}
+          </div>
+        )}
+      </SettingsOverlay>
+
+      <SettingsOverlay
+        open={showPurchaseTemplate}
+        title="Purchase Bill Template"
+        description="A4 and 80mm layout customization"
+        icon={LayoutTemplate}
+        onClose={() => setShowPurchaseTemplate(false)}
+        width="xl"
+      >
+        <PurchasePrintCustomizationPanel />
+      </SettingsOverlay>
+    </>
   );
 }
