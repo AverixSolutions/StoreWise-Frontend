@@ -69,14 +69,14 @@ export default function PurchaseNavigation({
           <button
             type="button"
             onClick={() => onNavigate("/dashboard/entries")}
-            className="flex shrink-0 items-center gap-2 text-white/70 transition-colors hover:text-white"
+            className="flex shrink-0 items-center gap-2 text-white transition-colors hover:text-white"
             title="Back to Entries (Ctrl/Cmd+B)"
           >
             <ArrowLeft className="h-4 w-4" />
             <span className="hidden text-sm font-medium sm:inline">
               Entries
             </span>
-            <kbd className="hidden rounded border border-white/15 bg-white/10 px-1.5 py-0.5 font-mono text-[8px] font-semibold text-white/55 lg:inline-flex">
+            <kbd className="hidden rounded border border-white/30 bg-white/15 px-1.5 py-0.5 font-mono text-[8px] font-semibold text-white lg:inline-flex">
               Ctrl+B
             </kbd>
           </button>
@@ -101,11 +101,11 @@ export default function PurchaseNavigation({
               type="button"
               onClick={onPrintBill}
               title="Print Bill (Ctrl/Cmd+P)"
-              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-white/20 bg-white/10 px-2.5 text-xs font-semibold text-white transition hover:bg-white/20"
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-white/20 bg-white/15 px-2.5 text-xs font-semibold text-white transition hover:bg-white/20"
             >
               <Printer className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Print</span>
-              <kbd className="hidden rounded border border-white/15 bg-white/10 px-1 py-0.5 font-mono text-[8px] text-white/60 xl:inline-flex">
+              <kbd className="hidden rounded border border-white/30 bg-white/15 px-1 py-0.5 font-mono text-[8px] text-white xl:inline-flex">
                 Ctrl+P
               </kbd>
             </button>

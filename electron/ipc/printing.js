@@ -1,8 +1,14 @@
 // electron/ipc/printing.js
 const { ipcMain, BrowserWindow } = require("electron");
+const path = require("path");
 
 const PREVIEW_PRINT_COMMAND = "__KYNFLOW_PREVIEW_PRINT__";
 const PREVIEW_CLOSE_COMMAND = "__KYNFLOW_PREVIEW_CLOSE__";
+const PREVIEW_WINDOW_TITLE = "KYNFLOW Print Preview";
+const PREVIEW_ICON_PATH =
+  process.platform === "win32"
+    ? path.join(__dirname, "../../build/icon.ico")
+    : path.join(__dirname, "../../build/icon.png");
 
 function registerPrintingHandlers() {
   ipcMain.handle("print:get-printers", async () => {
@@ -47,6 +53,34 @@ function registerPrintingHandlers() {
   });
 }
 
+async function waitForDocumentImages(win, timeoutMs = 3000) {
+  if (!win || win.isDestroyed()) return;
+
+  await win.webContents
+    .executeJavaScript(
+      `
+      Promise.race([
+        Promise.all(
+          Array.from(document.images || []).map(function (image) {
+            if (image.complete && image.naturalWidth > 0) {
+              return Promise.resolve();
+            }
+
+            return new Promise(function (resolve) {
+              var finish = function () { resolve(); };
+              image.addEventListener("load", finish, { once: true });
+              image.addEventListener("error", finish, { once: true });
+            });
+          })
+        ),
+        new Promise(function (resolve) {
+          window.setTimeout(resolve, ${timeoutMs});
+        })
+      ]);
+    `,
+    )
+    .catch(() => {});
+}
 function buildPreviewBootstrap(title, paperLabel) {
   return `
     (function () {
@@ -60,8 +94,8 @@ function buildPreviewBootstrap(title, paperLabel) {
       var style = document.createElement("style");
       style.id = "kynflow-preview-shell-style";
       style.textContent = [
-        "body{padding-top:72px!important;}",
-        ".kynflow-preview-toolbar{position:fixed;z-index:2147483647;top:0;left:0;right:0;height:64px;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:0 20px;border-bottom:1px solid rgba(255,255,255,.12);background:linear-gradient(135deg,#091120 0%,#0f1a31 62%,#16213d 100%);box-shadow:0 8px 24px rgba(15,23,42,.24);color:#fff;font-family:Inter,Segoe UI,Arial,sans-serif;}",
+        "html,body{background:#fff!important;}body{padding-top:66px!important;}",
+        ".kynflow-preview-toolbar{position:fixed;z-index:2147483647;top:0;left:0;right:0;height:58px;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 16px;border-bottom:1px solid rgba(255,255,255,.12);background:#0f1e38;box-shadow:0 6px 18px rgba(15,23,42,.18);color:#fff;font-family:Inter,Segoe UI,Arial,sans-serif;}",
         ".kynflow-preview-toolbar:after{content:'';position:absolute;left:0;right:0;bottom:-2px;height:2px;background:linear-gradient(90deg,#20b7ff,#2477ff,#b026ff);}",
         ".kynflow-preview-copy{min-width:0;}",
         ".kynflow-preview-title{overflow:hidden;color:#fff;font-size:14px;font-weight:800;text-overflow:ellipsis;white-space:nowrap;}",
@@ -69,10 +103,11 @@ function buildPreviewBootstrap(title, paperLabel) {
         ".kynflow-preview-actions{display:flex;align-items:center;gap:8px;flex:0 0 auto;}",
         ".kynflow-preview-paper{margin-right:6px;border:1px solid rgba(255,255,255,.15);border-radius:999px;padding:5px 9px;background:rgba(255,255,255,.08);color:rgba(255,255,255,.82);font-size:10px;font-weight:800;}",
         ".kynflow-preview-status{min-width:54px;color:rgba(255,255,255,.55);font-size:10px;text-align:right;}",
-        ".kynflow-preview-button{border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:8px 12px;background:rgba(255,255,255,.08);color:#fff;font-size:11px;font-weight:800;cursor:pointer;}",
+        ".kynflow-preview-button{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:1px solid rgba(255,255,255,.18);border-radius:8px;padding:7px 10px;background:rgba(255,255,255,.08);color:#fff;font-size:11px;font-weight:800;cursor:pointer;}",
         ".kynflow-preview-button:hover{background:rgba(255,255,255,.14);}",
         ".kynflow-preview-button.primary{border-color:#20b7ff;background:#2477ff;}",
         ".kynflow-preview-button.primary:hover{background:#1d67dd;}",
+        ".kynflow-preview-key{display:inline-flex;align-items:center;justify-content:center;min-height:18px;border:1px solid rgba(255,255,255,.2);border-radius:5px;padding:1px 5px;background:rgba(255,255,255,.1);color:#fff;font:700 8px/1.2 ui-monospace,SFMono-Regular,Consolas,monospace;}",
         ".kynflow-preview-button:disabled{cursor:wait;opacity:.55;}",
         "@media print{body{padding-top:0!important}.kynflow-preview-toolbar{display:none!important}}"
       ].join("");
@@ -85,13 +120,13 @@ function buildPreviewBootstrap(title, paperLabel) {
       toolbar.innerHTML =
         '<div class="kynflow-preview-copy">' +
           '<div class="kynflow-preview-title"></div>' +
-          '<div class="kynflow-preview-sub">Ctrl+P to print · Esc to close</div>' +
+          '<div class="kynflow-preview-sub">Clean print preview</div>' +
         '</div>' +
         '<div class="kynflow-preview-actions">' +
           '<span class="kynflow-preview-paper"></span>' +
           '<span class="kynflow-preview-status" data-kynflow-preview-status>Ready</span>' +
-          '<button type="button" class="kynflow-preview-button" data-kynflow-preview-close>Close</button>' +
-          '<button type="button" class="kynflow-preview-button primary" data-kynflow-preview-print>Print</button>' +
+          '<button type="button" class="kynflow-preview-button" data-kynflow-preview-close><span>Close</span><kbd class="kynflow-preview-key">Esc</kbd></button>' +
+          '<button type="button" class="kynflow-preview-button primary" data-kynflow-preview-print><span>Print</span><kbd class="kynflow-preview-key">Ctrl+P</kbd></button>' +
         '</div>';
 
       document.body.prepend(toolbar);
@@ -103,6 +138,9 @@ function buildPreviewBootstrap(title, paperLabel) {
 
       function send(command) {
         document.title = command;
+        window.setTimeout(function () {
+          document.title = ${JSON.stringify(PREVIEW_WINDOW_TITLE)};
+        }, 0);
       }
 
       toolbar
@@ -184,14 +222,19 @@ async function openPreviewWindow({
       minHeight: 680,
       show: false,
       autoHideMenuBar: true,
-      title,
-      backgroundColor: "#e9edf3",
+      title: PREVIEW_WINDOW_TITLE,
+      icon: PREVIEW_ICON_PATH,
+      backgroundColor: "#ffffff",
       webPreferences: {
         sandbox: false,
         webSecurity: false,
         contextIsolation: false,
       },
     });
+
+    if (process.platform !== "darwin") {
+      win.setIcon(PREVIEW_ICON_PATH);
+    }
 
     win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
 
@@ -203,10 +246,14 @@ async function openPreviewWindow({
 
     win.webContents.on("did-finish-load", async () => {
       try {
+        await waitForDocumentImages(win);
         await win.webContents.executeJavaScript(
           buildPreviewBootstrap(title, paperLabel),
         );
-        win.setTitle(title);
+        await win.webContents.executeJavaScript(
+          `document.title = ${JSON.stringify(PREVIEW_WINDOW_TITLE)};`,
+        );
+        win.setTitle(PREVIEW_WINDOW_TITLE);
         win.show();
         win.focus();
       } catch (error) {
@@ -223,6 +270,7 @@ async function openPreviewWindow({
     win.webContents.on("page-title-updated", (event, newTitle) => {
       if (newTitle === PREVIEW_CLOSE_COMMAND) {
         event.preventDefault();
+        win.setTitle(PREVIEW_WINDOW_TITLE);
         if (!printing && !win.isDestroyed()) win.close();
         return;
       }
@@ -230,6 +278,7 @@ async function openPreviewWindow({
       if (newTitle !== PREVIEW_PRINT_COMMAND) return;
 
       event.preventDefault();
+      win.setTitle(PREVIEW_WINDOW_TITLE);
       if (printing || win.isDestroyed()) return;
 
       printing = true;
@@ -258,7 +307,9 @@ async function openPreviewWindow({
           printError = failureReason || "Print failed";
           await updatePreviewState(win, "error", "Print failed");
           win.webContents
-            .executeJavaScript(`document.title = ${JSON.stringify(title)};`)
+            .executeJavaScript(
+              `document.title = ${JSON.stringify(PREVIEW_WINDOW_TITLE)};`,
+            )
             .catch(() => {});
         },
       );
@@ -295,6 +346,8 @@ async function silentPrint(html, printerName, pageSize) {
       height: 600,
       show: false,
       skipTaskbar: true,
+      icon: PREVIEW_ICON_PATH,
+      backgroundColor: "#ffffff",
       webPreferences: {
         sandbox: false,
         webSecurity: false,
@@ -309,7 +362,8 @@ async function silentPrint(html, printerName, pageSize) {
       win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 450));
+    await waitForDocumentImages(win);
+    await new Promise((resolve) => setTimeout(resolve, 120));
 
     const result = await new Promise((resolve) => {
       win.webContents.print(

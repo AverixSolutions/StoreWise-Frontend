@@ -123,7 +123,7 @@ export default function ItemsTable({
   return (
     <div className="w-full">
       <table
-        className="w-full border-collapse text-[13px]"
+        className="purchase-items-table w-full border-collapse text-[13px]"
         style={
           {
             ["--slw" as any]: "52px",

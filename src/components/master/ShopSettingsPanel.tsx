@@ -206,7 +206,7 @@ function Toast({
 
   return (
     <div
-      className={`fixed bottom-6 right-6 z-[80] flex items-center gap-3 rounded-2xl border px-4 py-3 shadow-[0_12px_40px_rgba(3,10,24,0.4)] backdrop-blur-md ${cls} animate-in slide-in-from-bottom-3 fade-in duration-300`}
+      className={`fixed bottom-6 right-6 z-[2200] flex items-center gap-3 rounded-2xl border px-4 py-3 shadow-[0_12px_40px_rgba(3,10,24,0.4)] backdrop-blur-md ${cls} animate-in slide-in-from-bottom-3 fade-in duration-300`}
     >
       <Icon className="h-4 w-4 shrink-0" />
       <span className="text-sm font-medium">{toast.message}</span>
@@ -269,7 +269,7 @@ function LogoSection({
           <>
             <img
               src={logoPreviewUrl}
-              alt="Shop Logo"
+              alt="Business Logo"
               className="h-full w-full object-contain p-2"
             />
             <button
@@ -345,7 +345,17 @@ function LogoSection({
 
 // ── Main Component ────────────────────────────────────────────────────────────
 
-export default function ShopSettingsPanel({ onBack }: { onBack?: () => void }) {
+export default function ShopSettingsPanel({
+  onBack,
+  embedded = false,
+  backLabel = "Settings",
+  onSaved,
+}: {
+  onBack?: () => void;
+  embedded?: boolean;
+  backLabel?: string;
+  onSaved?: () => void;
+}) {
   const [form, setForm] = useState<FormState>(initialState);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -411,11 +421,31 @@ export default function ShopSettingsPanel({ onBack }: { onBack?: () => void }) {
   // ── Desktop logo: FileReader → base64 preview (no upload) ─────────────────
 
   function handleDesktopFilePick(file: File) {
+    if (!file.type.startsWith("image/")) {
+      setLogoUpload({
+        status: "error",
+        message: "Choose a valid PNG, JPG or WEBP image.",
+      });
+      return;
+    }
+
+    setLogoUpload({ status: "uploading" });
     const reader = new FileReader();
+
     reader.onload = () => {
-      setField("logoPreviewUrl", String(reader.result || ""));
-      // logoUrl stays null on desktop — we use logoDataUrl path
+      const dataUrl = String(reader.result || "");
+      setField("logoPreviewUrl", dataUrl);
+      setField("logoUrl", null);
+      setLogoUpload({ status: "done", url: dataUrl });
     };
+
+    reader.onerror = () => {
+      setLogoUpload({
+        status: "error",
+        message: "The selected logo could not be read.",
+      });
+    };
+
     reader.readAsDataURL(file);
   }
 
@@ -473,7 +503,7 @@ export default function ShopSettingsPanel({ onBack }: { onBack?: () => void }) {
       return;
     }
     if (!form.shopName.trim()) {
-      setToast({ type: "error", message: "Shop name is required." });
+      setToast({ type: "error", message: "Business name is required." });
       return;
     }
     if (logoUpload.status === "uploading") {
@@ -532,9 +562,20 @@ export default function ShopSettingsPanel({ onBack }: { onBack?: () => void }) {
         });
         setToast({
           type: res.warning ? "warning" : "success",
-          message: res.warning || "Shop settings saved successfully.",
+          message: res.warning || "Business profile saved successfully.",
         });
+        if (res.settings) {
+          const saved = res.settings;
+          setForm((current) => ({
+            ...current,
+            logoPreviewUrl: isDesktop
+              ? saved.logoDataUrl || null
+              : saved.logoUrl || null,
+            logoUrl: saved.logoUrl || null,
+          }));
+        }
         setLogoUpload({ status: "idle" });
+        onSaved?.();
       } else {
         setToast({
           type: "error",
@@ -555,12 +596,14 @@ export default function ShopSettingsPanel({ onBack }: { onBack?: () => void }) {
 
   if (loading) {
     return (
-      <div className="space-y-4">
-        <div className="rounded-[28px] border border-white/10 bg-kyn-surface h-32 animate-pulse" />
+      <div className="space-y-3">
+        {!embedded && (
+          <div className="h-32 animate-pulse rounded-[28px] border border-white/10 bg-kyn-surface" />
+        )}
         {[1, 2, 3].map((i) => (
           <div
             key={i}
-            className="rounded-xl border border-slate-200/80 bg-white h-40 animate-pulse"
+            className="h-40 animate-pulse rounded-xl border border-slate-200/80 bg-white"
           />
         ))}
       </div>
@@ -575,9 +618,13 @@ export default function ShopSettingsPanel({ onBack }: { onBack?: () => void }) {
     <>
       {toast && <Toast toast={toast} onClose={() => setToast(null)} />}
 
-      <div className="space-y-4 pb-10 md:pb-4">
+      <div className={embedded ? "space-y-3 pb-2" : "space-y-4 pb-10 md:pb-4"}>
         {/* ── Hero Banner ── */}
-        <section className="relative overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(135deg,#091120_0%,#0f1a31_58%,#16213d_100%)] px-5 py-5 text-white shadow-[0_22px_50px_rgba(5,10,20,0.18)] md:px-6 md:py-6">
+        <section
+          className={`relative overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(135deg,#091120_0%,#0f1a31_58%,#16213d_100%)] px-5 py-5 text-white shadow-[0_22px_50px_rgba(5,10,20,0.18)] md:px-6 md:py-6 ${
+            embedded ? "hidden" : ""
+          }`}
+        >
           <div className="pointer-events-none absolute -left-10 top-0 h-32 w-32 rounded-full bg-orange-400/10 blur-3xl" />
           <div className="pointer-events-none absolute right-0 bottom-0 h-36 w-36 rounded-full bg-cyan-500/10 blur-3xl" />
 
@@ -588,7 +635,7 @@ export default function ShopSettingsPanel({ onBack }: { onBack?: () => void }) {
                 Business Identity
               </div>
               <h1 className="text-[26px] font-semibold tracking-[-0.04em] text-white md:text-[30px]">
-                Shop <span className="kyn-brand-text">Settings</span>
+                Shop <span className="kyn-brand-text">Profile</span>
               </h1>
               <p className="mt-1.5 text-sm leading-relaxed text-slate-300">
                 Business profile, address, GST &amp; print details.
@@ -602,7 +649,7 @@ export default function ShopSettingsPanel({ onBack }: { onBack?: () => void }) {
                   className="inline-flex items-center gap-2 rounded-2xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-white/20 cursor-pointer"
                 >
                   <ArrowLeft className="h-4 w-4" />
-                  Master
+                  {backLabel}
                 </button>
               )}
               <button
@@ -623,7 +670,7 @@ export default function ShopSettingsPanel({ onBack }: { onBack?: () => void }) {
           iconColor="text-orange-300"
         >
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <Field label="Shop Name" required className="md:col-span-2">
+            <Field label="Business Name" required className="md:col-span-2">
               <input
                 type="text"
                 value={form.shopName}
@@ -762,7 +809,7 @@ export default function ShopSettingsPanel({ onBack }: { onBack?: () => void }) {
         {/* ── Shop Logo ── */}
         <SectionCard
           icon={ImageIcon}
-          title="Shop Logo"
+          title="Business Logo"
           iconColor="text-fuchsia-300"
         >
           <LogoSection
@@ -807,7 +854,7 @@ export default function ShopSettingsPanel({ onBack }: { onBack?: () => void }) {
                 ) : (
                   <>
                     <Save className="h-4 w-4" />
-                    Save Settings
+                    Save Profile
                   </>
                 )}
               </button>

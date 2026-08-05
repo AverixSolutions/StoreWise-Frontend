@@ -48,6 +48,7 @@ interface ItemsTableSectionProps {
   onOpenSettings?: () => void;
   onFocusItems?: () => void;
   onFocusBillDetails?: () => void;
+  onToggleBillDetails?: () => void;
   onFocusPreviousSection?: () => void;
 }
 
@@ -82,6 +83,7 @@ export default function ItemsTableSection({
   onOpenSettings,
   onFocusItems,
   onFocusBillDetails,
+  onToggleBillDetails,
   onFocusPreviousSection,
 }: ItemsTableSectionProps) {
   const itemCount = rows.filter((r) => r.productId).length;
@@ -119,9 +121,9 @@ export default function ItemsTableSection({
                 type="button"
                 onClick={onFocusItems}
                 title="Focus item picker (F3)"
-                className="inline-flex items-center gap-1 rounded border border-white/15 bg-white/[0.07] px-1.5 py-0.5 text-[9px] text-white/65 hover:bg-white/15"
+                className="inline-flex items-center gap-1 rounded border border-white/30 bg-white/[0.12] px-1.5 py-0.5 text-[9px] text-white hover:bg-white/15"
               >
-                <kbd className="font-mono text-[8px] font-semibold text-white/80">
+                <kbd className="font-mono text-[8px] font-semibold text-white">
                   F3
                 </kbd>
                 Item
@@ -131,11 +133,24 @@ export default function ItemsTableSection({
               <button
                 type="button"
                 onClick={onFocusBillDetails}
-                title="Toggle Bill Details (F4 or Ctrl+\)"
-                className="inline-flex items-center gap-1 rounded border border-white/15 bg-white/[0.07] px-1.5 py-0.5 text-[9px] text-white/65 hover:bg-white/15"
+                title="Focus Bill Number (F4)"
+                className="inline-flex items-center gap-1 rounded border border-white/30 bg-white/[0.12] px-1.5 py-0.5 text-[9px] text-white hover:bg-white/15"
               >
-                <kbd className="font-mono text-[8px] font-semibold text-white/80">
+                <kbd className="font-mono text-[8px] font-semibold text-white">
                   F4
+                </kbd>
+                Bill No
+              </button>
+            )}
+            {onToggleBillDetails && (
+              <button
+                type="button"
+                onClick={onToggleBillDetails}
+                title="Toggle Bill Details (Ctrl+\)"
+                className="inline-flex items-center gap-1 rounded border border-white/30 bg-white/[0.12] px-1.5 py-0.5 text-[9px] text-white hover:bg-white/15"
+              >
+                <kbd className="font-mono text-[8px] font-semibold text-white">
+                  Ctrl+\
                 </kbd>
                 Panel
               </button>
@@ -152,12 +167,12 @@ export default function ItemsTableSection({
             <button
               type="button"
               onClick={onOpenSettings}
-              className="inline-flex h-7 items-center justify-center gap-1 rounded-md border border-white/20 bg-white/10 px-2 text-white/90 transition hover:bg-white/20"
+              className="inline-flex h-7 items-center justify-center gap-1 rounded-md border border-white/20 bg-white/15 px-2 text-white transition hover:bg-white/20"
               title="Purchase Settings (F7)"
               aria-label="Open purchase settings"
             >
               <Settings className="h-3.5 w-3.5" />
-              <kbd className="font-mono text-[8px] font-semibold text-white/65">
+              <kbd className="font-mono text-[8px] font-semibold text-white">
                 F7
               </kbd>
             </button>
@@ -165,12 +180,12 @@ export default function ItemsTableSection({
 
           <button
             onClick={onShowReports}
-            className="px-2 sm:px-3 py-1.5 rounded-md bg-white/10 border border-white/20 text-white/90 hover:bg-white/20 transition-colors flex items-center gap-1.5 text-xs font-medium cursor-pointer"
+            className="px-2 sm:px-3 py-1.5 rounded-md bg-white/15 border border-white/20 text-white hover:bg-white/20 transition-colors flex items-center gap-1.5 text-xs font-medium cursor-pointer"
             title="View Reports (F6)"
           >
             <FileText className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Reports</span>
-            <kbd className="hidden font-mono text-[8px] text-white/55 xl:inline-flex">
+            <kbd className="hidden font-mono text-[8px] text-white xl:inline-flex">
               F6
             </kbd>
           </button>
@@ -184,7 +199,7 @@ export default function ItemsTableSection({
               }
               className={`px-2 sm:px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5 text-xs font-medium ${
                 canPrint
-                  ? "bg-white/10 border border-white/20 text-white/90 hover:bg-white/20 cursor-pointer"
+                  ? "bg-white/15 border border-white/20 text-white hover:bg-white/20 cursor-pointer"
                   : "bg-slate-200 border border-slate-200 text-slate-500 cursor-not-allowed"
               }`}
             >
@@ -212,12 +227,12 @@ export default function ItemsTableSection({
 
               <button
                 onClick={onShowHolds}
-                className="px-2 sm:px-3 py-1.5 rounded-md bg-white/10 border border-white/20 text-white/90 hover:bg-white/20 transition-colors flex items-center gap-1.5 text-xs font-medium cursor-pointer"
+                className="px-2 sm:px-3 py-1.5 rounded-md bg-white/15 border border-white/20 text-white hover:bg-white/20 transition-colors flex items-center gap-1.5 text-xs font-medium cursor-pointer"
                 title="View Holds (F8)"
               >
                 <List className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">Holds</span>
-                <kbd className="hidden font-mono text-[8px] text-white/55 xl:inline-flex">
+                <kbd className="hidden font-mono text-[8px] text-white xl:inline-flex">
                   F8
                 </kbd>
               </button>

@@ -6,6 +6,7 @@ import {
 } from "./buildPurchaseInvoiceHtml";
 import { buildPurchaseThermalHtml } from "./buildPurchaseThermalHtml";
 import { getTaskPref, type PaperSize } from "./printPreferences";
+import { getPurchasePrintCustomization } from "./purchasePrintCustomization";
 
 type ShowToast = (type: "success" | "error" | "info", message: string) => void;
 
@@ -15,6 +16,76 @@ type PurchasePrintOverrides = {
   paperSize?: PaperSize;
 };
 
+function clean(value: unknown): string | null {
+  const text = String(value ?? "").trim();
+  return text ? text : null;
+}
+
+function supplierAddress(supplier: Record<string, any> | null): string | null {
+  if (!supplier) return null;
+
+  const explicit =
+    clean(supplier.address) ||
+    clean(supplier.fullAddress) ||
+    clean(supplier.billingAddress);
+
+  if (explicit) return explicit;
+
+  const lines = [
+    clean(supplier.addressLine1),
+    clean(supplier.addressLine2),
+    [
+      clean(supplier.city),
+      clean(supplier.state),
+      clean(supplier.pincode || supplier.postalCode),
+    ]
+      .filter(Boolean)
+      .join(" - "),
+  ].filter(Boolean);
+
+  return lines.length ? lines.join(", ") : null;
+}
+
+async function loadSupplierDetails(
+  supplierId: unknown,
+): Promise<Record<string, any> | null> {
+  const id = clean(supplierId);
+  if (!id || !platform.getSupplier) return null;
+
+  try {
+    return (await platform.getSupplier(id)) as Record<string, any> | null;
+  } catch (error) {
+    console.warn("[print] supplier details unavailable", error);
+    return null;
+  }
+}
+
+async function resolveTransactionType(
+  licenseId: string,
+  purchase: Record<string, any>,
+): Promise<string | null> {
+  const direct =
+    clean(purchase.transactionTypeName) ||
+    clean(purchase.transactionType) ||
+    clean(purchase.typeName);
+
+  if (direct) return direct;
+
+  const typeId = clean(purchase.typeId);
+  if (!typeId || !platform.listTransactionTypes) return null;
+
+  try {
+    const result = await platform.listTransactionTypes(licenseId, "purchase");
+    const row = (result?.rows || []).find(
+      (candidate: any) => String(candidate.id) === typeId,
+    );
+    return clean(row?.name);
+  } catch (error) {
+    console.warn("[print] transaction type unavailable", error);
+    return null;
+  }
+}
+
 export async function printPurchaseBill(
   purchaseId: string,
   overrides?: PurchasePrintOverrides,
@@ -22,6 +93,7 @@ export async function printPurchaseBill(
 ) {
   const isDesktop = !!(window as any).electronAPI;
   const pref = getTaskPref("purchase");
+  const options = getPurchasePrintCustomization();
   const paperSize = overrides?.paperSize ?? pref.paperSize;
   const usePreview = overrides?.silent
     ? false
@@ -45,7 +117,16 @@ export async function printPurchaseBill(
   }
 
   const { purchase, items } = response;
-  const shop = await getShopProfile();
+  const licenseId =
+    clean(purchase.licenseId) ||
+    clean(localStorage.getItem("licenseId")) ||
+    "demo-license";
+
+  const [shop, supplier, transactionType] = await Promise.all([
+    getShopProfile(licenseId),
+    loadSupplierDetails(purchase.supplierId),
+    resolveTransactionType(licenseId, purchase),
+  ]);
 
   const subTotal = items.reduce(
     (sum: number, item: any) => sum + Number(item.billedValue || 0),
@@ -56,16 +137,31 @@ export async function printPurchaseBill(
 
   const printInput: PurchasePrintInput = {
     shop,
+    options,
     bill: {
       entryNo: purchase.slNo,
       billNo: purchase.billNo,
       date: purchase.purchaseDate,
       time: purchase.entryTime,
-      supplierName: purchase.supplierName,
+      supplierName:
+        clean(purchase.supplierName) ||
+        clean(supplier?.name) ||
+        clean(supplier?.supplierName),
+      supplierAddress: supplierAddress(supplier),
+      supplierPhone:
+        clean(supplier?.mobile) ||
+        clean(supplier?.phone) ||
+        clean(supplier?.contactNumber),
+      supplierEmail: clean(supplier?.email),
+      supplierGstin:
+        clean(supplier?.gstin) ||
+        clean(supplier?.gstNo) ||
+        clean(supplier?.taxNumber),
       department: purchase.department,
       debitAccount: purchase.debitAccount,
       natureOfEntry: purchase.natureOfEntry,
       purchaseType: purchase.purchaseType,
+      transactionType,
     },
     items: items.map((item: any, index: number) => ({
       lineNo: item.lineNo ?? index + 1,
@@ -90,7 +186,9 @@ export async function printPurchaseBill(
     ? buildPurchaseThermalHtml(printInput)
     : buildPurchaseInvoiceHtml(printInput);
 
-  const title = `Purchase Bill - ${purchase.billNo ?? purchase.slNo ?? ""}`;
+  const documentTitle =
+    String(options.documentTitle || "").trim() || "Purchase Bill";
+  const title = `${documentTitle} - ${purchase.billNo ?? purchase.slNo ?? ""}`;
 
   if (isDesktop) {
     const pageSize = isThermal ? { width: 80000, height: 200000 } : "A4";
@@ -170,26 +268,36 @@ function addWebPreviewShell(
   const safePaper = JSON.stringify(paperLabel);
 
   const styles = `
+    <link rel="icon" href="/favicon.ico" />
     <style id="kynflow-web-preview-style">
-      body { padding-top: 72px !important; }
+      html,
+      body {
+        background: #ffffff !important;
+      }
+
+      body {
+        padding-top: 66px !important;
+      }
+
       .kynflow-web-preview {
         position: fixed;
         z-index: 2147483647;
         top: 0;
         left: 0;
         right: 0;
-        height: 64px;
+        height: 58px;
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 18px;
-        padding: 0 20px;
+        gap: 16px;
+        padding: 0 16px;
         border-bottom: 1px solid rgba(255,255,255,.12);
-        background: linear-gradient(135deg,#091120,#0f1a31 62%,#16213d);
-        box-shadow: 0 8px 24px rgba(15,23,42,.22);
-        color: #fff;
-        font-family: Inter,Segoe UI,Arial,sans-serif;
+        background: #0f1e38;
+        box-shadow: 0 6px 18px rgba(15,23,42,.18);
+        color: #ffffff;
+        font-family: Inter, "Segoe UI", Arial, sans-serif;
       }
+
       .kynflow-web-preview::after {
         content: "";
         position: absolute;
@@ -199,53 +307,93 @@ function addWebPreviewShell(
         height: 2px;
         background: linear-gradient(90deg,#20b7ff,#2477ff,#b026ff);
       }
-      .kynflow-preview-copy { min-width: 0; }
+
+      .kynflow-preview-copy {
+        min-width: 0;
+      }
+
       .kynflow-preview-title {
         overflow: hidden;
-        color: #fff;
+        color: #ffffff;
         font-size: 14px;
         font-weight: 800;
         text-overflow: ellipsis;
         white-space: nowrap;
       }
+
       .kynflow-preview-sub {
         margin-top: 2px;
-        color: rgba(255,255,255,.56);
+        color: rgba(255,255,255,.62);
         font-size: 10px;
       }
+
       .kynflow-preview-actions {
         display: flex;
+        flex: 0 0 auto;
         align-items: center;
         gap: 8px;
-        flex: 0 0 auto;
       }
+
       .kynflow-preview-paper {
-        margin-right: 6px;
-        border: 1px solid rgba(255,255,255,.15);
+        margin-right: 4px;
+        border: 1px solid rgba(255,255,255,.18);
         border-radius: 999px;
         padding: 5px 9px;
         background: rgba(255,255,255,.08);
-        color: rgba(255,255,255,.8);
+        color: rgba(255,255,255,.86);
         font-size: 10px;
         font-weight: 800;
       }
+
       .kynflow-preview-button {
-        border: 1px solid rgba(255,255,255,.15);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
+        border: 1px solid rgba(255,255,255,.18);
         border-radius: 8px;
-        padding: 8px 12px;
+        padding: 7px 10px;
         background: rgba(255,255,255,.08);
-        color: #fff;
+        color: #ffffff;
         font-size: 11px;
         font-weight: 800;
         cursor: pointer;
       }
+
+      .kynflow-preview-button:hover {
+        background: rgba(255,255,255,.14);
+      }
+
+      .kynflow-preview-key {
+        display: inline-flex;
+        min-height: 18px;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid rgba(255,255,255,.22);
+        border-radius: 5px;
+        padding: 1px 5px;
+        background: rgba(255,255,255,.1);
+        color: #ffffff;
+        font: 700 8px/1.2 ui-monospace, SFMono-Regular, Consolas, monospace;
+      }
+
       .kynflow-preview-button.primary {
         border-color: #20b7ff;
         background: #2477ff;
       }
+
+      .kynflow-preview-button.primary:hover {
+        background: #1d67dd;
+      }
+
       @media print {
-        body { padding-top: 0 !important; }
-        .kynflow-web-preview { display: none !important; }
+        body {
+          padding-top: 0 !important;
+        }
+
+        .kynflow-web-preview {
+          display: none !important;
+        }
       }
     </style>`;
 
@@ -253,76 +401,95 @@ function addWebPreviewShell(
     <div class="kynflow-web-preview" data-kynflow-preview-toolbar>
       <div class="kynflow-preview-copy">
         <div class="kynflow-preview-title"></div>
-        <div class="kynflow-preview-sub">Ctrl+P to print · Esc to close</div>
+        <div class="kynflow-preview-sub">Clean print preview</div>
       </div>
       <div class="kynflow-preview-actions">
         <span class="kynflow-preview-paper"></span>
-        <button type="button" class="kynflow-preview-button" data-kynflow-close>Close</button>
-        <button type="button" class="kynflow-preview-button primary" data-kynflow-print>Print</button>
+        <button type="button" class="kynflow-preview-button" data-kynflow-close>
+          <span>Close</span>
+          <kbd class="kynflow-preview-key">Esc</kbd>
+        </button>
+        <button type="button" class="kynflow-preview-button primary" data-kynflow-print>
+          <span>Print</span>
+          <kbd class="kynflow-preview-key">Ctrl+P</kbd>
+        </button>
       </div>
     </div>
     <script>
       (function () {
         var title = ${safeTitle};
         var paper = ${safePaper};
+        document.title = "KYNFLOW Print Preview";
         var toolbar = document.querySelector("[data-kynflow-preview-toolbar]");
         if (!toolbar) return;
+
         toolbar.querySelector(".kynflow-preview-title").textContent = title;
         toolbar.querySelector(".kynflow-preview-paper").textContent = paper;
-        toolbar.querySelector("[data-kynflow-close]").addEventListener("click", function () {
-          window.close();
-        });
-        toolbar.querySelector("[data-kynflow-print]").addEventListener("click", function () {
-          window.print();
-        });
-        window.addEventListener("keydown", function (event) {
-          if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "p") {
-            event.preventDefault();
-            window.print();
-          }
-          if (event.key === "Escape") {
-            event.preventDefault();
+
+        toolbar
+          .querySelector("[data-kynflow-close]")
+          .addEventListener("click", function () {
             window.close();
-          }
-        }, true);
-        window.addEventListener("afterprint", function () {
-          window.close();
-        });
+          });
+
+        toolbar
+          .querySelector("[data-kynflow-print]")
+          .addEventListener("click", function () {
+            window.print();
+          });
+
+        window.addEventListener(
+          "keydown",
+          function (event) {
+            if (
+              (event.ctrlKey || event.metaKey) &&
+              event.key.toLowerCase() === "p"
+            ) {
+              event.preventDefault();
+              window.print();
+              return;
+            }
+
+            if (event.key === "Escape") {
+              event.preventDefault();
+              window.close();
+            }
+          },
+          true,
+        );
       })();
     </script>`;
 
   return html
     .replace("</head>", `${styles}</head>`)
-    .replace("</body>", `${controls}</body>`);
+    .replace("<body>", `<body>${controls}`);
 }
 
 function iframePrint(html: string) {
-  const iframe = document.createElement("iframe");
-  iframe.style.cssText =
-    "position:fixed;width:0;height:0;border:none;left:-9999px;top:-9999px";
-  document.body.appendChild(iframe);
+  const frame = document.createElement("iframe");
+  frame.style.position = "fixed";
+  frame.style.right = "0";
+  frame.style.bottom = "0";
+  frame.style.width = "0";
+  frame.style.height = "0";
+  frame.style.border = "0";
+  document.body.appendChild(frame);
 
-  const doc = iframe.contentDocument || iframe.contentWindow?.document;
+  const doc = frame.contentWindow?.document;
   if (!doc) {
-    iframe.remove();
-    return { success: false, error: "Cannot create print frame" };
+    frame.remove();
+    return { success: false, error: "Print frame unavailable" };
   }
 
   doc.open();
   doc.write(html);
   doc.close();
 
-  iframe.onload = () => {
-    const frameWindow = iframe.contentWindow;
-    if (!frameWindow) {
-      iframe.remove();
-      return;
-    }
-
-    frameWindow.focus();
-    frameWindow.print();
-    setTimeout(() => iframe.remove(), 1500);
-  };
+  window.setTimeout(() => {
+    frame.contentWindow?.focus();
+    frame.contentWindow?.print();
+    window.setTimeout(() => frame.remove(), 1000);
+  }, 250);
 
   return { success: true, preview: false };
 }
