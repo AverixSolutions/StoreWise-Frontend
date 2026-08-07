@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { X, Play, Trash2, Edit3, Clock } from "lucide-react";
 import PromptModal from "@/components/ui/PromptModal";
+import ConfirmModal from "@/components/ui/ConfirmModal";
 import { platform } from "@/platform";
 
 interface HoldSummary {
@@ -30,6 +31,7 @@ export default function ReturnHoldsModal({
   const [loading, setLoading] = useState(false);
   const [renameId, setRenameId] = useState<string | null>(null);
   const [renameDefault, setRenameDefault] = useState<string>("");
+  const [deleteId, setDeleteId] = useState<string | null>(null);
 
   async function refresh() {
     setLoading(true);
@@ -48,10 +50,14 @@ export default function ReturnHoldsModal({
     if (isOpen) refresh();
   }, [isOpen]);
 
-  async function handleDelete(id: string) {
-    const ok = confirm("Delete this hold?");
-    if (!ok) return;
-    await platform.deletePurchaseReturnHold?.(id);
+  function handleDelete(id: string) {
+    setDeleteId(id);
+  }
+
+  async function confirmDelete() {
+    if (!deleteId) return;
+    await platform.deletePurchaseReturnHold?.(deleteId);
+    setDeleteId(null);
     refresh();
   }
 
@@ -376,6 +382,16 @@ export default function ReturnHoldsModal({
         confirmText="Save"
         onCancel={() => setRenameId(null)}
         onConfirm={(val) => confirmRename(val.trim())}
+      />
+
+      <ConfirmModal
+        isOpen={Boolean(deleteId)}
+        title="Delete return hold?"
+        message="This removes only the saved hold. It does not delete a Purchase Return."
+        confirmText="Delete Hold"
+        cancelText="Cancel"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteId(null)}
       />
     </div>
   );

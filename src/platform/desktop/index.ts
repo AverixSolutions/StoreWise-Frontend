@@ -82,6 +82,7 @@ import {
   desktopDeletePurchaseReturn,
   desktopListPurchaseReturns,
   desktopGetPurchaseReturnFull,
+  desktopGetPurchaseReturnSource,
   desktopPeekNextPurchaseReturnSlNo,
   desktopSavePurchaseReturnHold,
   desktopListPurchaseReturnHolds,
@@ -106,6 +107,7 @@ import {
   desktopDeleteSaleReturn,
   desktopListSaleReturns,
   desktopGetSaleReturnFull,
+  desktopGetSaleReturnSource,
   desktopPeekNextSaleReturnSlNo,
   desktopSaveSaleReturnHold,
   desktopListSaleReturnHolds,
@@ -561,7 +563,7 @@ export const desktopPlatform: PlatformAPI = {
     return result;
   },
 
-  // ── Tax ───────────────────────────────────────────────────────────────────
+  // â”€â”€ Tax â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   listTaxCategories: async (licenseId: string) => {
     const res = await requireElectronAPI().listTaxCategories(licenseId);
     return res ?? { success: false, rows: [] };
@@ -594,7 +596,7 @@ export const desktopPlatform: PlatformAPI = {
     return result;
   },
 
-  // ── Transaction Types ─────────────────────────────────────────────────────
+  // â”€â”€ Transaction Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   listTransactionTypes: async (licenseId, category) => {
     const res = await requireElectronAPI().listTransactionTypes(
       licenseId,
@@ -660,15 +662,14 @@ export const desktopPlatform: PlatformAPI = {
   },
   listActiveOffers: (licenseId, saleDateTime) =>
     desktopListActiveOffers(licenseId, saleDateTime),
-  listOfferTargetProducts: (offerId) =>
-    desktopListOfferTargetProducts(offerId),
+  listOfferTargetProducts: (offerId) => desktopListOfferTargetProducts(offerId),
   saveOfferTargetProducts: async (payload) => {
     const result = await desktopSaveOfferTargetProducts(payload);
     if (result?.success) triggerDesktopSync("offerTargetProduct");
     return result;
   },
 
-  // ── Purchases ─────────────────────────────────────────────────────────────
+  // â”€â”€ Purchases â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   createPurchase: (purchase, items) => desktopCreatePurchase(purchase, items),
 
   updatePurchase: (payload) => desktopUpdatePurchase(payload),
@@ -698,31 +699,33 @@ export const desktopPlatform: PlatformAPI = {
 
   bulkUpdateProductPrices: (updates) => desktopBulkUpdateProductPrices(updates),
 
-  // ── Purchase Returns ──────────────────────────────────────────────────────
+  // â”€â”€ Purchase Returns â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   createPurchaseReturn: desktopCreatePurchaseReturn,
   updatePurchaseReturn: desktopUpdatePurchaseReturn,
   deletePurchaseReturn: desktopDeletePurchaseReturn,
   listPurchaseReturns: desktopListPurchaseReturns,
   getPurchaseReturnFull: desktopGetPurchaseReturnFull,
+  getPurchaseReturnSource: desktopGetPurchaseReturnSource,
   peekNextPurchaseReturnSlNo: desktopPeekNextPurchaseReturnSlNo,
   savePurchaseReturnHold: desktopSavePurchaseReturnHold,
   listPurchaseReturnHolds: desktopListPurchaseReturnHolds,
   getPurchaseReturnHold: desktopGetPurchaseReturnHold,
   deletePurchaseReturnHold: desktopDeletePurchaseReturnHold,
 
-  // ── Sale Returns ──────────────────────────────────────────────────────────
+  // â”€â”€ Sale Returns â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   createSaleReturn: desktopCreateSaleReturn,
   updateSaleReturn: desktopUpdateSaleReturn,
   deleteSaleReturn: desktopDeleteSaleReturn,
   listSaleReturns: desktopListSaleReturns,
   getSaleReturnFull: desktopGetSaleReturnFull,
+  getSaleReturnSource: desktopGetSaleReturnSource,
   peekNextSaleReturnSlNo: desktopPeekNextSaleReturnSlNo,
   saveSaleReturnHold: desktopSaveSaleReturnHold,
   listSaleReturnHolds: desktopListSaleReturnHolds,
   getSaleReturnHold: desktopGetSaleReturnHold,
   deleteSaleReturnHold: desktopDeleteSaleReturnHold,
 
-  // ── Supplier Ledger & Payments ────────────────────────────────────────────
+  // â”€â”€ Supplier Ledger & Payments â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   getSupplierLedger: (params) => requireElectronAPI().getSupplierLedger(params),
 
   getSupplierOutstandingBills: (params) =>
@@ -763,7 +766,7 @@ export const desktopPlatform: PlatformAPI = {
     return result;
   },
 
-  // ── Sales ─────────────────────────────────────────────────────────────────
+  // â”€â”€ Sales â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   createSale: (sale, items) => desktopCreateSale(sale, items),
   updateSale: (payload) => desktopUpdateSale(payload),
   deleteSale: (id) => desktopDeleteSale(id),
@@ -799,11 +802,12 @@ export const desktopPlatform: PlatformAPI = {
   getCustomerDistincts: (licenseId: string) =>
     desktopGetCustomerDistincts(licenseId),
 
-  // ── Quotations ────────────────────────────────────────────────────────────
+  // â”€â”€ Quotations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   createQuotation: (header, items) => desktopCreateQuotation(header, items),
   updateQuotation: (payload) => desktopUpdateQuotation(payload),
   deleteQuotation: (id) => desktopDeleteQuotation(id),
-  listQuotations: (licenseId, filters) => desktopListQuotations(licenseId, filters),
+  listQuotations: (licenseId, filters) =>
+    desktopListQuotations(licenseId, filters),
   getQuotationFull: (id) => desktopGetQuotationFull(id),
   peekNextQuotationSlNo: (licenseId) => desktopPeekNextQuotationSlNo(licenseId),
   convertQuotationToSale: (quotationId, overrides) =>
@@ -811,7 +815,7 @@ export const desktopPlatform: PlatformAPI = {
   markQuotationConverted: (quotationId, saleId) =>
     desktopMarkQuotationConverted(quotationId, saleId),
 
-  // ── Print ─────────────────────────────────────────────────────────────────
+  // â”€â”€ Print â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   getPrinters: async () => {
     const api = requireElectronAPI() as any;
     if (!api.getPrinters) return [];

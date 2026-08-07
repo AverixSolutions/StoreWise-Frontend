@@ -1,5 +1,10 @@
 // src/lib/print/buildThermalReceiptHtml.ts
-type ReceiptShop = {
+import {
+  DEFAULT_SALES_PRINT_CUSTOMIZATION,
+  type SalesPrintCustomization,
+} from "./salesPrintCustomization";
+
+export type ReceiptShop = {
   name: string;
   logoUrl?: string | null;
   addressLine1?: string | null;
@@ -14,9 +19,15 @@ type ReceiptShop = {
   authorizedSignatory?: string | null;
 };
 
-type ReceiptItem = {
+export type ReceiptItem = {
   lineNo: number;
   name: string;
+  barcode?: string | null;
+  batchNo?: string | null;
+  expiryDate?: string | null;
+  unit?: string | null;
+  taxPercent?: string | number | null;
+  mrp?: number | null;
   qty: number;
   rate: number;
   total: number;
@@ -24,11 +35,17 @@ type ReceiptItem = {
   offerSavings?: number | null;
 };
 
-type ReceiptInput = {
+export type ReceiptInput = {
   shop: ReceiptShop;
   billNo?: string | number | null;
+  entryNo?: string | number | null;
   date?: string | null;
   time?: string | null;
+  saleType?: string | null;
+  transactionType?: string | null;
+  department?: string | null;
+  debitAccount?: string | null;
+  natureOfEntry?: string | null;
   customerName?: string | null;
   customerPhone?: string | null;
   customerGstin?: string | null;
@@ -41,10 +58,11 @@ type ReceiptInput = {
   discount?: number;
   grandTotal: number;
   notes?: string[];
+  options?: SalesPrintCustomization;
 };
 
-function esc(v: unknown) {
-  return String(v ?? "")
+function esc(value: unknown): string {
+  return String(value ?? "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
@@ -52,337 +70,250 @@ function esc(v: unknown) {
     .replaceAll("'", "&#039;");
 }
 
-function money(v: unknown) {
-  return Number(v || 0).toFixed(2);
-}
-
-function fmtDate(v?: string | null) {
-  if (!v) return "";
-  const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return String(v);
-  return d.toLocaleDateString("en-GB");
-}
-
-function fmtTime(v?: string | null) {
-  if (!v) return "";
-  const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return String(v);
-  return d.toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
+function money(value: unknown): string {
+  return Number(value || 0).toLocaleString("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   });
 }
 
-function amountInWords(n: number) {
-  const value = Math.round(Number(n || 0));
-  return `${value} Only`;
+function quantity(value: unknown): string {
+  const number = Number(value || 0);
+  return Number.isInteger(number) ? String(number) : money(number);
 }
 
-export function buildThermalReceiptHtml(input: ReceiptInput) {
-  const {
-    shop,
-    billNo,
-    date,
-    time,
-    customerName,
-    customerPhone,
-    customerGstin,
-    customerAddress,
-    items,
-    totalQty,
-    subTotal,
-    offerSavings = 0,
-    offerSummary = [],
-    discount = 0,
-    grandTotal,
-    notes = [],
-  } = input;
+function formatDate(value?: string | null): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleDateString("en-GB");
+}
 
+function formatTime(value?: string | null): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+function taxPercent(value?: string | number | null): number {
+  if (value == null || value === "" || value === "NT") return 0;
+  return Number(String(value).replace("P", "").replace("%", "")) || 0;
+}
+
+function amountToWords(amount: number): string {
+  const value = Math.round(Number(amount || 0));
+  return `${value.toLocaleString("en-IN")} Rupees Only`;
+}
+
+export function buildThermalReceiptHtml(input: ReceiptInput): string {
+  const options = {
+    ...DEFAULT_SALES_PRINT_CUSTOMIZATION,
+    ...(input.options || {}),
+  };
   const address = [
-    shop.addressLine1,
-    shop.addressLine2,
-    [shop.city, shop.state, shop.pincode].filter(Boolean).join("-"),
+    input.shop.addressLine1,
+    input.shop.addressLine2,
+    [input.shop.city, input.shop.state, input.shop.pincode]
+      .filter(Boolean)
+      .join(" - "),
   ]
     .filter(Boolean)
     .join(", ");
+  const title = options.documentTitle || "Sales Invoice";
 
-  const rows = items
-    .map(
-      (it) => `
-      <tr>
-        <td class="item-cell">
-          <div class="item-name">${esc(it.lineNo)}. ${esc(it.name)}</div>
-          <div class="item-meta">
-            ${esc(it.qty)} × ${money(it.rate)}
-            ${
-              it.offerLabel
-                ? `<span class="offer-note"> • ${esc(it.offerLabel)}${
-                    it.offerSavings ? ` Saved ${money(it.offerSavings)}` : ""
-                  }</span>`
+  const businessLines = [
+    options.showShopAddress && address ? `<div>${esc(address)}</div>` : "",
+    options.showShopPhone && input.shop.mobile
+      ? `<div>Phone: ${esc(input.shop.mobile)}</div>`
+      : "",
+    options.showShopEmail && input.shop.email
+      ? `<div>${esc(input.shop.email)}</div>`
+      : "",
+    options.showShopGstin && input.shop.gstin
+      ? `<div>GSTIN: ${esc(input.shop.gstin)}</div>`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("");
+
+  const documentRows = [
+    options.showEntryNo && input.entryNo
+      ? `<div><span>Entry</span><strong>${esc(input.entryNo)}</strong></div>`
+      : "",
+    options.showBillNo && input.billNo
+      ? `<div><span>Bill</span><strong>${esc(input.billNo)}</strong></div>`
+      : "",
+    options.showSaleDate && input.date
+      ? `<div><span>Date</span><strong>${esc(formatDate(input.date))}</strong></div>`
+      : "",
+    options.showEntryTime && input.time
+      ? `<div><span>Time</span><strong>${esc(formatTime(input.time))}</strong></div>`
+      : "",
+    options.showSaleType && input.saleType
+      ? `<div><span>Type</span><strong>${esc(input.saleType)}</strong></div>`
+      : "",
+    options.showTransactionType && input.transactionType
+      ? `<div><span>Txn</span><strong>${esc(input.transactionType)}</strong></div>`
+      : "",
+    options.showDepartment && input.department
+      ? `<div><span>Dept</span><strong>${esc(input.department)}</strong></div>`
+      : "",
+    options.showDebitAccount && input.debitAccount
+      ? `<div><span>Debit</span><strong>${esc(input.debitAccount)}</strong></div>`
+      : "",
+    options.showNatureOfEntry && input.natureOfEntry
+      ? `<div><span>Nature</span><strong>${esc(input.natureOfEntry)}</strong></div>`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("");
+
+  const customerLines = [
+    options.showCustomerName && input.customerName
+      ? `<div class="customer-name">${esc(input.customerName)}</div>`
+      : "",
+    options.showCustomerAddress && input.customerAddress
+      ? `<div>${esc(input.customerAddress)}</div>`
+      : "",
+    options.showCustomerPhone && input.customerPhone
+      ? `<div>Phone: ${esc(input.customerPhone)}</div>`
+      : "",
+    options.showCustomerGstin && input.customerGstin
+      ? `<div>GSTIN: ${esc(input.customerGstin)}</div>`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("");
+
+  const itemRows = input.items
+    .map((item) => {
+      const details = [
+        options.showBarcode && item.barcode ? `BC:${esc(item.barcode)}` : "",
+        options.showBatchNo && item.batchNo ? `Batch:${esc(item.batchNo)}` : "",
+        options.showExpiryDate && item.expiryDate
+          ? `Exp:${esc(formatDate(item.expiryDate))}`
+          : "",
+        options.showMrp && item.mrp != null ? `MRP:${money(item.mrp)}` : "",
+        options.showTax && taxPercent(item.taxPercent)
+          ? `Tax:${taxPercent(item.taxPercent)}%`
+          : "",
+      ].filter(Boolean);
+      const qtyText = `${quantity(item.qty)}${
+        options.showUnit && item.unit ? ` ${esc(item.unit)}` : ""
+      } x ${money(item.rate)}`;
+      const offer =
+        options.showOffers && item.offerLabel
+          ? `<div class="offer">${esc(item.offerLabel)}${
+              Number(item.offerSavings || 0) > 0
+                ? ` | Saved Rs. ${money(item.offerSavings)}`
                 : ""
-            }
-          </div>
+            }</div>`
+          : "";
+      return `<tr>
+        <td>
+          <div class="item-name">${esc(item.lineNo)}. ${esc(item.name)}</div>
+          <div class="item-calc">${qtyText}</div>
+          ${details.length ? `<div class="item-meta">${details.join(" | ")}</div>` : ""}
+          ${offer}
         </td>
-        <td class="amount-cell">${money(it.total)}</td>
-      </tr>
-    `,
-    )
+        <td class="amount">${money(item.total)}</td>
+      </tr>`;
+    })
     .join("");
 
-  const notesHtml = notes
-    .map((note) => `<div class="note">* ${esc(note)}</div>`)
-    .join("");
-  const offerSummaryHtml = offerSummary.length
-    ? `<div class="note">* Offers: ${esc(offerSummary.join(", "))}</div>`
-    : "";
+  const offerSummary =
+    options.showOffers && input.offerSummary?.length
+      ? `<div class="offers"><strong>Offers:</strong> ${esc(input.offerSummary.join(", "))}</div>`
+      : "";
 
-  return `
-<!DOCTYPE html>
+  const totals = [
+    options.showSubTotal
+      ? `<div><span>Subtotal</span><strong>${money(input.subTotal)}</strong></div>`
+      : "",
+    options.showOfferSavings && Number(input.offerSavings || 0) > 0
+      ? `<div><span>Offer savings</span><strong>- ${money(input.offerSavings)}</strong></div>`
+      : "",
+    options.showBillDiscount && Number(input.discount || 0) > 0
+      ? `<div><span>Bill discount</span><strong>- ${money(input.discount)}</strong></div>`
+      : "",
+    `<div class="grand"><span>GRAND TOTAL</span><strong>Rs. ${money(input.grandTotal)}</strong></div>`,
+  ]
+    .filter(Boolean)
+    .join("");
+
+  const notes = [
+    ...(options.showTerms && input.shop.footerNote
+      ? [input.shop.footerNote]
+      : []),
+    ...(options.showTerms ? input.notes || [] : []),
+  ];
+
+  return `<!doctype html>
 <html>
 <head>
-  <meta charset="UTF-8" />
-  <title>Sale Receipt</title>
-  <style>
-    @page {
-      size: 80mm auto;
-      margin: 0;
-    }
-
-    * {
-      box-sizing: border-box;
-    }
-
-    html, body {
-      margin: 0;
-      padding: 0;
-      background: #fff;
-      color: #000;
-      font-family: Arial, Helvetica, sans-serif;
-    }
-
-    body {
-      width: 64mm;
-      max-width: 64mm;
-      margin: 0 auto;
-      overflow: hidden;
-    }
-
-    .receipt {
-      width: 60mm;
-      max-width: 60mm;
-      margin: 0 auto;
-      padding: 4px 0 8px;
-      font-size: 10px;
-      line-height: 1.2;
-      overflow: hidden;
-    }
-
-    .center { text-align: center; }
-    .left { text-align: left; }
-    .right { text-align: right; }
-    .bold { font-weight: 700; }
-    .title { font-size: 13px; font-weight: 700; }
-    .shop {
-      font-size: 17px;
-      font-weight: 800;
-      line-height: 1.08;
-      word-break: break-word;
-    }
-    .mid {
-      font-size: 10.5px;
-      font-weight: 700;
-      word-break: break-word;
-    }
-    .small { font-size: 10px; }
-
-    .sep {
-      border-top: 1px solid #000;
-      margin: 8px 0;
-    }
-
-    .row {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 4px;
-      margin: 2px 0;
-      width: 100%;
-    }
-
-    .row > div {
-      min-width: 0;
-      overflow-wrap: anywhere;
-    }
-
-    table {
-      width: 100%;
-      max-width: 100%;
-      table-layout: fixed;
-      border-collapse: collapse;
-      margin-top: 6px;
-      overflow: hidden;
-    }
-
-    th, td {
-      padding: 3px 0;
-      vertical-align: top;
-      font-size: 10px;
-      overflow: hidden;
-    }
-
-    thead th {
-      border-top: 1px solid #000;
-      border-bottom: 1px solid #000;
-      font-size: 10px;
-    }
-
-    .l { text-align: left; }
-    .c { text-align: center; }
-    .r { text-align: right; }
-
-    .item-cell {
-      width: 66%;
-      max-width: 66%;
-      text-align: left;
-      word-break: break-word;
-      overflow-wrap: anywhere;
-      padding-right: 3px;
-    }
-
-    .amount-cell {
-      width: 34%;
-      max-width: 34%;
-      text-align: right;
-      white-space: nowrap;
-      font-weight: 700;
-      font-size: 9.5px;
-      overflow: hidden;
-    }
-
-    .item-name {
-      font-weight: 700;
-      line-height: 1.2;
-    }
-
-    .item-meta {
-      margin-top: 2px;
-      font-size: 10px;
-      font-weight: 600;
-    }
-
-    .summary-row td {
-      border-top: 1px solid #000;
-    }
-
-    .offer-note {
-      font-size: 10px;
-      font-weight: 700;
-    }
-
-    .total-box {
-      border-top: 1px solid #000;
-      border-bottom: 1px solid #000;
-      padding: 6px 0;
-      margin: 7px 0;
-    }
-
-    .grand {
-      font-size: 13px;
-      font-weight: 800;
-      white-space: nowrap;
-    }
-
-    .note {
-      margin: 2px 0;
-      font-weight: 700;
-      letter-spacing: 0.2px;
-    }
-  </style>
+<meta charset="utf-8" />
+<title>${esc(title)}</title>
+<style>
+  @page { size: 80mm auto; margin: 0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #fff; color: #000; font-family: Arial, Helvetica, sans-serif; }
+  body { width: 68mm; max-width: 68mm; margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .receipt { width: 68mm; max-width: 68mm; padding: 3mm 2.5mm 4mm; font-size: 9.5px; line-height: 1.28; overflow: hidden; }
+  .center { text-align: center; }
+  .logo { display: block; width: 18mm; max-height: 14mm; margin: 0 auto 1.5mm; object-fit: contain; }
+  .shop-name { font-size: 15px; line-height: 1.1; font-weight: 800; overflow-wrap: anywhere; }
+  .business { margin-top: 1mm; font-size: 8.5px; line-height: 1.35; overflow-wrap: anywhere; }
+  .title { margin-top: 2mm; font-size: 11px; font-weight: 800; letter-spacing: .08em; }
+  .rule { margin: 2mm 0; border-top: 1px dashed #000; }
+  .document > div, .totals > div { display: flex; justify-content: space-between; gap: 4mm; margin: .6mm 0; }
+  .document strong, .totals strong { text-align: right; overflow-wrap: anywhere; }
+  .customer { font-size: 8.8px; line-height: 1.35; overflow-wrap: anywhere; }
+  .customer-name { font-size: 10px; font-weight: 800; }
+  table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+  th { padding: 1.5mm 0; border-top: 1px solid #000; border-bottom: 1px solid #000; font-size: 8.5px; text-align: left; }
+  th:last-child { text-align: right; width: 22mm; }
+  td { padding: 1.5mm 0; border-bottom: 1px dotted #777; vertical-align: top; overflow-wrap: anywhere; }
+  td:first-child { padding-right: 2mm; }
+  .amount { width: 22mm; text-align: right; white-space: nowrap; font-weight: 800; }
+  .item-name { font-weight: 800; }
+  .item-calc { margin-top: .5mm; font-size: 8.5px; }
+  .item-meta { margin-top: .4mm; font-size: 7.5px; color: #222; }
+  .offer, .offers { margin-top: .5mm; font-size: 7.8px; font-weight: 700; }
+  .offers { border: 1px dashed #000; padding: 1.5mm; }
+  .totals { margin-top: 1.5mm; }
+  .grand { margin-top: 1.5mm !important; border-top: 1px solid #000; border-bottom: 1px solid #000; padding: 1.5mm 0; font-size: 11px; font-weight: 800; }
+  .words { margin-top: 1.5mm; text-align: center; font-size: 8px; line-height: 1.35; }
+  .notes { margin-top: 2mm; text-align: center; font-size: 7.5px; line-height: 1.35; white-space: pre-wrap; }
+  .signature { margin-top: 6mm; text-align: center; font-size: 8px; }
+  .signature::before { content: ""; display: block; width: 34mm; margin: 0 auto 1.5mm; border-top: 1px solid #000; }
+  .kynflow { margin-top: 2.5mm; text-align: center; font-size: 7px; letter-spacing: .08em; }
+</style>
 </head>
 <body>
-  <div class="receipt">
-    <div class="center title">INVOICE</div>
-    ${shop.gstin ? `<div class="center mid">GSTIN : ${esc(shop.gstin)}</div>` : ""}
-    <div class="center shop">${esc(shop.name)}</div>
-    ${address ? `<div class="center mid">${esc(address)}</div>` : ""}
-    ${shop.mobile ? `<div class="center mid">MOB:${esc(shop.mobile)}</div>` : ""}
-
-    <div class="sep"></div>
-
-    <div class="row">
-      <div><span class="bold">Bill No</span> ${esc(billNo ?? "")}</div>
-      <div class="right">
-        <div><span class="bold">Date</span> ${esc(fmtDate(date))}</div>
-        <div><span class="bold">Time</span> ${esc(fmtTime(time))}</div>
-      </div>
-    </div>
-
-    ${
-      customerName || customerPhone || customerGstin || customerAddress
-        ? `<div style="margin:6px 0 4px;">
-            ${customerName ? `<div><span class="bold">Customer:</span> ${esc(customerName)}</div>` : ""}
-            ${customerPhone ? `<div><span class="bold">Mobile:</span> ${esc(customerPhone)}</div>` : ""}
-            ${customerGstin ? `<div><span class="bold">GSTIN:</span> ${esc(customerGstin)}</div>` : ""}
-            ${customerAddress ? `<div><span class="bold">Address:</span> ${esc(customerAddress)}</div>` : ""}
-          </div>`
-        : ""
-    }
-
-    <table>
-      <colgroup>
-        <col style="width:66%" />
-        <col style="width:34%" />
-      </colgroup>
-      <thead>
-        <tr>
-          <th class="l">Item</th>
-          <th class="r">Amount</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${rows}
-        <tr class="summary-row">
-          <td class="right bold">Total Qty: ${esc(totalQty)}</td>
-          <td class="r bold">${money(subTotal)}</td>
-        </tr>
-        ${
-          offerSavings > 0
-            ? `
-            <tr class="summary-row">
-              <td class="right bold">Offer savings</td>
-              <td class="r bold">${money(offerSavings)}</td>
-            </tr>
-          `
-            : ""
-        }
-        ${
-          discount > 0
-            ? `
-            <tr class="summary-row">
-              <td class="right bold">Bill discount</td>
-              <td class="r bold">-${money(discount)}</td>
-            </tr>
-          `
-            : ""
-        }
-      </tbody>
-    </table>
-
-    <div class="total-box">
-      <div class="row">
-        <div class="bold">Bill Amount:</div>
-        <div class="grand right">${money(grandTotal)}</div>
-      </div>
-      <div class="center">${esc(amountInWords(grandTotal))}</div>
-    </div>
-
-    ${
-      notesHtml || offerSummaryHtml
-        ? `<div style="margin-top:8px;">${offerSummaryHtml}${notesHtml}</div>`
-        : ""
-    }
-  </div>
+<div class="receipt">
+  ${options.showLogo && input.shop.logoUrl ? `<img class="logo" src="${esc(input.shop.logoUrl)}" alt="Logo" />` : ""}
+  ${options.showShopName ? `<div class="center shop-name">${esc(input.shop.name || "Business")}</div>` : ""}
+  ${businessLines ? `<div class="center business">${businessLines}</div>` : ""}
+  <div class="center title">${esc(title.toUpperCase())}</div>
+  <div class="rule"></div>
+  ${documentRows ? `<div class="document">${documentRows}</div><div class="rule"></div>` : ""}
+  ${customerLines ? `<div class="customer">${customerLines}</div><div class="rule"></div>` : ""}
+  <table>
+    <thead><tr><th>Item / Qty x Rate</th><th>Amount</th></tr></thead>
+    <tbody>${itemRows || '<tr><td colspan="2">No items</td></tr>'}</tbody>
+  </table>
+  ${offerSummary}
+  <div class="totals">${totals}</div>
+  ${options.showAmountInWords ? `<div class="words">${esc(amountToWords(input.grandTotal))}</div>` : ""}
+  ${notes.length ? `<div class="notes">${notes.map((note) => esc(note)).join("<br/>")}</div>` : ""}
+  ${options.showAuthorizedSignatory ? `<div class="signature">${esc(input.shop.authorizedSignatory || "Authorized Signatory")}</div>` : ""}
+  ${options.showKynflowFooter ? '<div class="kynflow">Generated by KYNFLOW</div>' : ""}
+</div>
 </body>
-</html>
-`;
+</html>`;
 }

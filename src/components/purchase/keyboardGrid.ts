@@ -20,6 +20,7 @@ export type ColKey = (typeof COLS)[number];
 export type GridNavigationOptions = {
   barcodeEnabled?: boolean;
   hiddenColumns?: readonly ColKey[];
+  columnOrder?: readonly ColKey[];
 };
 
 function activeCols(
@@ -29,8 +30,10 @@ function activeCols(
     typeof options === "boolean" ? options : options.barcodeEnabled !== false;
   const hiddenColumns =
     typeof options === "boolean" ? [] : (options.hiddenColumns ?? []);
+  const columnOrder =
+    typeof options === "boolean" ? COLS : (options.columnOrder ?? COLS);
 
-  return COLS.filter(
+  return columnOrder.filter(
     (col) =>
       (barcodeEnabled || col !== "barcode") && !hiddenColumns.includes(col),
   );

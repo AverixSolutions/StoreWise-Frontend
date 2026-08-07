@@ -204,6 +204,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getPurchaseReturn: (id) => ipcRenderer.invoke("purchase-return:get", id),
   getPurchaseReturnFull: (id) =>
     ipcRenderer.invoke("purchase-return:getFull", id),
+  getPurchaseReturnSource: (purchaseId, excludeReturnId) =>
+    ipcRenderer.invoke(
+      "purchase-return:get-source",
+      purchaseId,
+      excludeReturnId || null,
+    ),
   updatePurchaseReturn: (payload) =>
     ipcRenderer.invoke("purchase-return:update", payload),
   deletePurchaseReturn: (id) =>
@@ -373,7 +379,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("sale:peek-next-slno", licenseId),
   markSalesSynced: (ids, ts) => ipcRenderer.invoke("sale:mark-synced", ids, ts),
 
-  // Sale sync — add these alongside the existing sale entries
+  // Sale sync â€” add these alongside the existing sale entries
   getDirtySales: (licenseId, limit) =>
     ipcRenderer.invoke("get-dirty-sales", licenseId, limit),
 
@@ -413,6 +419,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("sale-return:list", licenseId, paging),
   getSaleReturn: (id) => ipcRenderer.invoke("sale-return:get", id),
   getSaleReturnFull: (id) => ipcRenderer.invoke("sale-return:getFull", id),
+  getSaleReturnSource: (saleId, excludeReturnId) =>
+    ipcRenderer.invoke("sale-return:get-source", saleId, excludeReturnId),
   updateSaleReturn: (payload) =>
     ipcRenderer.invoke("sale-return:update", payload),
   deleteSaleReturn: (id) => ipcRenderer.invoke("sale-return:delete", id),
@@ -537,8 +545,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getQuotation: (id) => ipcRenderer.invoke("quotation:get", id),
   createQuotation: (header, items) =>
     ipcRenderer.invoke("quotation:create", header, items),
-  updateQuotation: (payload) =>
-    ipcRenderer.invoke("quotation:update", payload),
+  updateQuotation: (payload) => ipcRenderer.invoke("quotation:update", payload),
   deleteQuotation: (id) => ipcRenderer.invoke("quotation:delete", id),
   convertQuotationToSale: (quotationId, overrides) =>
     ipcRenderer.invoke("quotation:convert-to-sale", quotationId, overrides),

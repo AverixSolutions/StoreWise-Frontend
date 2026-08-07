@@ -16,7 +16,9 @@ const testDbPath = process.env.KYNFLOW_DB_PATH
 const appDataRoot = testDbPath
   ? path.dirname(testDbPath)
   : path.join(app.getPath("appData"), "KYNFLOW");
-const dataDir = testDbPath ? path.dirname(testDbPath) : path.join(appDataRoot, "data");
+const dataDir = testDbPath
+  ? path.dirname(testDbPath)
+  : path.join(appDataRoot, "data");
 const backupDir = testDbPath
   ? path.join(appDataRoot, "backups")
   : path.join(appDataRoot, "backups");
@@ -166,7 +168,7 @@ db.prepare(
    WHERE deletedAt IS NULL OR deletedAt = ''`,
 ).run();
 
-// ── Add sync columns to categories + brands ──────────────────────────────────
+// â”€â”€ Add sync columns to categories + brands â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 addColumnIfMissing("categories", "isSynced", "INTEGER DEFAULT 0");
 addColumnIfMissing("categories", "syncedAt", "TEXT");
 addColumnIfMissing("brands", "isSynced", "INTEGER DEFAULT 0");
@@ -1076,6 +1078,7 @@ db.prepare(
   slNo INTEGER,
   userId TEXT,
   licenseId TEXT NOT NULL,
+  saleId TEXT,
   customerId TEXT,
   customerName TEXT,
   billNo TEXT,
@@ -1109,6 +1112,7 @@ db.prepare(
   CREATE TABLE IF NOT EXISTS sale_return_items (
   id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
   returnId TEXT NOT NULL,
+  saleItemId TEXT,
   productId TEXT NOT NULL,
   barcode TEXT,
   quantity INTEGER NOT NULL,
@@ -1149,6 +1153,15 @@ addColumnIfMissing("purchase_items", "batchId", "TEXT");
 addColumnIfMissing("sale_items", "batchId", "TEXT");
 addColumnIfMissing("purchase_return_items", "batchId", "TEXT");
 addColumnIfMissing("sale_return_items", "batchId", "TEXT");
+addColumnIfMissing("sale_returns", "saleId", "TEXT");
+addColumnIfMissing("sale_return_items", "saleItemId", "TEXT");
+
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_sale_returns_source_sale ON sale_returns(licenseId, saleId)`,
+).run();
+db.prepare(
+  `CREATE INDEX IF NOT EXISTS idx_sale_return_items_source_item ON sale_return_items(saleItemId)`,
+).run();
 
 db.prepare(
   `CREATE INDEX IF NOT EXISTS idx_pi_batch ON purchase_items(batchId)`,
@@ -1475,7 +1488,7 @@ db.prepare(
 `,
 ).run();
 
-// ── Tax category sync columns ─────────────────────────────────────────────────
+// â”€â”€ Tax category sync columns â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 addColumnIfMissing("tax_categories", "isSynced", "INTEGER DEFAULT 0");
 addColumnIfMissing("tax_categories", "syncedAt", "TEXT");
 addColumnIfMissing("tax_categories", "deletedAt", "TEXT");
@@ -1846,7 +1859,7 @@ db.prepare(
 `,
 ).run();
 
-// ── Shop settings sync columns ────────────────────────────────────────────────
+// â”€â”€ Shop settings sync columns â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 addColumnIfMissing("shop_settings", "isSynced", "INTEGER DEFAULT 0");
 addColumnIfMissing("shop_settings", "syncedAt", "TEXT");
 addColumnIfMissing("shop_settings", "logoUrl", "TEXT");
@@ -1920,7 +1933,7 @@ db.prepare(
 `,
 ).run();
 
-// ── Units master table ──────────────────────────────────────────────────────
+// â”€â”€ Units master table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 db.prepare(
   `
   CREATE TABLE IF NOT EXISTS units (
@@ -1955,7 +1968,7 @@ db.prepare(
 `,
 ).run();
 
-// ── Transaction Types Master ─────────────────────────────────────────────────
+// â”€â”€ Transaction Types Master â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 db.prepare(
   `
   CREATE TABLE IF NOT EXISTS transaction_types (
@@ -1997,13 +2010,13 @@ db.prepare(
 addColumnIfMissing("transaction_types", "isSynced", "INTEGER DEFAULT 0");
 addColumnIfMissing("transaction_types", "syncedAt", "TEXT");
 
-// ── Add typeId to all four transaction headers ───────────────────────────────
+// â”€â”€ Add typeId to all four transaction headers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 addColumnIfMissing("sales", "typeId", "TEXT");
 addColumnIfMissing("purchases", "typeId", "TEXT");
 addColumnIfMissing("sale_returns", "typeId", "TEXT");
 addColumnIfMissing("purchase_returns", "typeId", "TEXT");
 
-// ── Seed default transaction types per existing license ──────────────────────
+// â”€â”€ Seed default transaction types per existing license â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const seedTxnTypesRan = db
   .prepare(`SELECT 1 FROM _migrations WHERE name='seed_txn_types_v1' LIMIT 1`)
   .get();
@@ -2058,8 +2071,8 @@ if (!seedTxnTypesRan) {
   }
 }
 
-// ── Migration: remove hard-coded unit CHECK constraints ─────────────────────
-// SQLite can't ALTER CHECK constraints — we must recreate the affected tables.
+// â”€â”€ Migration: remove hard-coded unit CHECK constraints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// SQLite can't ALTER CHECK constraints â€” we must recreate the affected tables.
 const removeUnitCheckRan = db
   .prepare(
     `SELECT 1 FROM _migrations WHERE name='remove_unit_check_v1' LIMIT 1`,
@@ -2073,7 +2086,7 @@ if (!removeUnitCheckRan) {
 
   try {
     db.transaction(() => {
-      // ── products ──────────────────────────────────────────────────────────
+      // â”€â”€ products â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       db.prepare(
         `
         CREATE TABLE products_new (
@@ -2121,7 +2134,7 @@ if (!removeUnitCheckRan) {
       db.prepare(`DROP TABLE products`).run();
       db.prepare(`ALTER TABLE products_new RENAME TO products`).run();
 
-      // ── purchase_items ────────────────────────────────────────────────────
+      // â”€â”€ purchase_items â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       db.prepare(
         `
         CREATE TABLE purchase_items_new (
@@ -2174,7 +2187,7 @@ if (!removeUnitCheckRan) {
         `ALTER TABLE purchase_items_new RENAME TO purchase_items`,
       ).run();
 
-      // ── sale_items ────────────────────────────────────────────────────────
+      // â”€â”€ sale_items â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       db.prepare(
         `
         CREATE TABLE sale_items_new (
@@ -2224,7 +2237,7 @@ if (!removeUnitCheckRan) {
       db.prepare(`DROP TABLE sale_items`).run();
       db.prepare(`ALTER TABLE sale_items_new RENAME TO sale_items`).run();
 
-      // ── purchase_return_items ─────────────────────────────────────────────
+      // â”€â”€ purchase_return_items â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       db.prepare(
         `
         CREATE TABLE purchase_return_items_new (
@@ -2277,12 +2290,13 @@ if (!removeUnitCheckRan) {
         `ALTER TABLE purchase_return_items_new RENAME TO purchase_return_items`,
       ).run();
 
-      // ── sale_return_items ─────────────────────────────────────────────────
+      // â”€â”€ sale_return_items â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       db.prepare(
         `
         CREATE TABLE sale_return_items_new (
           id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
           returnId TEXT NOT NULL,
+          saleItemId TEXT,
           productId TEXT NOT NULL,
           barcode TEXT,
           quantity INTEGER NOT NULL,
@@ -2318,7 +2332,7 @@ if (!removeUnitCheckRan) {
       db.prepare(
         `
         INSERT INTO sale_return_items_new
-        SELECT id,returnId,productId,barcode,quantity,unit,rate,mrp,taxPercent,taxAmount,
+        SELECT id,returnId,saleItemId,productId,barcode,quantity,unit,rate,mrp,taxPercent,taxAmount,
                discount,discountType,salePrice,profit,totalCost,billedValue,batchNo,
                batchId,mfgDate,expiryDate,lineNo,effectiveUnitValue,appliedQuantity,
                overReturnQuantity,overReturnReason,createdAt,updatedAt,deletedAt,isSynced,syncedAt
@@ -2330,7 +2344,7 @@ if (!removeUnitCheckRan) {
         `ALTER TABLE sale_return_items_new RENAME TO sale_return_items`,
       ).run();
 
-      // ── Recreate all dropped indexes ──────────────────────────────────────
+      // â”€â”€ Recreate all dropped indexes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       // products
       db.prepare(
         `CREATE UNIQUE INDEX IF NOT EXISTS idx_products_short_code_live ON products(licenseId, shortCode COLLATE NOCASE) WHERE shortCode IS NOT NULL AND shortCode <> '' AND COALESCE(deletedAt,'') = ''`,
@@ -2393,7 +2407,7 @@ if (!removeUnitCheckRan) {
   }
 }
 
-// ── QUOTATIONS ──────────────────────────────────────────────────────────────
+// â”€â”€ QUOTATIONS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 db.prepare(
   `
@@ -2501,7 +2515,7 @@ db.prepare(
 `,
 ).run();
 
-// 2. Fix purchases dirty index — was on createdAt, needs updatedAt for sync
+// 2. Fix purchases dirty index â€” was on createdAt, needs updatedAt for sync
 const fixPurchasesDirtyIndexRan = db
   .prepare(
     `SELECT 1 FROM _migrations WHERE name='fix_purchases_dirty_index_v1' LIMIT 1`,
@@ -2557,7 +2571,8 @@ const multiRateMigrationRan = db
 
 if (!multiRateMigrationRan) {
   const runMultiRateMigration = db.transaction(() => {
-    db.prepare(`
+    db.prepare(
+      `
       CREATE TABLE IF NOT EXISTS rate_types (
         id TEXT PRIMARY KEY,
         licenseId TEXT NOT NULL,
@@ -2572,9 +2587,11 @@ if (!multiRateMigrationRan) {
         isSynced INTEGER NOT NULL DEFAULT 0,
         syncedAt TEXT
       )
-    `).run();
+    `,
+    ).run();
 
-    db.prepare(`
+    db.prepare(
+      `
       CREATE TABLE IF NOT EXISTS product_rates (
         id TEXT PRIMARY KEY,
         licenseId TEXT NOT NULL,
@@ -2589,9 +2606,11 @@ if (!multiRateMigrationRan) {
         FOREIGN KEY (productId) REFERENCES products(id) ON DELETE CASCADE,
         FOREIGN KEY (rateTypeId) REFERENCES rate_types(id) ON DELETE RESTRICT
       )
-    `).run();
+    `,
+    ).run();
 
-    db.prepare(`
+    db.prepare(
+      `
       CREATE TABLE IF NOT EXISTS product_batch_rates (
         id TEXT PRIMARY KEY,
         licenseId TEXT NOT NULL,
@@ -2608,69 +2627,97 @@ if (!multiRateMigrationRan) {
         FOREIGN KEY (batchId) REFERENCES product_batches(id) ON DELETE CASCADE,
         FOREIGN KEY (rateTypeId) REFERENCES rate_types(id) ON DELETE RESTRICT
       )
-    `).run();
+    `,
+    ).run();
 
     addColumnIfMissing("purchase_items", "sellingRatesJson", "TEXT");
     addColumnIfMissing("purchase_return_items", "sellingRatesJson", "TEXT");
-    for (const table of ["sale_items", "sale_return_items", "quotation_items"]) {
+    for (const table of [
+      "sale_items",
+      "sale_return_items",
+      "quotation_items",
+    ]) {
       addColumnIfMissing(table, "rateTypeId", "TEXT");
       addColumnIfMissing(table, "rateTypeCode", "TEXT");
       addColumnIfMissing(table, "rateTypeName", "TEXT");
       addColumnIfMissing(table, "rateSource", "TEXT DEFAULT 'LEGACY'");
     }
 
-    db.prepare(`
+    db.prepare(
+      `
       CREATE UNIQUE INDEX IF NOT EXISTS idx_rate_types_code_live
       ON rate_types(licenseId, code COLLATE NOCASE)
       WHERE deletedAt IS NULL
-    `).run();
-    db.prepare(`
+    `,
+    ).run();
+    db.prepare(
+      `
       CREATE UNIQUE INDEX IF NOT EXISTS idx_rate_types_name_live
       ON rate_types(licenseId, name COLLATE NOCASE)
       WHERE deletedAt IS NULL
-    `).run();
-    db.prepare(`
+    `,
+    ).run();
+    db.prepare(
+      `
       CREATE UNIQUE INDEX IF NOT EXISTS idx_rate_types_one_active_default
       ON rate_types(licenseId)
       WHERE isDefault = 1 AND isActive = 1 AND deletedAt IS NULL
-    `).run();
-    db.prepare(`
+    `,
+    ).run();
+    db.prepare(
+      `
       CREATE INDEX IF NOT EXISTS idx_rate_types_license_sort
       ON rate_types(licenseId, isActive, sortOrder, updatedAt)
-    `).run();
-    db.prepare(`
+    `,
+    ).run();
+    db.prepare(
+      `
       CREATE INDEX IF NOT EXISTS idx_rate_types_dirty
       ON rate_types(licenseId, isSynced, updatedAt)
-    `).run();
-    db.prepare(`
+    `,
+    ).run();
+    db.prepare(
+      `
       CREATE UNIQUE INDEX IF NOT EXISTS idx_product_rates_live
       ON product_rates(productId, rateTypeId)
       WHERE deletedAt IS NULL
-    `).run();
-    db.prepare(`
+    `,
+    ).run();
+    db.prepare(
+      `
       CREATE INDEX IF NOT EXISTS idx_product_rates_lookup
       ON product_rates(licenseId, productId, rateTypeId, updatedAt)
-    `).run();
-    db.prepare(`
+    `,
+    ).run();
+    db.prepare(
+      `
       CREATE INDEX IF NOT EXISTS idx_product_rates_dirty
       ON product_rates(licenseId, isSynced, updatedAt)
-    `).run();
-    db.prepare(`
+    `,
+    ).run();
+    db.prepare(
+      `
       CREATE UNIQUE INDEX IF NOT EXISTS idx_product_batch_rates_live
       ON product_batch_rates(batchId, rateTypeId)
       WHERE deletedAt IS NULL
-    `).run();
-    db.prepare(`
+    `,
+    ).run();
+    db.prepare(
+      `
       CREATE INDEX IF NOT EXISTS idx_product_batch_rates_lookup
       ON product_batch_rates(licenseId, productId, batchId, rateTypeId, updatedAt)
-    `).run();
-    db.prepare(`
+    `,
+    ).run();
+    db.prepare(
+      `
       CREATE INDEX IF NOT EXISTS idx_product_batch_rates_dirty
       ON product_batch_rates(licenseId, isSynced, updatedAt)
-    `).run();
+    `,
+    ).run();
 
     const now = new Date().toISOString();
-    db.prepare(`
+    db.prepare(
+      `
       INSERT OR IGNORE INTO rate_types (
         id, licenseId, code, name, isDefault, isActive, sortOrder,
         createdAt, updatedAt, isSynced
@@ -2685,9 +2732,11 @@ if (!multiRateMigrationRan) {
         UNION SELECT licenseId FROM quotations
       )
       WHERE licenseId IS NOT NULL AND trim(licenseId) <> ''
-    `).run({ now });
+    `,
+    ).run({ now });
 
-    db.prepare(`
+    db.prepare(
+      `
       INSERT OR IGNORE INTO product_rates (
         id, licenseId, productId, rateTypeId, amount,
         createdAt, updatedAt, isSynced
@@ -2700,9 +2749,11 @@ if (!multiRateMigrationRan) {
        AND rt.code = 'RETAIL' COLLATE NOCASE
        AND rt.deletedAt IS NULL
       WHERE p.salePrice IS NOT NULL
-    `).run({ now });
+    `,
+    ).run({ now });
 
-    db.prepare(`
+    db.prepare(
+      `
       INSERT OR IGNORE INTO product_batch_rates (
         id, licenseId, productId, batchId, rateTypeId, amount,
         createdAt, updatedAt, isSynced
@@ -2715,7 +2766,8 @@ if (!multiRateMigrationRan) {
        AND rt.code = 'RETAIL' COLLATE NOCASE
        AND rt.deletedAt IS NULL
       WHERE pb.salePrice IS NOT NULL
-    `).run({ now });
+    `,
+    ).run({ now });
 
     db.prepare(`INSERT INTO _migrations(name, ranAt) VALUES(?, ?)`).run(
       multiRateMigrationName,
@@ -2726,5 +2778,24 @@ if (!multiRateMigrationRan) {
   runMultiRateMigration();
   console.log("[db] multi_rate_master_v1 completed");
 }
+
+// Source-linked Purchase Return support. These columns are intentionally
+// nullable so existing standalone returns remain readable after upgrade.
+addColumnIfMissing("purchase_returns", "purchaseId", "TEXT");
+addColumnIfMissing("purchase_return_items", "purchaseItemId", "TEXT");
+
+db.prepare(
+  `
+  CREATE INDEX IF NOT EXISTS idx_purchase_returns_source_purchase
+  ON purchase_returns(licenseId, purchaseId)
+`,
+).run();
+
+db.prepare(
+  `
+  CREATE INDEX IF NOT EXISTS idx_purchase_return_items_source_item
+  ON purchase_return_items(purchaseItemId)
+`,
+).run();
 
 module.exports = db;

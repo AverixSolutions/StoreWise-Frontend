@@ -83,6 +83,61 @@ function bumpBatchAndProductStock({ batchId, productId, deltaQty }) {
 }
 
 // ========== register ==========
+function validateSaleCustomerForLicense(licenseId, customerId) {
+  if (!customerId) return null;
+
+  const row = db
+    .prepare(
+      `SELECT id
+       FROM customers
+       WHERE id=?
+         AND licenseId=?
+         AND COALESCE(deletedAt,'')=''
+       LIMIT 1`,
+    )
+    .get(customerId, licenseId);
+
+  if (!row) {
+    throw new Error(
+      "Selected customer does not belong to the active license. Reload Customers and select the customer again.",
+    );
+  }
+
+  return row.id;
+}
+
+function resolveSyncedSaleCustomerId(record) {
+  const incomingCustomerId = record?.customerId || null;
+  if (!incomingCustomerId) return null;
+
+  try {
+    return validateSaleCustomerForLicense(record.licenseId, incomingCustomerId);
+  } catch {
+    const existing = db
+      .prepare(
+        `SELECT customerId
+         FROM sales
+         WHERE id=?
+           AND licenseId=?
+         LIMIT 1`,
+      )
+      .get(record.id, record.licenseId);
+
+    if (existing?.customerId) {
+      try {
+        return validateSaleCustomerForLicense(
+          record.licenseId,
+          existing.customerId,
+        );
+      } catch {
+        // Fall through. Never persist a cross-license customer reference.
+      }
+    }
+
+    return null;
+  }
+}
+
 function registerSaleHandlers() {
   // ---- list (with filters like purchase:list) ----
   ipcMain.handle("sale:list", (evt, licenseId, filters = {}) => {
@@ -222,6 +277,16 @@ function registerSaleHandlers() {
 
   // ---- create (stock ↓; customer ledger +1 on CREDIT) ----
   ipcMain.handle("create-sale", (evt, header, items) => {
+    let customerId = null;
+    try {
+      customerId = validateSaleCustomerForLicense(
+        header.licenseId,
+        header.customerId,
+      );
+    } catch (error) {
+      return { success: false, error: String(error?.message || error) };
+    }
+
     const newId = header.id || uuidv4();
     const now = new Date().toISOString();
     const slNo = getNextSaleSlNo(header.licenseId);
@@ -257,7 +322,7 @@ function registerSaleHandlers() {
         header.userId || null,
         header.licenseId,
         header.typeId || null,
-        header.customerId || null,
+        customerId,
         header.customerName || null,
         billNo,
         header.department || null,
@@ -472,6 +537,12 @@ function registerSaleHandlers() {
     const trx = db.transaction(() => {
       const existing = db.prepare(`SELECT * FROM sales WHERE id=?`).get(id);
       if (!existing) throw new Error("Sale not found");
+
+      const customerId = validateSaleCustomerForLicense(
+        existing.licenseId,
+        header.customerId,
+      );
+
       const now = new Date().toISOString();
 
       const oldItems = getItemsForSale(id);
@@ -515,7 +586,7 @@ function registerSaleHandlers() {
         id,
         billNo: header.billNo || null,
         typeId: header.typeId || null,
-        customerId: header.customerId || null,
+        customerId,
         customerName: header.customerName || null,
         department: header.department || null,
         debitAccount: header.debitAccount || null,
@@ -1011,6 +1082,8 @@ function registerSaleHandlers() {
 
     const trx = db.transaction((records) => {
       for (const r of records) {
+        const customerId = resolveSyncedSaleCustomerId(r);
+
         upsert.run({
           id: r.id,
           slNo: r.slNo ?? null,
@@ -1018,7 +1091,7 @@ function registerSaleHandlers() {
           userId: r.userId ?? null,
           licenseId: r.licenseId,
           typeId: r.typeId ?? null,
-          customerId: r.customerId ?? null,
+          customerId,
           customerName: r.customerName ?? null,
           department: r.department ?? null,
           debitAccount: r.debitAccount ?? null,

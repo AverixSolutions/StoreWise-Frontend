@@ -72,6 +72,12 @@ export interface ItemRow {
   rateTypeName?: string | null;
   rateSource?: "MASTER" | "CUSTOM" | "LEGACY";
   availableRates?: AvailableNamedRate[];
+
+  sourceSaleId?: string | null;
+  sourceSaleItemId?: string | null;
+  soldQuantity?: number;
+  previouslyReturnedQuantity?: number;
+  remainingReturnableQuantity?: number;
 }
 
 export interface HeaderForm {

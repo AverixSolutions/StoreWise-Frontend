@@ -8,6 +8,7 @@ import type {
   SaleReturnListFilters,
   SaleReturnListResult,
   SaleReturnFullResult,
+  SaleReturnSourceResult,
   SlNoResult,
   Pagination,
   SaleReturnHoldSavePayload,
@@ -65,14 +66,21 @@ export async function desktopGetSaleReturnFull(
   return api().getSaleReturnFull(id);
 }
 
+export async function desktopGetSaleReturnSource(
+  saleId: string,
+  excludeReturnId?: string | null,
+): Promise<SaleReturnSourceResult> {
+  return api().getSaleReturnSource(saleId, excludeReturnId);
+}
+
 export async function desktopPeekNextSaleReturnSlNo(
   licenseId: string,
 ): Promise<SlNoResult> {
-  // preload exposes getNextSaleReturnSlNo → "sale-return:peek-next-slno"
+  // preload exposes getNextSaleReturnSlNo â†’ "sale-return:peek-next-slno"
   return api().getNextSaleReturnSlNo(licenseId);
 }
 
-// Hold operations are not exposed in preload.js — return stubs
+// Hold operations are not exposed in preload.js â€” return stubs
 
 export async function desktopSaveSaleReturnHold(
   _payload: SaleReturnHoldSavePayload,

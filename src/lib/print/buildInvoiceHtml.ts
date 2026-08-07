@@ -1,6 +1,8 @@
 // src/lib/print/buildInvoiceHtml.ts
-
-// ── Types ─────────────────────────────────────────────────────────────────────
+import {
+  DEFAULT_SALES_PRINT_CUSTOMIZATION,
+  type SalesPrintCustomization,
+} from "./salesPrintCustomization";
 
 export type InvoiceParty = {
   label: string;
@@ -34,6 +36,7 @@ export type InvoiceDocument = {
   billNo?: string | null;
   date?: string | null;
   time?: string | null;
+  saleType?: string | null;
   department?: string | null;
   debitAccount?: string | null;
   natureOfEntry?: string | null;
@@ -66,12 +69,11 @@ export type InvoiceHtmlInput = {
   offerSummary?: string[];
   grandTotal: number;
   notes?: string | null;
+  options?: SalesPrintCustomization;
 };
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function esc(v: unknown): string {
-  return String(v ?? "")
+function esc(value: unknown): string {
+  return String(value ?? "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
@@ -79,61 +81,46 @@ function esc(v: unknown): string {
     .replaceAll("'", "&#039;");
 }
 
-function money(v: unknown): string {
-  return Number(v || 0).toLocaleString("en-IN", {
+function money(value: unknown): string {
+  return Number(value || 0).toLocaleString("en-IN", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
 }
 
-function qty(v: unknown): string {
-  const n = Number(v || 0);
-  return Number.isInteger(n) ? String(n) : money(n);
+function quantity(value: unknown): string {
+  const number = Number(value || 0);
+  return Number.isInteger(number) ? String(number) : money(number);
 }
 
-function fmtDate(v?: string | null): string {
-  if (!v) return "—";
-  const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return String(v);
-  return d.toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
+function formatDate(value?: string | null): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleDateString("en-GB");
 }
 
-function fmtTime(v?: string | null): string {
-  if (!v) return "";
-  const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleTimeString("en-IN", {
+function formatTime(value?: string | null): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString("en-IN", {
     hour: "2-digit",
     minute: "2-digit",
     hour12: true,
   });
 }
 
-function fmtExpiry(v?: string | null): string {
-  if (!v) return "";
-  const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return String(v);
-  return d.toLocaleDateString("en-IN", {
-    month: "short",
-    year: "2-digit",
-  });
+function taxPercent(value?: string | number | null): number {
+  if (value == null || value === "" || value === "NT") return 0;
+  return Number(String(value).replace("P", "").replace("%", "")) || 0;
 }
 
-function taxPct(v?: string | number | null): number {
-  if (v == null || v === "" || v === "NT") return 0;
-  return Number(String(v).replace("P", "").replace("%", "")) || 0;
-}
-
-function lineTaxAmount(it: InvoiceItem): number {
-  const pct = taxPct(it.taxPercent);
-  if (!pct) return 0;
-
-  const amount = Number(it.amount || 0);
-  return amount - amount / (1 + pct / 100);
+function taxAmount(item: InvoiceItem): number {
+  const percent = taxPercent(item.taxPercent);
+  if (!percent) return 0;
+  const amount = Number(item.amount || 0);
+  return amount - amount / (1 + percent / 100);
 }
 
 function amountToWords(amount: number): string {
@@ -159,7 +146,6 @@ function amountToWords(amount: number): string {
     "Eighteen",
     "Nineteen",
   ];
-
   const tens = [
     "",
     "",
@@ -173,688 +159,304 @@ function amountToWords(amount: number): string {
     "Ninety",
   ];
 
-  function convert(n: number): string {
-    if (n === 0) return "";
-    if (n < 20) return ones[n] + " ";
-    if (n < 100) return tens[Math.floor(n / 10)] + " " + ones[n % 10] + " ";
-    if (n < 1000) {
-      return ones[Math.floor(n / 100)] + " Hundred " + convert(n % 100);
+  function convert(value: number): string {
+    if (value === 0) return "";
+    if (value < 20) return `${ones[value]} `;
+    if (value < 100) {
+      return `${tens[Math.floor(value / 10)]} ${ones[value % 10]} `;
     }
-    if (n < 100000) {
-      return convert(Math.floor(n / 1000)) + "Thousand " + convert(n % 1000);
+    if (value < 1000) {
+      return `${ones[Math.floor(value / 100)]} Hundred ${convert(value % 100)}`;
     }
-    if (n < 10000000) {
-      return convert(Math.floor(n / 100000)) + "Lakh " + convert(n % 100000);
+    if (value < 100000) {
+      return `${convert(Math.floor(value / 1000))}Thousand ${convert(value % 1000)}`;
     }
-    return convert(Math.floor(n / 10000000)) + "Crore " + convert(n % 10000000);
+    if (value < 10000000) {
+      return `${convert(Math.floor(value / 100000))}Lakh ${convert(value % 100000)}`;
+    }
+    return `${convert(Math.floor(value / 10000000))}Crore ${convert(value % 10000000)}`;
   }
 
   const rupees = Math.floor(Number(amount || 0));
   const paise = Math.round((Number(amount || 0) - rupees) * 100);
-
-  let result = (convert(rupees).trim() || "Zero") + " Rupees";
-  if (paise > 0) result += " and " + convert(paise).trim() + " Paise";
-
-  return result + " Only";
+  let result = `${convert(rupees).trim() || "Zero"} Rupees`;
+  if (paise > 0) result += ` and ${convert(paise).trim()} Paise`;
+  return `${result} Only`;
 }
 
-// ── Main Builder ──────────────────────────────────────────────────────────────
+function metaRow(label: string, value: unknown): string {
+  if (value == null || String(value).trim() === "") return "";
+  return `<div class="meta-row"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`;
+}
 
 export function buildInvoiceHtml(input: InvoiceHtmlInput): string {
-  const {
-    shop,
-    document: doc,
-    party,
-    items,
-    subTotal,
-    discount,
-    offerSavings = 0,
-    offerSummary = [],
-    grandTotal,
-    notes,
-  } = input;
-
-  const theme = "#7c72dc";
-
-  const shopAddress = [
+  const options = {
+    ...DEFAULT_SALES_PRINT_CUSTOMIZATION,
+    ...(input.options || {}),
+  };
+  const { shop, document, party, items } = input;
+  const accent = options.headingColor;
+  const modern = options.a4Style === "modern";
+  const address = [
     shop.addressLine1,
     shop.addressLine2,
     [shop.city, shop.state, shop.pincode].filter(Boolean).join(" - "),
+  ]
+    .filter(Boolean)
+    .join(", ");
+  const totalQty = items.reduce((sum, item) => sum + Number(item.qty || 0), 0);
+  const totalTax = items.reduce((sum, item) => sum + taxAmount(item), 0);
+  const title = options.documentTitle || document.title || "Sales Invoice";
+
+  const shopContact = [
+    options.showShopPhone && shop.mobile ? `Phone: ${esc(shop.mobile)}` : "",
+    options.showShopEmail && shop.email ? `Email: ${esc(shop.email)}` : "",
+    options.showShopGstin && shop.gstin ? `GSTIN: ${esc(shop.gstin)}` : "",
   ].filter(Boolean);
 
-  const shopStateLine = shop.state ? `State: ${shop.state}` : "";
+  const documentMeta = [
+    options.showEntryNo ? metaRow("Entry No.", document.entryNo) : "",
+    options.showBillNo ? metaRow("Bill No.", document.billNo) : "",
+    options.showSaleDate ? metaRow("Date", formatDate(document.date)) : "",
+    options.showEntryTime ? metaRow("Time", formatTime(document.time)) : "",
+    options.showSaleType ? metaRow("Sale Type", document.saleType) : "",
+    options.showTransactionType
+      ? metaRow("Transaction", document.typeLabel)
+      : "",
+    options.showDepartment ? metaRow("Department", document.department) : "",
+    options.showDebitAccount
+      ? metaRow("Debit Account", document.debitAccount)
+      : "",
+    options.showNatureOfEntry ? metaRow("Nature", document.natureOfEntry) : "",
+  ]
+    .filter(Boolean)
+    .join("");
 
-  const totalQty = items.reduce((s, it) => s + Number(it.qty || 0), 0);
-  const totalTax = items.reduce((s, it) => s + lineTaxAmount(it), 0);
+  const customerLines = [
+    options.showCustomerName && party.name
+      ? `<div class="party-name">${esc(party.name)}</div>`
+      : "",
+    options.showCustomerAddress && party.address
+      ? `<div>${esc(party.address)}</div>`
+      : "",
+    options.showCustomerPhone && party.mobile
+      ? `<div>Phone: ${esc(party.mobile)}</div>`
+      : "",
+    options.showCustomerGstin && party.gstin
+      ? `<div>GSTIN: ${esc(party.gstin)}</div>`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("");
 
-  const docNo = doc.billNo || doc.entryNo || "—";
-  const docDate = fmtDate(doc.date);
-  const docTime = fmtTime(doc.time);
+  const itemRows = items
+    .map((item) => {
+      const details = [
+        options.showBarcode && item.barcode
+          ? `Barcode: ${esc(item.barcode)}`
+          : "",
+        options.showBatchNo && item.batchNo
+          ? `Batch: ${esc(item.batchNo)}`
+          : "",
+        options.showExpiryDate && item.expiryDate
+          ? `Exp: ${esc(formatDate(item.expiryDate))}`
+          : "",
+      ].filter(Boolean);
+      const offer =
+        options.showOffers && item.offerName
+          ? `<div class="offer">${esc(item.offerName)}${
+              Number(item.offerDiscountAmount || 0) > 0
+                ? ` - Saved Rs. ${money(item.offerDiscountAmount)}`
+                : ""
+            }</div>`
+          : "";
+      const qtyText = `${quantity(item.qty)}${
+        options.showUnit && item.unit ? ` ${esc(item.unit)}` : ""
+      }`;
+      return `
+        <tr>
+          <td class="center">${esc(item.lineNo)}</td>
+          <td>
+            <div class="item-name">${esc(item.name || "Item")}</div>
+            ${details.length ? `<div class="item-meta">${details.join(" | ")}</div>` : ""}
+            ${offer}
+          </td>
+          ${options.showMrp ? `<td class="right">${item.mrp == null ? "-" : money(item.mrp)}</td>` : ""}
+          <td class="center">${qtyText}</td>
+          <td class="right">${money(item.rate)}</td>
+          ${
+            options.showTax
+              ? `<td class="right">${taxPercent(item.taxPercent) ? `${money(taxAmount(item))}<small>${taxPercent(item.taxPercent)}%</small>` : "-"}</td>`
+              : ""
+          }
+          <td class="right strong">${money(item.amount)}</td>
+        </tr>`;
+    })
+    .join("");
 
-  const footerNote =
-    shop.footerNote || notes || "Thanks for doing business with us!";
+  const offerSummary =
+    options.showOffers && input.offerSummary?.length
+      ? `<div class="offer-summary"><strong>Offers:</strong> ${esc(
+          input.offerSummary.join(", "),
+        )}</div>`
+      : "";
 
+  const totals = [
+    options.showSubTotal
+      ? `<div><span>Subtotal</span><strong>Rs. ${money(input.subTotal)}</strong></div>`
+      : "",
+    options.showOfferSavings && Number(input.offerSavings || 0) > 0
+      ? `<div class="saving"><span>Offer savings</span><strong>- Rs. ${money(input.offerSavings)}</strong></div>`
+      : "",
+    options.showBillDiscount && Number(input.discount || 0) > 0
+      ? `<div><span>Bill discount</span><strong>- Rs. ${money(input.discount)}</strong></div>`
+      : "",
+    options.showTax && totalTax > 0
+      ? `<div><span>Included tax</span><strong>Rs. ${money(totalTax)}</strong></div>`
+      : "",
+    `<div class="grand"><span>Grand Total</span><strong>Rs. ${money(input.grandTotal)}</strong></div>`,
+  ]
+    .filter(Boolean)
+    .join("");
+
+  const footerNote = String(shop.footerNote || input.notes || "").trim();
   const signatory = shop.authorizedSignatory || "Authorized Signatory";
 
-  const itemRowsHtml =
-    items.length > 0
-      ? items
-          .map((it, idx) => {
-            const pct = taxPct(it.taxPercent);
-            const taxAmt = lineTaxAmount(it);
-
-            const subLine = [
-              it.batchNo ? `Batch: ${it.batchNo}` : "",
-              it.expiryDate ? `Exp: ${fmtExpiry(it.expiryDate)}` : "",
-              it.barcode ? `Barcode: ${it.barcode}` : "",
-            ]
-              .filter(Boolean)
-              .join("  •  ");
-
-            const offerLine = it.offerName
-              ? `${it.offerType ? `${it.offerType}: ` : "Offer: "}${it.offerName}${
-                  it.offerDiscountAmount
-                    ? ` | Saved ₹${money(it.offerDiscountAmount)}`
-                    : ""
-                }`
-              : "";
-
-            return `
-              <tr>
-                <td class="td-center">${esc(idx + 1)}</td>
-                <td class="td-item">
-                  <div class="item-name">${esc(it.name || "")}</div>
-                  ${subLine ? `<div class="item-sub">${esc(subLine)}</div>` : ""}
-                  ${offerLine ? `<div class="item-sub item-offer">${esc(offerLine)}</div>` : ""}
-                </td>
-                <td class="td-right">${esc(qty(it.qty))}</td>
-                <td class="td-center">${esc(it.unit || "")}</td>
-                <td class="td-right">₹ ${money(it.rate)}</td>
-                <td class="td-right">
-                  ${
-                    pct
-                      ? `<div>₹ ${money(taxAmt)}</div><div class="gst-rate">(${pct}%)</div>`
-                      : `<div>—</div>`
-                  }
-                </td>
-                <td class="td-right td-amount">₹ ${money(it.amount)}</td>
-              </tr>
-            `;
-          })
-          .join("")
-      : `
-        <tr>
-          <td colspan="7" class="empty-cell">No items</td>
-        </tr>
-      `;
-
-  const offerSummaryHtml = offerSummary.length
-    ? `
-      <div class="soft-box offer-box">
-        <div class="box-title">OFFERS</div>
-        <div>${esc(offerSummary.join(", "))}</div>
-      </div>
-    `
-    : "";
-
-  return `<!DOCTYPE html>
-<html lang="en">
+  return `<!doctype html>
+<html>
 <head>
-<meta charset="UTF-8" />
-<title>${esc(doc.title)} - ${esc(shop.name)}</title>
+<meta charset="utf-8" />
+<title>${esc(title)}</title>
 <style>
-  *, *::before, *::after {
-    box-sizing: border-box;
-  }
-
-  :root {
-    --theme: ${theme};
-    --theme-dark: #655bc6;
-    --ink: #171717;
-    --muted: #4b5563;
-    --muted-2: #71717a;
-    --soft: #f6f6f7;
-    --soft-2: #fafafa;
-    --line: #d7d7dc;
-    --line-light: #ececf0;
-    --white: #ffffff;
-  }
-
-  html,
-  body {
-    margin: 0;
-    padding: 0;
-    background: #f3f4f6;
-    color: var(--ink);
-    font-family: "Inter", "Segoe UI", Arial, Helvetica, sans-serif;
-    font-size: 11.2px;
-    line-height: 1.35;
-    -webkit-font-smoothing: antialiased;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-
-  .no-print {
-    position: fixed;
-    top: 12px;
-    right: 16px;
-    z-index: 9999;
-    display: flex;
-    gap: 8px;
-  }
-
-  .btn {
-    border: 0;
-    border-radius: 4px;
-    padding: 8px 14px;
-    background: #27272a;
-    color: #fff;
-    font-size: 11px;
-    font-weight: 600;
-    cursor: pointer;
-  }
-
-  .btn:hover {
-    background: #111827;
-  }
-
-  .btn-close {
-    background: #52525b;
-  }
-
-  .page {
-    width: 210mm;
-    min-height: 297mm;
-    margin: 12px auto;
-    background: var(--white);
-    padding: 13mm 12mm 11mm;
-    box-shadow: 0 8px 28px rgba(15, 23, 42, 0.08);
-  }
-
-  .top {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    gap: 24px;
-    align-items: start;
-  }
-
-  .shop-name {
-    margin: 0 0 5px;
-    color: #050505;
-    font-size: 20px;
-    line-height: 1.08;
-    font-weight: 800;
-    letter-spacing: -0.02em;
-  }
-
-  .shop-line {
-    margin: 0 0 3px;
-    color: #252525;
-    font-size: 11.2px;
-    line-height: 1.35;
-    font-weight: 400;
-  }
-
-  .logo-wrap {
-    width: 88px;
-    height: 72px;
-    display: flex;
-    align-items: flex-start;
-    justify-content: flex-end;
-  }
-
-  .logo {
-    max-width: 84px;
-    max-height: 68px;
-    object-fit: contain;
-  }
-
-  .doc-title {
-    margin: 18px 0 19px;
-    text-align: center;
-    color: var(--theme);
-    font-size: 21px;
-    line-height: 1;
-    font-weight: 800;
-    letter-spacing: -0.015em;
-  }
-
-  .bill-grid {
-    display: grid;
-    grid-template-columns: 1fr 250px;
-    gap: 30px;
-    margin-bottom: 17px;
-    align-items: start;
-  }
-
-  .section-label {
-    margin-bottom: 9px;
-    color: #111;
-    font-size: 12.5px;
-    font-weight: 800;
-  }
-
-  .party-name {
-    margin-bottom: 8px;
-    color: #000;
-    font-size: 12.6px;
-    line-height: 1.28;
-    font-weight: 800;
-    letter-spacing: 0.01em;
-    text-transform: uppercase;
-  }
-
-  .party-line {
-    margin: 0 0 5px;
-    color: #1f2937;
-    font-size: 11.2px;
-    line-height: 1.35;
-  }
-
-  .meta {
-    padding-top: 29px;
-    text-align: right;
-  }
-
-  .meta-line {
-    margin: 0 0 5px;
-    color: #111827;
-    font-size: 11.2px;
-    line-height: 1.35;
-  }
-
-  .meta-line strong {
-    font-size: 11.8px;
-    font-weight: 800;
-  }
-
-  .items {
-    width: 100%;
-    border-collapse: collapse;
-    table-layout: fixed;
-    margin-top: 7px;
-  }
-
-  .items thead tr {
-    background: var(--theme);
-    color: #fff;
-  }
-
-  .items th {
-    padding: 8px 7px;
-    color: #fff;
-    font-size: 11.3px;
-    line-height: 1.15;
-    font-weight: 800;
-    text-align: left;
-    border-right: 1px solid rgba(255, 255, 255, 0.22);
-  }
-
-  .items th:last-child {
-    border-right: 0;
-  }
-
-  .items td {
-    padding: 7px 7px;
-    vertical-align: top;
-    color: #111;
-    font-size: 11.2px;
-    line-height: 1.28;
-    border-bottom: 1px solid var(--line-light);
-  }
-
-  .td-center {
-    text-align: center;
-  }
-
-  .td-right {
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .td-item {
-    word-break: break-word;
-  }
-
-  .item-name {
-    font-weight: 500;
-    color: #111;
-  }
-
-  .item-sub {
-    margin-top: 2px;
-    color: #71717a;
-    font-size: 9.6px;
-    line-height: 1.25;
-  }
-
-  .item-offer {
-    color: #047857;
-    font-weight: 700;
-  }
-
-  .gst-rate {
-    margin-top: 1px;
-    color: #27272a;
-    font-size: 10.2px;
-  }
-
-  .td-amount {
-    white-space: nowrap;
-    font-weight: 500;
-  }
-
-  .empty-cell {
-    padding: 22px 8px !important;
-    text-align: center;
-    color: #71717a !important;
-  }
-
-  .total-row td {
-    padding-top: 10px;
-    padding-bottom: 10px;
-    border-top: 1.2px solid #9ca3af;
-    border-bottom: 1.2px solid #9ca3af;
-    font-weight: 800;
-  }
-
-  .bottom-grid {
-    display: grid;
-    grid-template-columns: 1fr 320px;
-    gap: 36px;
-    margin-top: 19px;
-    align-items: start;
-  }
-
-  .soft-box {
-    margin-bottom: 13px;
-  }
-
-  .box-title {
-    margin-bottom: 5px;
-    color: #5b5b62;
-    font-size: 12px;
-    font-weight: 800;
-    letter-spacing: 0.045em;
-    text-transform: uppercase;
-  }
-
-  .box-body {
-    background: #f7f7f8;
-    padding: 7px 9px;
-    color: #5f6368;
-    font-size: 11.2px;
-    line-height: 1.35;
-  }
-
-  .offer-box {
-    background: #f0fdf4;
-    color: #047857;
-    padding: 7px 9px;
-    font-size: 11.2px;
-    line-height: 1.35;
-    border-left: 3px solid #16a34a;
-  }
-
-  .totals {
-    width: 100%;
-    border-collapse: collapse;
-  }
-
-  .totals td {
-    padding: 4.5px 0;
-    color: #111;
-    font-size: 11.4px;
-    line-height: 1.25;
-  }
-
-  .totals .label {
-    text-align: left;
-  }
-
-  .totals .value {
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  }
-
-  .discount-row td {
-    color: #b91c1c;
-  }
-
-  .grand-row td {
-    padding: 7px 8px;
-    background: var(--theme);
-    color: #fff;
-    font-size: 13px;
-    font-weight: 800;
-  }
-
-  .after-total td {
-    border-bottom: 1px solid var(--line);
-  }
-
-  .signature {
-    margin-top: 23px;
-    text-align: center;
-    color: #111;
-    font-size: 11.2px;
-  }
-
-  .signature-for {
-    margin-bottom: 50px;
-    color: #164e63;
-    font-size: 11.2px;
-  }
-
-  @page {
-    size: A4;
-    margin: 8mm;
-  }
-
-  @media print {
-    html,
-    body {
-      background: #fff;
-    }
-
-    .no-print {
-      display: none !important;
-    }
-
-    .page {
-      width: 100%;
-      min-height: auto;
-      margin: 0;
-      padding: 0;
-      box-shadow: none;
-    }
-
-    thead {
-      display: table-header-group;
-    }
-
-    tr {
-      page-break-inside: avoid;
-    }
-  }
+  @page { size: A4; margin: 11mm; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #fff; color: #172033; font-family: "Segoe UI", Arial, sans-serif; }
+  body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .invoice { width: 100%; min-height: 274mm; border: ${modern ? "0" : "1px solid #d8deea"}; border-radius: ${modern ? "0" : "12px"}; overflow: hidden; }
+  .topbar { height: ${modern ? "8px" : "5px"}; background: ${accent}; }
+  .header { display: grid; grid-template-columns: 1fr auto; gap: 24px; padding: ${modern ? "24px 26px" : "20px 22px"}; background: ${modern ? `linear-gradient(135deg, ${accent} 0%, #111827 100%)` : "#fff"}; color: ${modern ? "#fff" : "#172033"}; border-bottom: 1px solid #d8deea; }
+  .brand { display: flex; align-items: flex-start; gap: 14px; min-width: 0; }
+  .logo { width: 58px; height: 58px; object-fit: contain; border-radius: 10px; background: #fff; padding: 4px; border: 1px solid #d8deea; }
+  .shop-name { font-size: 22px; line-height: 1.08; font-weight: 800; letter-spacing: -.02em; }
+  .shop-info { margin-top: 5px; max-width: 520px; font-size: 10px; line-height: 1.55; color: ${modern ? "rgba(255,255,255,.76)" : "#5f6b7c"}; }
+  .doc-title { text-align: right; min-width: 180px; }
+  .doc-title h1 { margin: 0; color: ${modern ? "#fff" : accent}; font-size: 24px; line-height: 1; text-transform: uppercase; letter-spacing: .07em; }
+  .doc-title p { margin: 7px 0 0; font-size: 10px; color: ${modern ? "rgba(255,255,255,.65)" : "#6b7280"}; }
+  .summary { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(270px, .85fr); gap: 16px; padding: 16px 22px; border-bottom: 1px solid #d8deea; background: #f8fafc; }
+  .block-title { margin-bottom: 7px; color: ${accent}; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .13em; }
+  .party { min-height: 88px; border: 1px solid #e1e6ef; border-radius: 10px; background: #fff; padding: 12px; font-size: 10px; line-height: 1.55; }
+  .party-name { margin-bottom: 3px; font-size: 13px; font-weight: 800; color: #172033; }
+  .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 1px 12px; align-content: start; }
+  .meta-row { display: flex; justify-content: space-between; gap: 8px; padding: 5px 0; border-bottom: 1px dashed #dce2eb; font-size: 9px; }
+  .meta-row span { color: #6b7280; }
+  .meta-row strong { text-align: right; color: #263247; }
+  .items { padding: 16px 22px 0; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  th { padding: 8px 7px; background: ${accent}; color: #fff; font-size: 8px; text-transform: uppercase; letter-spacing: .08em; text-align: left; }
+  td { padding: 8px 7px; border-bottom: 1px solid #e5e9f0; font-size: 9px; vertical-align: top; overflow-wrap: anywhere; }
+  tbody tr:nth-child(even) { background: #fafbfc; }
+  .center { text-align: center; }
+  .right { text-align: right; }
+  .strong { font-weight: 800; }
+  .item-name { font-weight: 700; color: #172033; }
+  .item-meta { margin-top: 3px; color: #6b7280; font-size: 7.5px; }
+  .offer { margin-top: 3px; color: #047857; font-size: 7.5px; font-weight: 700; }
+  td small { display: block; margin-top: 2px; color: #6b7280; font-size: 7px; }
+  .bottom { display: grid; grid-template-columns: 1fr 300px; gap: 18px; padding: 16px 22px 22px; }
+  .offer-summary { margin-bottom: 10px; border: 1px solid #b7ead3; border-radius: 8px; background: #ecfdf5; padding: 8px 10px; color: #047857; font-size: 8.5px; line-height: 1.45; }
+  .words { border-left: 3px solid ${accent}; background: #f8fafc; padding: 10px 12px; font-size: 9px; line-height: 1.5; }
+  .words strong { display: block; margin-bottom: 3px; color: ${accent}; font-size: 8px; text-transform: uppercase; letter-spacing: .08em; }
+  .totals { border: 1px solid #d8deea; border-radius: 10px; overflow: hidden; }
+  .totals > div { display: flex; justify-content: space-between; gap: 12px; padding: 7px 10px; border-bottom: 1px solid #e6eaf0; font-size: 9px; }
+  .totals > div:last-child { border-bottom: 0; }
+  .totals .saving { color: #047857; }
+  .totals .grand { padding: 11px 10px; background: ${accent}; color: #fff; font-size: 12px; }
+  .footer { margin: 0 22px 18px; display: grid; grid-template-columns: 1fr 210px; gap: 22px; align-items: end; border-top: 1px solid #d8deea; padding-top: 18px; }
+  .terms { color: #5f6b7c; font-size: 8px; line-height: 1.55; white-space: pre-wrap; }
+  .signature { text-align: center; font-size: 9px; color: #4b5563; }
+  .signature::before { content: ""; display: block; width: 150px; margin: 28px auto 6px; border-top: 1px solid #667085; }
+  .kynflow { margin: 8px 22px 14px; text-align: center; color: #9aa3b2; font-size: 7px; letter-spacing: .12em; text-transform: uppercase; }
 </style>
 </head>
 <body>
-  <div class="no-print">
-    <button class="btn" onclick="(function(){var t=document.title;document.title='__KYNFLOW_PRINT__';setTimeout(function(){document.title=t;},300);})()">Print</button>
-    <button class="btn btn-close" onclick="window.close()">Close</button>
-  </div>
-
-  <main class="page">
-    <section class="top">
+<div class="invoice">
+  <div class="topbar"></div>
+  <header class="header">
+    <div class="brand">
+      ${options.showLogo && shop.logoUrl ? `<img class="logo" src="${esc(shop.logoUrl)}" alt="Logo" />` : ""}
       <div>
-        <h1 class="shop-name">${esc(shop.name)}</h1>
-
-        ${shop.mobile ? `<p class="shop-line">Phone no.: ${esc(shop.mobile)}</p>` : ""}
-        ${shop.email ? `<p class="shop-line">Email: ${esc(shop.email)}</p>` : ""}
-        ${shop.gstin ? `<p class="shop-line">GSTIN: ${esc(shop.gstin)}</p>` : ""}
-        ${
-          shopAddress.length
-            ? `<p class="shop-line">${shopAddress.map(esc).join("<br/>")}</p>`
-            : ""
-        }
-        ${shopStateLine ? `<p class="shop-line">${esc(shopStateLine)}</p>` : ""}
+        ${options.showShopName ? `<div class="shop-name">${esc(shop.name || "Business")}</div>` : ""}
+        <div class="shop-info">
+          ${options.showShopAddress && address ? `<div>${esc(address)}</div>` : ""}
+          ${shopContact.length ? `<div>${shopContact.join(" | ")}</div>` : ""}
+        </div>
       </div>
+    </div>
+    <div class="doc-title">
+      <h1>${esc(title)}</h1>
+      <p>Original customer copy</p>
+    </div>
+  </header>
 
-      <div class="logo-wrap">
-        ${
-          shop.logoUrl
-            ? `<img src="${esc(shop.logoUrl)}" alt="Logo" class="logo" />`
-            : ""
-        }
-      </div>
-    </section>
+  <section class="summary">
+    <div>
+      <div class="block-title">${esc(party.label || "Customer")}</div>
+      <div class="party">${customerLines || '<span style="color:#98a2b3">Cash customer</span>'}</div>
+    </div>
+    <div>
+      <div class="block-title">Document details</div>
+      <div class="meta">${documentMeta || '<span style="color:#98a2b3;font-size:9px">No optional details selected</span>'}</div>
+    </div>
+  </section>
 
-    <h2 class="doc-title">${esc(doc.title)}</h2>
-
-    <section class="bill-grid">
-      <div>
-        <div class="section-label">Bill To:</div>
-
-        ${
-          party.name
-            ? `<div class="party-name">${esc(party.name)}</div>`
-            : `<div class="party-name">—</div>`
-        }
-
-        ${party.mobile ? `<p class="party-line">Contact No.: ${esc(party.mobile)}</p>` : ""}
-        ${party.gstin ? `<p class="party-line">GSTIN Number: ${esc(party.gstin)}</p>` : ""}
-        ${party.address ? `<p class="party-line">${esc(party.address)}</p>` : ""}
-      </div>
-
-      <div class="meta">
-        ${shop.state ? `<p class="meta-line">Place of supply: ${esc(shop.state)}</p>` : ""}
-        <p class="meta-line"><strong>Invoice No.: ${esc(docNo)}</strong></p>
-        <p class="meta-line"><strong>Date: ${esc(docDate)}</strong></p>
-        ${docTime ? `<p class="meta-line">Time: ${esc(docTime)}</p>` : ""}
-        ${doc.typeLabel ? `<p class="meta-line">Type: ${esc(doc.typeLabel)}</p>` : ""}
-      </div>
-    </section>
-
-    <table class="items">
+  <section class="items">
+    <table>
       <colgroup>
-        <col style="width: 32px" />
+        <col style="width:34px" />
         <col />
-        <col style="width: 78px" />
-        <col style="width: 62px" />
-        <col style="width: 92px" />
-        <col style="width: 92px" />
-        <col style="width: 96px" />
+        ${options.showMrp ? '<col style="width:72px" />' : ""}
+        <col style="width:74px" />
+        <col style="width:82px" />
+        ${options.showTax ? '<col style="width:76px" />' : ""}
+        <col style="width:92px" />
       </colgroup>
-
       <thead>
         <tr>
-          <th style="text-align:center">#</th>
-          <th>Item name</th>
-          <th style="text-align:right">Quantity</th>
-          <th style="text-align:center">Unit</th>
-          <th style="text-align:right">Price / Unit</th>
-          <th style="text-align:right">GST</th>
-          <th style="text-align:right">Amount</th>
+          <th class="center">#</th>
+          <th>Item</th>
+          ${options.showMrp ? '<th class="right">MRP</th>' : ""}
+          <th class="center">Qty</th>
+          <th class="right">Rate</th>
+          ${options.showTax ? '<th class="right">Tax</th>' : ""}
+          <th class="right">Amount</th>
         </tr>
       </thead>
-
-      <tbody>
-        ${itemRowsHtml}
-
-        <tr class="total-row">
-          <td></td>
-          <td>Total</td>
-          <td class="td-right">${esc(qty(totalQty))}</td>
-          <td></td>
-          <td></td>
-          <td class="td-right">₹ ${money(totalTax)}</td>
-          <td class="td-right">₹ ${money(subTotal)}</td>
-        </tr>
-      </tbody>
+      <tbody>${itemRows || '<tr><td colspan="7" class="center">No items</td></tr>'}</tbody>
     </table>
+  </section>
 
-    <section class="bottom-grid">
-      <div>
-        <div class="soft-box">
-          <div class="box-title">Invoice Amount In Words</div>
-          <div class="box-body">${esc(amountToWords(grandTotal))}</div>
-        </div>
+  <section class="bottom">
+    <div>
+      ${offerSummary}
+      ${
+        options.showAmountInWords
+          ? `<div class="words"><strong>Amount in words</strong>${esc(amountToWords(input.grandTotal))}</div>`
+          : ""
+      }
+    </div>
+    <div class="totals">${totals}</div>
+  </section>
 
-        <div class="soft-box">
-          <div class="box-title">Terms And Conditions</div>
-          <div class="box-body">${esc(footerNote)}</div>
-        </div>
-
-        ${offerSummaryHtml}
-      </div>
-
-      <div>
-        <table class="totals">
-          <tbody>
-            <tr>
-              <td class="label">Sub Total</td>
-              <td class="value">₹ ${money(subTotal)}</td>
-            </tr>
-
-            ${
-              totalTax > 0
-                ? `
-                  <tr>
-                    <td class="label">GST</td>
-                    <td class="value">₹ ${money(totalTax)}</td>
-                  </tr>
-                `
-                : ""
-            }
-
-            ${
-              offerSavings > 0
-                ? `
-                  <tr class="discount-row">
-                    <td class="label">Offer Savings</td>
-                    <td class="value">- ₹ ${money(offerSavings)}</td>
-                  </tr>
-                `
-                : ""
-            }
-
-            ${
-              discount > 0
-                ? `
-                  <tr class="discount-row">
-                    <td class="label">Discount</td>
-                    <td class="value">- ₹ ${money(discount)}</td>
-                  </tr>
-                `
-                : ""
-            }
-
-            <tr class="grand-row">
-              <td class="label">Total</td>
-              <td class="value">₹ ${money(grandTotal)}</td>
-            </tr>
-
-            <tr class="after-total">
-              <td class="label">Received</td>
-              <td class="value">₹ 0.00</td>
-            </tr>
-
-            <tr>
-              <td class="label">Balance</td>
-              <td class="value">₹ ${money(grandTotal)}</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <div class="signature">
-          <div class="signature-for">For, ${esc(shop.name)}</div>
-          <div>${esc(signatory)}</div>
-        </div>
-      </div>
-    </section>
-  </main>
+  ${
+    options.showTerms || options.showAuthorizedSignatory
+      ? `<footer class="footer">
+          <div class="terms">${options.showTerms && footerNote ? esc(footerNote) : ""}</div>
+          <div class="signature">${options.showAuthorizedSignatory ? esc(signatory) : ""}</div>
+        </footer>`
+      : ""
+  }
+  ${options.showKynflowFooter ? '<div class="kynflow">Generated by KYNFLOW</div>' : ""}
+</div>
 </body>
 </html>`;
 }

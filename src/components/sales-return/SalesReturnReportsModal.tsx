@@ -92,6 +92,19 @@ export default function SalesReturnReportsModal({
   }
 
   useEffect(() => {
+    if (!isOpen) return;
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onEscape, true);
+    return () => window.removeEventListener("keydown", onEscape, true);
+  }, [isOpen, onClose]);
+
+  useEffect(() => {
     if (isOpen) refresh();
   }, [isOpen, page, pageSize, q, customerId, dateFrom, dateTo]);
 
@@ -135,7 +148,7 @@ export default function SalesReturnReportsModal({
                   Sales Return Reports
                 </span>
                 <span className="hidden text-[10px] font-medium uppercase tracking-[0.14em] text-white/35 sm:inline">
-                  · {total > 0 ? `${total} records` : "All sales returns"}
+                  | {total > 0 ? `${total} records` : "All sales returns"}
                 </span>
               </div>
             </div>
@@ -171,7 +184,7 @@ export default function SalesReturnReportsModal({
           <div className="flex shrink-0 items-center gap-2 border-b border-cyan-200/70 bg-cyan-50 px-4 py-2 text-xs font-medium text-cyan-700">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-500" />
             Opening sale return{" "}
-            <span className="font-mono font-semibold">{openingId}</span>…
+            <span className="font-mono font-semibold">{openingId}</span>...
           </div>
         )}
 
@@ -185,14 +198,14 @@ export default function SalesReturnReportsModal({
                 <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <input
                   className="h-[38px] w-full rounded-2xl border border-slate-200 bg-white py-2 pl-10 pr-3 text-sm text-slate-800 shadow-sm outline-none placeholder:text-slate-400 transition focus:border-cyan-400/60 focus:ring-4 focus:ring-cyan-400/10"
-                  placeholder="Bill no / customer…"
+                  placeholder="Bill no / customer..."
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && resetAndRefresh()}
                 />
               </div>
 
-              {/* Customer — SearchableDropdown */}
+              {/* Customer - SearchableDropdown */}
               <SearchableDropdown
                 value={customerId}
                 onChange={(val) => setCustomerId(val)}
@@ -286,7 +299,7 @@ export default function SalesReturnReportsModal({
                   />
                 </svg>
                 <span className="text-sm font-medium text-slate-500">
-                  Loading sales returns…
+                  Loading sales returns...
                 </span>
               </div>
             ) : rows.length === 0 ? (
@@ -330,17 +343,17 @@ export default function SalesReturnReportsModal({
                       >
                         {/* Sl No */}
                         <td className="px-4 py-1.5 text-xs font-mono text-slate-400">
-                          {r.slNo ?? "—"}
+                          {r.slNo ?? "-"}
                         </td>
 
                         {/* Bill No */}
                         <td className="px-4 py-1.5 text-xs font-semibold font-mono text-slate-900">
-                          {r.billNo || "—"}
+                          {r.billNo || "-"}
                         </td>
 
                         {/* Customer */}
                         <td className="px-4 py-1.5 text-xs font-medium text-slate-600">
-                          {r.customerName || "—"}
+                          {r.customerName || "-"}
                         </td>
 
                         {/* Date */}
@@ -353,7 +366,7 @@ export default function SalesReturnReportsModal({
 
                         {/* Total */}
                         <td className="px-4 py-1.5 text-right text-xs font-bold font-mono text-slate-950">
-                          ₹ {(r.totalAmount || 0).toFixed(2)}
+                          Rs. {(r.totalAmount || 0).toFixed(2)}
                         </td>
 
                         {/* Type */}
@@ -403,7 +416,7 @@ export default function SalesReturnReportsModal({
                                     d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
                                   />
                                 </svg>
-                                Opening…
+                                Opening...
                               </>
                             ) : (
                               <>

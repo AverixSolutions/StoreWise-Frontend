@@ -44,7 +44,7 @@ export const FULL_PURCHASE_UI_SETTINGS: PurchaseUiSettings = {
 
 // v2 intentionally resets the former compact-by-default layout once.
 // From this version onward every field is visible until the user hides it.
-const STORAGE_KEY = "kynflow.purchase.ui.v2";
+const STORAGE_KEY = "kynflow.purchase.ui.multiRateColumns.v3";
 
 export function loadPurchaseUiSettings(): PurchaseUiSettings {
   if (typeof window === "undefined") return DEFAULT_PURCHASE_UI_SETTINGS;
