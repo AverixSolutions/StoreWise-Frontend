@@ -351,7 +351,7 @@ declare global {
         batchId: string,
       ) => Promise<{ success: boolean; error?: string }>;
 
-      // ─── Purchases ──────────────────────────────────────────────────────────
+      // â”€â”€â”€ Purchases â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
       createPurchase: (
         purchase: any, // header may include typeId?: string | null
@@ -386,7 +386,7 @@ declare global {
         records: Array<PurchaseRecord & { typeId?: string | null }>,
       ) => Promise<{ success: boolean; upserted: number }>;
 
-      // ─── Sales ──────────────────────────────────────────────────────────────
+      // â”€â”€â”€ Sales â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
       createSale: (
         header: any, // may include typeId?: string | null
@@ -428,9 +428,9 @@ declare global {
         records: Array<SaleRecord & { typeId?: string | null }>,
       ) => Promise<{ success: boolean; upserted: number }>;
 
-      // ────────────────────────────────────────────────────────────────────────
+      // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-      // ─── Purchase Returns ──────────────────────────────────────────────────────
+      // â”€â”€â”€ Purchase Returns â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       createPurchaseReturn: (payload: {
         header: any;
         items: any[];
@@ -471,6 +471,16 @@ declare global {
         success: boolean;
         purchaseReturn: any;
         items: any[];
+      }>;
+
+      getPurchaseReturnSource: (
+        purchaseId: string,
+        excludeReturnId?: string | null,
+      ) => Promise<{
+        success: boolean;
+        purchase?: any;
+        items?: any[];
+        error?: string;
       }>;
 
       getNextPurchaseReturnSlNo: (
@@ -648,8 +658,8 @@ declare global {
         settings?: {
           licenseId: string;
           shopName: string;
-          logoDataUrl?: string | null; // desktop only — base64 in SQLite
-          logoUrl?: string | null; // web only — R2 public URL
+          logoDataUrl?: string | null; // desktop only â€” base64 in SQLite
+          logoUrl?: string | null; // web only â€” R2 public URL
           addressLine1?: string | null;
           addressLine2?: string | null;
           city?: string | null;
@@ -744,7 +754,7 @@ declare global {
         params?: { q?: string | null },
       ) => Promise<{ count: number }>;
 
-      // ─── Customers ──────────────────────────────────────────────────────────
+      // â”€â”€â”€ Customers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       listCustomers: (
         licenseId: string,
         filters?: {
@@ -889,7 +899,11 @@ declare global {
       listRateTypes: (
         licenseId: string,
         includeInactive?: boolean,
-      ) => Promise<{ success: boolean; rows: ElectronRateType[]; error?: string }>;
+      ) => Promise<{
+        success: boolean;
+        rows: ElectronRateType[];
+        error?: string;
+      }>;
       saveRateType: (
         payload: Partial<ElectronRateType> & {
           licenseId: string;
@@ -920,7 +934,11 @@ declare global {
       listProductRates: (
         licenseId: string,
         productId: string,
-      ) => Promise<{ success: boolean; rows: ElectronRateValue[]; error?: string }>;
+      ) => Promise<{
+        success: boolean;
+        rows: ElectronRateValue[];
+        error?: string;
+      }>;
       saveProductRates: (payload: {
         licenseId: string;
         productId: string;
@@ -930,22 +948,50 @@ declare global {
         licenseId: string,
         productId: string,
         batchId: string,
-      ) => Promise<{ success: boolean; rows: ElectronRateValue[]; error?: string }>;
+      ) => Promise<{
+        success: boolean;
+        rows: ElectronRateValue[];
+        error?: string;
+      }>;
       saveProductBatchRates: (payload: {
         licenseId: string;
         productId: string;
         batchId: string;
         rates: ElectronRateValueInput[];
       }) => Promise<{ success: boolean; error?: string }>;
-      getDirtyRateTypes: (licenseId: string, limit?: number) => Promise<ElectronRateType[]>;
-      markRateTypesSynced: (ids: string[], ts?: string) => Promise<{ success: boolean }>;
-      bulkUpsertRateTypes: (records: ElectronRateType[]) => Promise<{ success: boolean }>;
-      getDirtyProductRates: (licenseId: string, limit?: number) => Promise<ElectronRateValue[]>;
-      markProductRatesSynced: (ids: string[], ts?: string) => Promise<{ success: boolean }>;
-      bulkUpsertProductRates: (records: ElectronRateValue[]) => Promise<{ success: boolean }>;
-      getDirtyProductBatchRates: (licenseId: string, limit?: number) => Promise<ElectronRateValue[]>;
-      markProductBatchRatesSynced: (ids: string[], ts?: string) => Promise<{ success: boolean }>;
-      bulkUpsertProductBatchRates: (records: ElectronRateValue[]) => Promise<{ success: boolean }>;
+      getDirtyRateTypes: (
+        licenseId: string,
+        limit?: number,
+      ) => Promise<ElectronRateType[]>;
+      markRateTypesSynced: (
+        ids: string[],
+        ts?: string,
+      ) => Promise<{ success: boolean }>;
+      bulkUpsertRateTypes: (
+        records: ElectronRateType[],
+      ) => Promise<{ success: boolean }>;
+      getDirtyProductRates: (
+        licenseId: string,
+        limit?: number,
+      ) => Promise<ElectronRateValue[]>;
+      markProductRatesSynced: (
+        ids: string[],
+        ts?: string,
+      ) => Promise<{ success: boolean }>;
+      bulkUpsertProductRates: (
+        records: ElectronRateValue[],
+      ) => Promise<{ success: boolean }>;
+      getDirtyProductBatchRates: (
+        licenseId: string,
+        limit?: number,
+      ) => Promise<ElectronRateValue[]>;
+      markProductBatchRatesSynced: (
+        ids: string[],
+        ts?: string,
+      ) => Promise<{ success: boolean }>;
+      bulkUpsertProductBatchRates: (
+        records: ElectronRateValue[],
+      ) => Promise<{ success: boolean }>;
 
       listTaxCategories: (
         licenseId: string,
@@ -978,7 +1024,7 @@ declare global {
         records: any[],
       ) => Promise<{ success: boolean; upserted: number }>;
 
-      // ─── Customer Transaction Sync ──────────────────────────────────────────
+      // â”€â”€â”€ Customer Transaction Sync â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       getDirtyCustomerTransactions: (
         licenseId: string,
         limit?: number,
@@ -1035,6 +1081,12 @@ declare global {
       bulkUpsertCashTransactions: (
         records: any[],
       ) => Promise<{ success: boolean; upserted: number }>;
+
+      // Sale return
+      getSaleReturnSource?: (
+        saleId: string,
+        excludeReturnId?: string | null,
+      ) => Promise<any>;
 
       // Sale return sync
       getDirtySaleReturns: (

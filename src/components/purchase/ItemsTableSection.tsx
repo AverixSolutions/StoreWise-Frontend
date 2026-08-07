@@ -8,6 +8,7 @@ import {
   Receipt,
   Printer,
   Settings,
+  Info,
 } from "lucide-react";
 import { ItemRow, Product, TransactionMode } from "./types";
 import type { RateTypeRecord } from "@/platform/types";
@@ -46,10 +47,14 @@ interface ItemsTableSectionProps {
   mode?: TransactionMode;
   uiSettings?: PurchaseUiSettings;
   onOpenSettings?: () => void;
+  onOpenDetails?: () => void;
+  detailsTitle?: string;
+  detailsShortcut?: string;
   onFocusItems?: () => void;
   onFocusBillDetails?: () => void;
   onToggleBillDetails?: () => void;
   onFocusPreviousSection?: () => void;
+  returnRateLabel?: string;
 }
 
 export default function ItemsTableSection({
@@ -81,12 +86,32 @@ export default function ItemsTableSection({
   mode = "PURCHASE",
   uiSettings = FULL_PURCHASE_UI_SETTINGS,
   onOpenSettings,
+  onOpenDetails,
+  detailsTitle = "Details",
+  detailsShortcut = "F5",
   onFocusItems,
   onFocusBillDetails,
   onToggleBillDetails,
   onFocusPreviousSection,
+  returnRateLabel = "Cost Rate",
 }: ItemsTableSectionProps) {
   const itemCount = rows.filter((r) => r.productId).length;
+  const transactionName =
+    mode === "SALE"
+      ? "sale"
+      : mode === "RETURN"
+        ? "return"
+        : mode === "QUOTATION"
+          ? "quotation"
+          : "purchase";
+  const settingsName =
+    mode === "SALE"
+      ? "Sales"
+      : mode === "RETURN"
+        ? "Purchase Return"
+        : mode === "QUOTATION"
+          ? "Quotation"
+          : "Purchase";
 
   return (
     <section className="col-span-1 min-w-0 bg-white rounded-none shadow-none border-0 flex flex-col h-full min-h-0 overflow-hidden">
@@ -96,7 +121,7 @@ export default function ItemsTableSection({
         style={{ background: "#1e3a5f" }}
       >
         <div className="flex items-center gap-2.5">
-          {/* Change 2 — Mobile "Bill Details" button in header */}
+          {/* Change 2 â€” Mobile "Bill Details" button in header */}
           {onOpenMobileSheet && (
             <button
               onClick={onOpenMobileSheet}
@@ -133,13 +158,13 @@ export default function ItemsTableSection({
               <button
                 type="button"
                 onClick={onFocusBillDetails}
-                title="Focus Bill Number (F4)"
+                title="Focus Bill Details (F4)"
                 className="inline-flex items-center gap-1 rounded border border-white/30 bg-white/[0.12] px-1.5 py-0.5 text-[9px] text-white hover:bg-white/15"
               >
                 <kbd className="font-mono text-[8px] font-semibold text-white">
                   F4
                 </kbd>
-                Bill No
+                Bill
               </button>
             )}
             {onToggleBillDetails && (
@@ -158,7 +183,7 @@ export default function ItemsTableSection({
           </div>
         </div>
 
-        {/* Change 1 — Responsive toolbar with wrapped buttons and hidden labels */}
+        {/* Change 1 â€” Responsive toolbar with wrapped buttons and hidden labels */}
         <div className="flex items-center gap-1.5 flex-wrap justify-end">
           {barcodeEnabled && printBarcodesSlot}
           {offersSlot}
@@ -168,12 +193,27 @@ export default function ItemsTableSection({
               type="button"
               onClick={onOpenSettings}
               className="inline-flex h-7 items-center justify-center gap-1 rounded-md border border-white/20 bg-white/15 px-2 text-white transition hover:bg-white/20"
-              title="Purchase Settings (F7)"
-              aria-label="Open purchase settings"
+              title={`${settingsName} Settings (F7)`}
+              aria-label={`Open ${settingsName} settings`}
             >
               <Settings className="h-3.5 w-3.5" />
               <kbd className="font-mono text-[8px] font-semibold text-white">
                 F7
+              </kbd>
+            </button>
+          )}
+
+          {onOpenDetails && (
+            <button
+              type="button"
+              onClick={onOpenDetails}
+              className="inline-flex h-7 items-center justify-center gap-1 rounded-md border border-cyan-300/30 bg-cyan-300/15 px-2 text-cyan-50 transition hover:bg-cyan-300/20"
+              title={`${detailsTitle} (${detailsShortcut})`}
+              aria-label={`Open ${detailsTitle}`}
+            >
+              <Info className="h-3.5 w-3.5" />
+              <kbd className="font-mono text-[8px] font-semibold text-white">
+                {detailsShortcut}
               </kbd>
             </button>
           )}
@@ -216,7 +256,7 @@ export default function ItemsTableSection({
               <button
                 onClick={onHold}
                 className="px-2 sm:px-3 py-1.5 rounded-md bg-amber-500/20 border border-amber-400/30 text-amber-200 hover:bg-amber-500/30 transition-colors flex items-center gap-1.5 text-xs font-medium cursor-pointer"
-                title="Hold current purchase (F9)"
+                title={`Hold current ${transactionName} (F9)`}
               >
                 <PauseCircle className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">Hold</span>
@@ -263,9 +303,9 @@ export default function ItemsTableSection({
 
       {/* Table container */}
       <div className="flex-1 min-h-0 overflow-auto" data-grid-scroll-container>
-        {/* Horizontal scroll hint — mobile only */}
+        {/* Horizontal scroll hint â€” mobile only */}
         <div className="md:hidden text-[10px] text-slate-400 px-3 py-1 bg-slate-50 border-b">
-          ← Scroll horizontally for more columns
+          â† Scroll horizontally for more columns
         </div>
         <ItemsTable
           rows={rows}
@@ -281,10 +321,11 @@ export default function ItemsTableSection({
           mode={mode}
           uiSettings={uiSettings}
           onFocusPreviousSection={onFocusPreviousSection}
+          returnRateLabel={returnRateLabel}
         />
       </div>
 
-      {/* Change 3 — Compact footer on mobile */}
+      {/* Change 3 â€” Compact footer on mobile */}
       <div className="px-5 py-3 border-t border-slate-200 bg-slate-50 flex-shrink-0 z-10">
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
           <div className="flex items-center gap-2 text-xs text-slate-500">
@@ -301,7 +342,7 @@ export default function ItemsTableSection({
                 Sub Total
               </div>
               <div className="font-semibold text-slate-700">
-                ₹ {subTotal.toFixed(2)}
+                â‚¹ {subTotal.toFixed(2)}
               </div>
             </div>
 
@@ -321,7 +362,7 @@ export default function ItemsTableSection({
                 Bill Discount
               </div>
               <div className="font-semibold text-rose-500">
-                - ₹ {Number(headerDiscount ?? 0).toFixed(2)}
+                - â‚¹ {Number(headerDiscount ?? 0).toFixed(2)}
               </div>
             </div>
 
@@ -330,7 +371,7 @@ export default function ItemsTableSection({
                 Grand Total
               </div>
               <div className="font-bold text-[#1e3a5f] text-base sm:text-lg">
-                ₹ {Number(grandTotal).toFixed(2)}
+                â‚¹ {Number(grandTotal).toFixed(2)}
               </div>
             </div>
           </div>

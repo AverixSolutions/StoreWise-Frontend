@@ -2,11 +2,7 @@
 const STORAGE_KEY = "kynflow_print_prefs";
 
 export type PrintTask =
-  | "default"
-  | "purchase"
-  | "sales"
-  | "purchaseReturn"
-  | "salesReturn";
+  "default" | "purchase" | "sales" | "purchaseReturn" | "salesReturn";
 
 export type PaperSize = "A4" | "thermal";
 

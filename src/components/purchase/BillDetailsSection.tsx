@@ -41,6 +41,9 @@ interface BillDetailsSectionProps {
   transactionTypes: Array<{ id: string; name: string; isDefault: number }>;
   uiSettings?: PurchaseUiSettings;
   onFocusItems?: () => void;
+  sourcePurchaseControl?: React.ReactNode;
+  showBillNoField?: boolean;
+  onSupplierChange?: (supplier: { id: string; name: string } | null) => void;
 }
 
 const labelCls =
@@ -63,6 +66,7 @@ type HeaderField =
   | "transactionType"
   | "billNo"
   | "supplier"
+  | "sourcePurchase"
   | "purchaseDate"
   | "purchaseTime"
   | "entryDate"
@@ -88,6 +92,9 @@ export default function BillDetailsSection({
   isEditing = false,
   uiSettings = FULL_PURCHASE_UI_SETTINGS,
   onFocusItems,
+  sourcePurchaseControl,
+  showBillNoField = true,
+  onSupplierChange,
 }: BillDetailsSectionProps) {
   const sectionRef = useRef<HTMLElement>(null);
 
@@ -98,7 +105,10 @@ export default function BillDetailsSection({
       fields.push("transactionType");
     }
 
-    fields.push("billNo", "supplier", "purchaseDate");
+    if (showBillNoField) fields.push("billNo");
+    fields.push("supplier");
+    if (sourcePurchaseControl) fields.push("sourcePurchase");
+    fields.push("purchaseDate");
 
     if (uiSettings.showPurchaseTime) fields.push("purchaseTime");
     if (uiSettings.showEntryDate) fields.push("entryDate");
@@ -108,7 +118,12 @@ export default function BillDetailsSection({
     if (uiSettings.showHeaderDiscount) fields.push("headerDiscount");
 
     return fields;
-  }, [transactionTypes.length, uiSettings]);
+  }, [
+    showBillNoField,
+    sourcePurchaseControl,
+    transactionTypes.length,
+    uiSettings,
+  ]);
 
   function focusHeaderField(field: HeaderField) {
     window.setTimeout(() => {
@@ -355,28 +370,30 @@ export default function BillDetailsSection({
           )}
 
           {/* Bill No */}
-          <div>
-            <label className={labelCls}>
-              <Receipt className="w-3 h-3" />
-              Bill No <span className="text-rose-500">*</span>
-              <kbd
-                title="Focus Bill Number (F4)"
-                className="ml-auto rounded border border-slate-200 bg-slate-100 px-1 py-0.5 font-mono text-[8px] font-semibold normal-case tracking-normal text-slate-500"
-              >
-                F4
-              </kbd>
-            </label>
-            <input
-              className={inputBase}
-              value={header.billNo}
-              onChange={(e) =>
-                setHeader((s) => ({ ...s, billNo: e.target.value }))
-              }
-              placeholder="Enter bill number"
-              id="bill-details-billno"
-              data-purchase-header-field="billNo"
-            />
-          </div>
+          {showBillNoField ? (
+            <div>
+              <label className={labelCls}>
+                <Receipt className="w-3 h-3" />
+                Bill No <span className="text-rose-500">*</span>
+                <kbd
+                  title="Focus Bill Number (F4)"
+                  className="ml-auto rounded border border-slate-200 bg-slate-100 px-1 py-0.5 font-mono text-[8px] font-semibold normal-case tracking-normal text-slate-500"
+                >
+                  F4
+                </kbd>
+              </label>
+              <input
+                className={inputBase}
+                value={header.billNo}
+                onChange={(e) =>
+                  setHeader((s) => ({ ...s, billNo: e.target.value }))
+                }
+                placeholder="Enter bill number"
+                id="bill-details-billno"
+                data-purchase-header-field="billNo"
+              />
+            </div>
+          ) : null}
 
           {/* Supplier */}
           <div>
@@ -392,8 +409,12 @@ export default function BillDetailsSection({
                 <SearchableDropdown
                   value={header.supplier?.id || ""}
                   onChange={(v) => {
-                    const sup = suppliers.find((s) => s.id === v);
-                    setHeader((s) => ({ ...s, supplier: sup || null }));
+                    const sup = suppliers.find((s) => s.id === v) || null;
+                    if (onSupplierChange) {
+                      onSupplierChange(sup);
+                    } else {
+                      setHeader((s) => ({ ...s, supplier: sup }));
+                    }
                   }}
                   options={suppliers.map((s) => ({
                     value: s.id,
@@ -423,6 +444,8 @@ export default function BillDetailsSection({
               </button>
             </div>
           </div>
+
+          {sourcePurchaseControl}
 
           {/* Purchase Date */}
           <div>

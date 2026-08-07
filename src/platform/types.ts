@@ -370,7 +370,7 @@ export type DashboardOverviewResult =
   | { success: true; overview: DashboardOverview }
   | { success: false; unsupported?: boolean; error?: string };
 
-// ── Category types ──────────────────────────────────────────────────────────
+// â”€â”€ Category types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type CategoryRecord = {
   id: string;
@@ -397,7 +397,7 @@ export type CategorySavePayload = {
 
 export type CategoryMutationResult = MutationResult & { id?: string };
 
-// ── Brand types ─────────────────────────────────────────────────────────────
+// â”€â”€ Brand types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type BrandRecord = {
   id: string;
@@ -422,9 +422,9 @@ export type BrandSavePayload = {
 
 export type BrandMutationResult = MutationResult & { id?: string };
 
-// ────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-// ── Unit types ───────────────────────────────────────────────────────────────
+// â”€â”€ Unit types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type UnitRecord = {
   id: string;
@@ -453,7 +453,7 @@ export type UnitSavePayload = {
 
 export type UnitMutationResult = MutationResult & { id?: string };
 
-// ── Tax types ────────────────────────────────────────────────────────────────
+// â”€â”€ Tax types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type TaxComponentRecord = {
   id?: string;
@@ -532,7 +532,7 @@ export type AccountListResult = {
   error?: string;
 };
 
-// ── Transaction Type types ────────────────────────────────────────────────────
+// â”€â”€ Transaction Type types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type TransactionTypeRecord = {
   id: string;
@@ -573,18 +573,11 @@ export type OfferApplyScope = "ALL_PRODUCTS" | "SELECTED_PRODUCTS";
 export type OfferTriggerKind = "BILL_AMOUNT" | "PRODUCT_QTY" | "UNIT_QTY";
 export type OfferTriggerScope = "ALL_PRODUCTS" | "SELECTED_PRODUCTS";
 export type OfferBenefitTarget =
-  | "SAME_ELIGIBLE_ITEMS"
-  | "SELECTED_RATION_PRODUCTS";
+  "SAME_ELIGIBLE_ITEMS" | "SELECTED_RATION_PRODUCTS";
 export type OfferBenefitKind =
-  | "FIXED_UNIT_PRICE"
-  | "PERCENT_DISCOUNT"
-  | "AMOUNT_DISCOUNT"
-  | "FREE";
+  "FIXED_UNIT_PRICE" | "PERCENT_DISCOUNT" | "AMOUNT_DISCOUNT" | "FREE";
 export type OfferBenefitQtyMode =
-  | "ALL_ELIGIBLE_QTY"
-  | "QTY_ABOVE_THRESHOLD"
-  | "FIXED_QTY"
-  | "LIMITED_QTY";
+  "ALL_ELIGIBLE_QTY" | "QTY_ABOVE_THRESHOLD" | "FIXED_QTY" | "LIMITED_QTY";
 export type OfferTargetRole = "QUALIFIER" | "BENEFIT" | "BOTH";
 
 export type OfferRecord = {
@@ -674,7 +667,7 @@ export type OfferTargetSavePayload = {
 
 export type OfferMutationResult = MutationResult & { id?: string };
 
-// ── Purchase types ────────────────────────────────────────────────────────────
+// â”€â”€ Purchase types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type PurchaseItemInput = {
   productId: string;
@@ -834,7 +827,7 @@ export type PurchaseFullResult = {
   error?: string;
 };
 
-// ── Purchase Hold types ───────────────────────────────────────────────────────
+// â”€â”€ Purchase Hold types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type PurchaseHoldSavePayload = {
   id?: string;
@@ -880,7 +873,7 @@ export type PurchaseHoldGetResult = {
   error?: string;
 };
 
-// ── Supplier types ────────────────────────────────────────────────────────────
+// â”€â”€ Supplier types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type SupplierRecord = {
   id: string;
@@ -917,7 +910,7 @@ export type SupplierListResult = {
   total: number;
 };
 
-// ── Misc purchase helpers ─────────────────────────────────────────────────────
+// â”€â”€ Misc purchase helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type BulkPriceUpdate = {
   productId: string;
@@ -935,10 +928,11 @@ export type HoldNoResult = {
   nextHoldNo: number;
 };
 
-// ── Purchase Return types ─────────────────────────────────────────────────────
+// â”€â”€ Purchase Return types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type PurchaseReturnItemInput = {
   productId: string;
+  purchaseItemId?: string | null;
   barcode?: string | null;
   quantity: number;
   unit: string;
@@ -959,6 +953,7 @@ export type PurchaseReturnItemInput = {
 
 export type PurchaseReturnCreatePayload = {
   licenseId: string;
+  purchaseId?: string | null;
   userId?: string;
   billNo?: string | null;
   supplierId?: string | null;
@@ -997,6 +992,7 @@ export type PurchaseReturnListFilters = {
 
 export type PurchaseReturnRow = {
   id: string;
+  purchaseId?: string | null;
   slNo?: number;
   billNo?: string | null;
   supplierId?: string | null;
@@ -1017,6 +1013,24 @@ export type PurchaseReturnFullResult = {
   success: boolean;
   purchaseReturn?: PurchaseReturnRow & { licenseId?: string };
   items?: any[];
+  error?: string;
+};
+
+export type PurchaseReturnSourceItem = PurchaseItemRow & {
+  previouslyReturnedQuantity: number;
+  remainingReturnableQuantity: number;
+  availableStock: number;
+};
+
+export type PurchaseReturnSourceResult = {
+  success: boolean;
+  purchase?: PurchaseRow & {
+    licenseId?: string;
+    department?: string | null;
+    debitAccount?: string | null;
+    natureOfEntry?: string | null;
+  };
+  items?: PurchaseReturnSourceItem[];
   error?: string;
 };
 
@@ -1059,10 +1073,11 @@ export type PurchaseReturnHoldGetResult = {
   error?: string;
 };
 
-// ── Sale Return types ─────────────────────────────────────────────────────────
+// â”€â”€ Sale Return types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type SaleReturnItemInput = {
   productId: string;
+  saleItemId?: string | null;
   barcode?: string | null;
   quantity: number;
   unit: string;
@@ -1086,6 +1101,7 @@ export type SaleReturnItemInput = {
 
 export type SaleReturnCreatePayload = {
   licenseId: string;
+  saleId?: string | null;
   userId?: string;
   billNo?: string | null;
   customerId?: string | null;
@@ -1125,6 +1141,7 @@ export type SaleReturnListFilters = {
 
 export type SaleReturnRow = {
   id: string;
+  saleId?: string | null;
   slNo?: number;
   billNo?: string | null;
   customerId?: string | null;
@@ -1151,6 +1168,25 @@ export type SaleReturnFullResult = {
   success: boolean;
   saleReturn?: SaleReturnRow & { licenseId?: string };
   items?: any[];
+  error?: string;
+};
+
+export type SaleReturnSourceItem = SaleItemRow & {
+  previouslyReturnedQuantity: number;
+  remainingReturnableQuantity: number;
+  currentBatchStock: number;
+  sourceDiscountPercent?: number;
+};
+
+export type SaleReturnSourceResult = {
+  success: boolean;
+  sale?: SaleRow & {
+    licenseId?: string;
+    department?: string | null;
+    debitAccount?: string | null;
+    natureOfEntry?: string | null;
+  };
+  items?: SaleReturnSourceItem[];
   error?: string;
 };
 
@@ -1193,7 +1229,7 @@ export type SaleReturnHoldGetResult = {
   error?: string;
 };
 
-// ── Sale types ────────────────────────────────────────────────────────────────
+// â”€â”€ Sale types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type SaleItemInput = {
   productId: string;
@@ -1373,7 +1409,7 @@ export type SaleFullResult = {
   error?: string;
 };
 
-// ── Sale Hold types ───────────────────────────────────────────────────────────
+// â”€â”€ Sale Hold types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type SaleHoldSavePayload = {
   id?: string;
@@ -1419,7 +1455,7 @@ export type SaleHoldGetResult = {
   error?: string;
 };
 
-// ── Customer types ────────────────────────────────────────────────────────────
+// â”€â”€ Customer types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type CustomerRecord = {
   id: string;
@@ -1668,7 +1704,7 @@ export type PlatformAPI = {
     payload: OfferTargetSavePayload,
   ) => Promise<OfferMutationResult>;
 
-  // ── Purchases ───────────────────────────────────────────────────────────────
+  // â”€â”€ Purchases â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   createPurchase?: (
     purchase: PurchaseCreatePayload,
     items: PurchaseItemInput[],
@@ -1713,7 +1749,7 @@ export type PlatformAPI = {
 
   deleteSupplier?: (id: string) => Promise<MutationResult>;
 
-  // ── Purchase Returns ──────────────────────────────────────────────────────
+  // â”€â”€ Purchase Returns â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   createPurchaseReturn?: (payload: {
     header: PurchaseReturnCreatePayload;
     items: PurchaseReturnItemInput[];
@@ -1729,6 +1765,10 @@ export type PlatformAPI = {
     filters?: PurchaseReturnListFilters,
   ) => Promise<PurchaseReturnListResult>;
   getPurchaseReturnFull?: (id: string) => Promise<PurchaseReturnFullResult>;
+  getPurchaseReturnSource?: (
+    purchaseId: string,
+    excludeReturnId?: string | null,
+  ) => Promise<PurchaseReturnSourceResult>;
   peekNextPurchaseReturnSlNo?: (licenseId: string) => Promise<SlNoResult>;
   savePurchaseReturnHold?: (
     payload: PurchaseReturnHoldSavePayload,
@@ -1740,7 +1780,7 @@ export type PlatformAPI = {
   getPurchaseReturnHold?: (id: string) => Promise<PurchaseReturnHoldGetResult>;
   deletePurchaseReturnHold?: (id: string) => Promise<MutationResult>;
 
-  // ── Sale Returns ──────────────────────────────────────────────────────────
+  // â”€â”€ Sale Returns â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   createSaleReturn?: (payload: {
     header: SaleReturnCreatePayload;
     items: SaleReturnItemInput[];
@@ -1756,6 +1796,10 @@ export type PlatformAPI = {
     filters?: SaleReturnListFilters,
   ) => Promise<SaleReturnListResult>;
   getSaleReturnFull?: (id: string) => Promise<SaleReturnFullResult>;
+  getSaleReturnSource?: (
+    saleId: string,
+    excludeReturnId?: string | null,
+  ) => Promise<SaleReturnSourceResult>;
   peekNextSaleReturnSlNo?: (licenseId: string) => Promise<SlNoResult>;
   saveSaleReturnHold?: (
     payload: SaleReturnHoldSavePayload,
@@ -1767,7 +1811,7 @@ export type PlatformAPI = {
   getSaleReturnHold?: (id: string) => Promise<SaleReturnHoldGetResult>;
   deleteSaleReturnHold?: (id: string) => Promise<MutationResult>;
 
-  // ── Supplier Ledger & Payments ───────────────────────────────────────────
+  // â”€â”€ Supplier Ledger & Payments â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   getSupplierLedger?: (params: {
     licenseId: string;
     supplierId: string;
@@ -1896,7 +1940,7 @@ export type PlatformAPI = {
     updates: BulkPriceUpdate[],
   ) => Promise<MutationResult>;
 
-  // ── Sales ────────────────────────────────────────────────────────────────
+  // â”€â”€ Sales â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   createSale?: (
     sale: SaleCreatePayload,
     items: SaleItemInput[],
@@ -1959,12 +2003,12 @@ export type PlatformAPI = {
     states: string[];
   }>;
 
-  // ── Print ────────────────────────────────────────────────────────────────
+  // â”€â”€ Print â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   getPrinters?: () => Promise<
     Array<{ name: string; displayName: string; isDefault: boolean }>
   >;
 
-  // ── Quotations ────────────────────────────────────────────────────────────
+  // â”€â”€ Quotations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   createQuotation?: (
     header: QuotationCreatePayload,
     items: QuotationItemInput[],
@@ -2004,7 +2048,7 @@ export type PlatformAPI = {
   ) => Promise<MutationResult>;
 };
 
-// ── Quotation types ───────────────────────────────────────────────────────────
+// â”€â”€ Quotation types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type QuotationStatus = "DRAFT" | "SENT" | "CONVERTED" | "EXPIRED";
 

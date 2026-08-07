@@ -12,6 +12,9 @@ interface PurchaseNavigationProps {
   savedBillOpen?: boolean;
   onPrintBill?: () => void;
   onNewBill?: () => void;
+  savedLabel?: string;
+  printLabel?: string;
+  newLabel?: string;
 }
 
 export default function PurchaseNavigation({
@@ -21,6 +24,9 @@ export default function PurchaseNavigation({
   savedBillOpen = false,
   onPrintBill,
   onNewBill,
+  savedLabel = "Saved bill open",
+  printLabel = "Print",
+  newLabel = "New Bill",
 }: PurchaseNavigationProps) {
   const pathname = usePathname();
 
@@ -89,7 +95,7 @@ export default function PurchaseNavigation({
             </h1>
             {savedBillOpen ? (
               <span className="hidden shrink-0 rounded-full border border-emerald-300/25 bg-emerald-400/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-200 md:inline-flex">
-                Saved bill open
+                {savedLabel}
               </span>
             ) : null}
           </div>
@@ -104,7 +110,7 @@ export default function PurchaseNavigation({
               className="inline-flex h-8 items-center gap-1.5 rounded-md border border-white/20 bg-white/15 px-2.5 text-xs font-semibold text-white transition hover:bg-white/20"
             >
               <Printer className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Print</span>
+              <span className="hidden sm:inline">{printLabel}</span>
               <kbd className="hidden rounded border border-white/30 bg-white/15 px-1 py-0.5 font-mono text-[8px] text-white xl:inline-flex">
                 Ctrl+P
               </kbd>
@@ -119,7 +125,7 @@ export default function PurchaseNavigation({
               className="inline-flex h-8 items-center gap-1.5 rounded-md border border-white/25 bg-white px-2.5 text-xs font-semibold text-[#1e3a5f] transition hover:bg-slate-100"
             >
               <FilePlus2 className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">New Bill</span>
+              <span className="hidden sm:inline">{newLabel}</span>
               <kbd className="hidden rounded border border-slate-200 bg-slate-100 px-1 py-0.5 font-mono text-[8px] text-slate-500 xl:inline-flex">
                 Ctrl+N
               </kbd>

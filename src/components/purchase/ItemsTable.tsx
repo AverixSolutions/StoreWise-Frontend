@@ -1,5 +1,10 @@
 // src/components/purchase/ItemsTable.tsx
-import { ItemRow, Product, TransactionMode } from "./types";
+import {
+  ItemRow,
+  Product,
+  ReturnSellingRateColumn,
+  TransactionMode,
+} from "./types";
 import type { RateTypeRecord } from "@/platform/types";
 import ItemTableRow from "./ItemTableRow";
 import { useEffect } from "react";
@@ -13,6 +18,55 @@ import {
   FULL_PURCHASE_UI_SETTINGS,
   type PurchaseUiSettings,
 } from "./purchaseUiSettings";
+
+function buildReturnSellingRateColumns(
+  rows: ItemRow[],
+): ReturnSellingRateColumn[] {
+  const columns: ReturnSellingRateColumn[] = [];
+  const seen = new Set<string>();
+  let needsLegacyColumn = false;
+
+  rows.forEach((row) => {
+    const savedRates = row.availableRates || [];
+
+    if (savedRates.length === 0) {
+      if (row.salePrice != null) needsLegacyColumn = true;
+      return;
+    }
+
+    savedRates.forEach((rate) => {
+      const key =
+        String(rate.rateTypeId || "").trim() ||
+        String(rate.code || "")
+          .trim()
+          .toUpperCase() ||
+        String(rate.name || "")
+          .trim()
+          .toUpperCase();
+
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      columns.push({
+        key,
+        rateTypeId: rate.rateTypeId || null,
+        code: rate.code || null,
+        name: rate.name || rate.code || "Saved rate",
+        isDefault: Boolean(rate.isDefault),
+      });
+    });
+  });
+
+  if (needsLegacyColumn) {
+    columns.push({
+      key: "__LEGACY_DEFAULT__",
+      name: "Legacy Default",
+      isDefault: true,
+      legacy: true,
+    });
+  }
+
+  return columns;
+}
 
 interface ItemsTableProps {
   rows: ItemRow[];
@@ -28,6 +82,7 @@ interface ItemsTableProps {
   mode?: TransactionMode;
   uiSettings?: PurchaseUiSettings;
   onFocusPreviousSection?: () => void;
+  returnRateLabel?: string;
 }
 
 export default function ItemsTable({
@@ -44,33 +99,52 @@ export default function ItemsTable({
   mode = "PURCHASE",
   uiSettings = FULL_PURCHASE_UI_SETTINGS,
   onFocusPreviousSection,
+  returnRateLabel = "Cost Rate",
 }: ItemsTableProps) {
   const visibleRateTypes = mode === "PURCHASE" ? rateTypes : [];
-  const rateHeaderCount = Math.max(1, visibleRateTypes.length);
-  const sellingRatesWidth = Math.max(
-    170,
-    72 + rateHeaderCount * 82 + rateHeaderCount * 6,
-  );
-
-  const hiddenColumns: ColKey[] =
-    mode === "PURCHASE"
-      ? [
-          ...(!uiSettings.showUnit ? (["unit"] as const) : []),
-          ...(!uiSettings.showTax ? (["tax"] as const) : []),
-          ...(!uiSettings.showLineDiscount ? (["discount"] as const) : []),
-          ...(!uiSettings.showSellingRates
-            ? (["profitPercent", "salePrice"] as const)
-            : []),
-          ...(!uiSettings.showMrp ? (["mrp"] as const) : []),
-          ...(!uiSettings.showLineType ? (["lineType"] as const) : []),
-          ...(!uiSettings.showMfgDate ? (["mfgDate"] as const) : []),
-          ...(!uiSettings.showExpiryDate ? (["expiryDate"] as const) : []),
-        ]
+  const returnSellingRateColumns =
+    mode === "RETURN" && uiSettings.showSellingRates
+      ? buildReturnSellingRateColumns(rows)
       : [];
+
+  const hiddenColumns: ColKey[] = [
+    ...(!uiSettings.showUnit ? (["unit"] as const) : []),
+    ...(!uiSettings.showTax ? (["tax"] as const) : []),
+    ...(!uiSettings.showLineDiscount ? (["discount"] as const) : []),
+    ...(mode === "RETURN"
+      ? (["profitPercent", "salePrice"] as const)
+      : mode !== "PURCHASE"
+        ? (["profitPercent"] as const)
+        : []),
+    ...(mode === "PURCHASE" && !uiSettings.showSellingRates
+      ? (["profitPercent", "salePrice"] as const)
+      : []),
+    ...(!uiSettings.showMrp ? (["mrp"] as const) : []),
+    ...(!uiSettings.showLineType ? (["lineType"] as const) : []),
+    ...(!uiSettings.showMfgDate ? (["mfgDate"] as const) : []),
+    ...(!uiSettings.showExpiryDate ? (["expiryDate"] as const) : []),
+  ];
+
+  const salesColumnOrder: readonly ColKey[] = [
+    "product",
+    "barcode",
+    "quantity",
+    "unit",
+    "salePrice",
+    "rate",
+    "tax",
+    "discount",
+    "mrp",
+    "lineType",
+    "mfgDate",
+    "expiryDate",
+  ];
 
   const gridNavigation: GridNavigationOptions = {
     barcodeEnabled,
     hiddenColumns,
+    columnOrder:
+      mode === "SALE" || mode === "QUOTATION" ? salesColumnOrder : undefined,
   };
 
   const REQUIRED: Partial<Record<ColKey, (r: ItemRow) => boolean>> = {
@@ -90,12 +164,23 @@ export default function ItemsTable({
     rowIndex: number,
     col: ColKey,
   ) {
+    const lowerKey = e.key.toLowerCase();
+    if (
+      (e.key === "F2" ||
+        (mode !== "RETURN" && (e.ctrlKey || e.metaKey) && lowerKey === "b")) &&
+      rows[rowIndex]?.productId
+    ) {
+      e.preventDefault();
+      onRequestBatchSelect?.(rowIndex);
+      return;
+    }
+
     if (e.key !== "Enter" && e.key !== "NumpadEnter" && e.key !== "Tab") {
       return;
     }
     e.preventDefault();
-    if (!canLeave(col, rowIndex)) return;
     const dir: 1 | -1 = e.shiftKey ? -1 : 1;
+    if (dir === 1 && !canLeave(col, rowIndex)) return;
     const { rowIndex: nr, col: nc } = nextCell(
       rowIndex,
       col,
@@ -113,7 +198,7 @@ export default function ItemsTable({
       if (dir === -1) onFocusPreviousSection?.();
       return;
     }
-    focusCell(nr, nc);
+    setTimeout(() => focusCell(nr, nc), 0);
   }
 
   useEffect(() => {
@@ -153,94 +238,111 @@ export default function ItemsTable({
             <th className="px-2.5 py-2 text-center text-[10px] font-semibold text-white/80 uppercase tracking-[0.14em] min-w-[70px]">
               Qty
             </th>
-            <th
-              className={`px-2.5 py-2 text-center text-[10px] font-semibold text-white/80 uppercase tracking-[0.14em] min-w-[74px]${mode === "PURCHASE" && !uiSettings.showUnit ? " hidden" : ""}`}
-            >
-              Unit
+            {uiSettings.showUnit ? (
+              <th className="min-w-[74px] px-2.5 py-2 text-center text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80">
+                Unit
+              </th>
+            ) : null}
+            {mode === "SALE" || mode === "QUOTATION" ? (
+              <th className="min-w-[132px] px-2.5 py-2 text-center text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80">
+                Rate Type
+              </th>
+            ) : null}
+            <th className="px-2.5 py-2 text-center text-[10px] font-semibold text-white/80 uppercase tracking-[0.14em] min-w-[92px]">
+              {mode === "RETURN" ? returnRateLabel : "Rate"}
             </th>
-            <th className="px-2.5 py-2 text-center text-[10px] font-semibold text-white/80 uppercase tracking-[0.14em] min-w-[84px]">
-              Rate
-            </th>
-            <th
-              className={`px-2.5 py-2 text-center text-[10px] font-semibold text-white/80 uppercase tracking-[0.14em] min-w-[84px]${mode === "PURCHASE" && !uiSettings.showTax ? " hidden" : ""}`}
-            >
-              Tax
-            </th>
-            <th
-              className={`px-2.5 py-2 text-center text-[10px] font-semibold text-white/80 uppercase tracking-[0.14em] min-w-[130px]${mode === "PURCHASE" && !uiSettings.showLineDiscount ? " hidden" : ""}`}
-            >
-              Discount
-            </th>
+            {mode === "RETURN" && uiSettings.showSellingRates
+              ? returnSellingRateColumns.map((column) => (
+                  <th
+                    key={column.key}
+                    className="min-w-[96px] px-2.5 py-2 text-center text-[10px] font-semibold text-white/80"
+                    title={
+                      column.legacy
+                        ? "Single default selling rate saved on a legacy Purchase"
+                        : `${column.name}${column.code ? ` (${column.code})` : ""}${column.isDefault ? " - Default" : ""}`
+                    }
+                  >
+                    <span className="inline-flex max-w-[112px] items-center justify-center gap-1">
+                      <span className="truncate">{column.name}</span>
+                      {column.isDefault ? (
+                        <span
+                          className="h-1.5 w-1.5 shrink-0 rounded-full bg-cyan-300"
+                          aria-label="Default selling rate"
+                        />
+                      ) : null}
+                    </span>
+                  </th>
+                ))
+              : null}
+            {uiSettings.showTax ? (
+              <th className="min-w-[84px] px-2.5 py-2 text-center text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80">
+                Tax
+              </th>
+            ) : null}
+            {uiSettings.showLineDiscount ? (
+              <th className="min-w-[130px] px-2.5 py-2 text-center text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80">
+                Discount
+              </th>
+            ) : null}
 
-            <th
-              className={`px-2.5 py-2 text-center text-[10px] font-semibold text-white/80 uppercase tracking-[0.14em]${mode === "PURCHASE" ? "" : " min-w-[640px]"}${mode === "PURCHASE" && !uiSettings.showSellingRates ? " hidden" : ""}`}
-              style={
-                mode === "PURCHASE"
-                  ? { minWidth: sellingRatesWidth }
-                  : undefined
-              }
-            >
-              {mode === "SALE" || mode === "QUOTATION" ? (
-                "Rate Type"
-              ) : mode === "PURCHASE" ? (
-                <div className="flex min-w-max items-center gap-1.5 whitespace-nowrap normal-case tracking-normal">
-                  <span className="w-[72px] shrink-0 text-center text-[9px] font-semibold uppercase tracking-[0.08em] text-white/75">
-                    Profit %
-                  </span>
-                  {visibleRateTypes.length > 0 ? (
-                    visibleRateTypes.map((rateType) => (
-                      <span
-                        key={rateType.id}
-                        className="flex w-[82px] shrink-0 items-center justify-center gap-1 text-[9px] font-semibold text-white/85"
-                        title={`${rateType.name} (${rateType.code})${rateType.isDefault ? " - Default" : ""}`}
-                      >
+            {mode === "PURCHASE" && uiSettings.showSellingRates ? (
+              <>
+                <th className="min-w-[88px] px-2.5 py-2 text-center text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80">
+                  Profit %
+                </th>
+                {visibleRateTypes.length > 0 ? (
+                  visibleRateTypes.map((rateType) => (
+                    <th
+                      key={rateType.id}
+                      className="min-w-[96px] px-2.5 py-2 text-center text-[10px] font-semibold text-white/80"
+                      title={`${rateType.name} (${rateType.code})${rateType.isDefault ? " - Default" : ""}`}
+                    >
+                      <span className="inline-flex max-w-[112px] items-center justify-center gap-1">
                         <span className="truncate">{rateType.name}</span>
                         {rateType.isDefault ? (
                           <span
                             className="h-1.5 w-1.5 shrink-0 rounded-full bg-cyan-300"
-                            aria-label="Default rate"
+                            aria-label="Default selling rate"
                           />
                         ) : null}
                       </span>
-                    ))
-                  ) : (
-                    <span className="w-[82px] shrink-0 text-center text-[9px] font-semibold text-white/85">
-                      Sale
-                    </span>
-                  )}
-                </div>
-              ) : (
-                "Selling Rates"
-              )}
-            </th>
-            <th
-              className={`px-2.5 py-2 text-center text-[10px] font-semibold text-white/80 uppercase tracking-[0.14em] min-w-[84px]${mode === "PURCHASE" && !uiSettings.showMrp ? " hidden" : ""}`}
-            >
-              MRP
-            </th>
+                    </th>
+                  ))
+                ) : (
+                  <th className="min-w-[96px] px-2.5 py-2 text-center text-[10px] font-semibold text-white/80">
+                    Sale
+                  </th>
+                )}
+              </>
+            ) : null}
+            {uiSettings.showMrp ? (
+              <th className="min-w-[84px] px-2.5 py-2 text-center text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80">
+                MRP
+              </th>
+            ) : null}
 
-            {/* Hidden on mobile/tablet — show from lg breakpoint */}
-            <th
-              className={`px-2.5 py-2 text-center text-[10px] font-semibold text-white/80 uppercase tracking-[0.14em] min-w-[80px] hidden lg:table-cell${mode === "PURCHASE" && !uiSettings.showLineType ? " hidden" : ""}`}
-            >
-              Type
-            </th>
-            {/* Hidden on mobile — show from md breakpoint */}
-            <th
-              className={`px-2.5 py-2 text-center text-[10px] font-semibold text-white/80 uppercase tracking-[0.14em] min-w-[120px] hidden md:table-cell${mode === "PURCHASE" && !uiSettings.showMfgDate ? " hidden" : ""}`}
-            >
-              MFG
-            </th>
-            <th
-              className={`px-2.5 py-2 text-center text-[10px] font-semibold text-white/80 uppercase tracking-[0.14em] min-w-[120px] hidden md:table-cell${mode === "PURCHASE" && !uiSettings.showExpiryDate ? " hidden" : ""}`}
-            >
-              Expiry
-            </th>
-            <th
-              className={`px-2.5 py-2 text-center text-[10px] font-semibold text-white/80 uppercase tracking-[0.14em] min-w-[110px] hidden lg:table-cell${mode === "PURCHASE" && !uiSettings.showUnitBilled ? " hidden" : ""}`}
-            >
-              Unit Billed
-            </th>
+            {/* Hidden on mobile/tablet â€” show from lg breakpoint */}
+            {uiSettings.showLineType ? (
+              <th className="hidden min-w-[80px] px-2.5 py-2 text-center text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80 lg:table-cell">
+                Type
+              </th>
+            ) : null}
+            {/* Hidden on mobile â€” show from md breakpoint */}
+            {uiSettings.showMfgDate ? (
+              <th className="hidden min-w-[120px] px-2.5 py-2 text-center text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80 md:table-cell">
+                MFG
+              </th>
+            ) : null}
+            {uiSettings.showExpiryDate ? (
+              <th className="hidden min-w-[120px] px-2.5 py-2 text-center text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80 md:table-cell">
+                Expiry
+              </th>
+            ) : null}
+            {uiSettings.showUnitBilled ? (
+              <th className="hidden min-w-[110px] px-2.5 py-2 text-center text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80 lg:table-cell">
+                Unit Billed
+              </th>
+            ) : null}
 
             <th
               className="px-2.5 py-2 text-center text-[10px] font-semibold text-white/80 uppercase tracking-[0.14em] sticky z-[60] min-w-[90px]"
@@ -276,6 +378,8 @@ export default function ItemsTable({
               mode={mode}
               uiSettings={uiSettings}
               gridNavigation={gridNavigation}
+              returnSellingRateColumns={returnSellingRateColumns}
+              purchaseRateTypes={visibleRateTypes}
             />
           ))}
         </tbody>

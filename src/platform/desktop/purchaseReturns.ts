@@ -8,6 +8,7 @@ import type {
   PurchaseReturnListFilters,
   PurchaseReturnListResult,
   PurchaseReturnFullResult,
+  PurchaseReturnSourceResult,
   SlNoResult,
   Pagination,
   PurchaseReturnHoldSavePayload,
@@ -64,6 +65,13 @@ export async function desktopGetPurchaseReturnFull(
   id: string,
 ): Promise<PurchaseReturnFullResult> {
   return api().getPurchaseReturnFull(id);
+}
+
+export async function desktopGetPurchaseReturnSource(
+  purchaseId: string,
+  excludeReturnId?: string | null,
+): Promise<PurchaseReturnSourceResult> {
+  return api().getPurchaseReturnSource(purchaseId, excludeReturnId ?? null);
 }
 
 export async function desktopPeekNextPurchaseReturnSlNo(

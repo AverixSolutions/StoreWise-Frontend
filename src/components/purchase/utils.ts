@@ -75,6 +75,13 @@ export function createEmptyRow(lineNo: number): ItemRow {
     appliedQuantity: 0,
     overReturnQuantity: 0,
     overReturnReason: null,
+    sourcePurchaseId: null,
+    sourcePurchaseItemId: null,
+    purchasedQuantity: 0,
+    previouslyReturnedQuantity: 0,
+    remainingReturnableQuantity: 0,
+    sourceDiscountPerUnit: 0,
+    sourceAvailableStock: 0,
   };
 }
 
@@ -159,6 +166,7 @@ export function mapItems(rows: ItemRow[]) {
     .filter((r) => r.productId)
     .map((r, i) => ({
       productId: r.productId,
+      purchaseItemId: r.sourcePurchaseItemId || null,
       batchId: r.batchId || null,
       barcode: r.barcode || null,
       quantity: r.quantity,
@@ -253,6 +261,13 @@ export function rowsFromDbItems(dbItems: any[]): ItemRow[] {
     overReturnQuantity: it.overReturnQuantity ?? 0,
     overReturnReason: it.overReturnReason ?? null,
     sellingRatesJson: it.sellingRatesJson ?? null,
+    sourcePurchaseId: it.purchaseId ?? it.sourcePurchaseId ?? null,
+    sourcePurchaseItemId: it.purchaseItemId ?? it.sourcePurchaseItemId ?? null,
+    purchasedQuantity: Number(it.purchasedQuantity ?? 0),
+    previouslyReturnedQuantity: Number(it.previouslyReturnedQuantity ?? 0),
+    remainingReturnableQuantity: Number(it.remainingReturnableQuantity ?? 0),
+    sourceDiscountPerUnit: Number(it.sourceDiscountPerUnit ?? 0),
+    sourceAvailableStock: Number(it.sourceAvailableStock ?? 0),
     availableRates: (() => {
       try {
         const values = JSON.parse(it.sellingRatesJson || "[]");
@@ -266,8 +281,7 @@ export function rowsFromDbItems(dbItems: any[]): ItemRow[] {
                 rateTypeId: String(rate.rateTypeId || ""),
                 code: String(rate.code || ""),
                 name: String(rate.name || rate.code || "Saved rate"),
-                amount:
-                  rate.amount == null ? null : Number(rate.amount),
+                amount: rate.amount == null ? null : Number(rate.amount),
                 configured: rate.amount != null,
                 isDefault: Boolean(rate.isDefault),
               };
@@ -372,5 +386,6 @@ export function headerFromReturnDb(
     entryTime: r.entryTime || r.returnDate,
     discount: Number(r.discount || 0),
     purchaseType: r.purchaseType === "CASH" ? "CASH" : "CREDIT",
+    sourcePurchaseId: r.purchaseId ?? null,
   };
 }

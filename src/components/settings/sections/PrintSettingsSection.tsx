@@ -22,6 +22,8 @@ import { platform } from "@/platform";
 import SearchableDropdown from "@/components/ui/SearchableDropdown";
 import SettingsOverlay from "@/components/settings/SettingsOverlay";
 import PurchasePrintCustomizationPanel from "@/components/print/PurchasePrintCustomizationPanel";
+import PurchaseReturnPrintCustomizationPanel from "@/components/print/PurchaseReturnPrintCustomizationPanel";
+import SalesReturnPrintCustomizationPanel from "@/components/print/SalesReturnPrintCustomizationPanel";
 import {
   clearAllPrefs,
   getTaskPref,
@@ -81,6 +83,7 @@ const DOCUMENT_TASKS: TaskDefinition[] = [
     description: "Supplier return documents.",
     icon: Undo2,
     accent: "bg-amber-100 text-amber-700",
+    customizable: true,
   },
   {
     key: "salesReturn",
@@ -88,6 +91,7 @@ const DOCUMENT_TASKS: TaskDefinition[] = [
     description: "Customer return documents.",
     icon: RotateCcw,
     accent: "bg-violet-100 text-violet-700",
+    customizable: true,
   },
 ];
 
@@ -241,6 +245,9 @@ export default function PrintSettingsSection({
   const [loadingPrinters, setLoadingPrinters] = useState(false);
   const [activeTask, setActiveTask] = useState<PrintTask | null>(null);
   const [showPurchaseTemplate, setShowPurchaseTemplate] = useState(false);
+  const [showPurchaseReturnTemplate, setShowPurchaseReturnTemplate] =
+    useState(false);
+  const [showSalesReturnTemplate, setShowSalesReturnTemplate] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [saved, setSaved] = useState(false);
 
@@ -424,9 +431,13 @@ export default function PrintSettingsSection({
                   printerLabel={printerName(pref, definition.key)}
                   onConfigure={() => setActiveTask(definition.key)}
                   onCustomize={
-                    definition.customizable
+                    definition.key === "purchase"
                       ? () => setShowPurchaseTemplate(true)
-                      : undefined
+                      : definition.key === "purchaseReturn"
+                        ? () => setShowPurchaseReturnTemplate(true)
+                        : definition.key === "salesReturn"
+                          ? () => setShowSalesReturnTemplate(true)
+                          : undefined
                   }
                 />
               );
@@ -581,6 +592,58 @@ export default function PrintSettingsSection({
                 <ArrowRight className="h-4 w-4 text-cyan-700" />
               </button>
             )}
+
+            {activeTask === "purchaseReturn" && (
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTask(null);
+                  setShowPurchaseReturnTemplate(true);
+                }}
+                className="flex w-full items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-left transition hover:bg-amber-100"
+              >
+                <span className="flex items-center gap-3">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500 text-white">
+                    <LayoutTemplate className="h-4 w-4" />
+                  </span>
+                  <span>
+                    <span className="block text-sm font-semibold text-amber-900">
+                      Customize Purchase Return
+                    </span>
+                    <span className="mt-0.5 block text-[10px] text-amber-700">
+                      Classic/Modern A4, logo, fields and footer.
+                    </span>
+                  </span>
+                </span>
+                <ArrowRight className="h-4 w-4 text-amber-700" />
+              </button>
+            )}
+
+            {activeTask === "salesReturn" && (
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTask(null);
+                  setShowSalesReturnTemplate(true);
+                }}
+                className="flex w-full items-center justify-between gap-3 rounded-2xl border border-violet-200 bg-violet-50 p-4 text-left transition hover:bg-violet-100"
+              >
+                <span className="flex items-center gap-3">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-600 text-white">
+                    <LayoutTemplate className="h-4 w-4" />
+                  </span>
+                  <span>
+                    <span className="block text-sm font-semibold text-violet-900">
+                      Customize Sales Return
+                    </span>
+                    <span className="mt-0.5 block text-[10px] text-violet-700">
+                      Classic/Modern A4, 80mm, fields and footer.
+                    </span>
+                  </span>
+                </span>
+                <ArrowRight className="h-4 w-4 text-violet-700" />
+              </button>
+            )}
           </div>
         )}
       </SettingsOverlay>
@@ -594,6 +657,28 @@ export default function PrintSettingsSection({
         width="xl"
       >
         <PurchasePrintCustomizationPanel />
+      </SettingsOverlay>
+
+      <SettingsOverlay
+        open={showPurchaseReturnTemplate}
+        title="Purchase Return Template"
+        description="A4 and 80mm Purchase Return layout customization"
+        icon={LayoutTemplate}
+        onClose={() => setShowPurchaseReturnTemplate(false)}
+        width="xl"
+      >
+        <PurchaseReturnPrintCustomizationPanel />
+      </SettingsOverlay>
+
+      <SettingsOverlay
+        open={showSalesReturnTemplate}
+        title="Sales Return Template"
+        description="Classic, Modern and 80mm Sales Return customization"
+        icon={LayoutTemplate}
+        onClose={() => setShowSalesReturnTemplate(false)}
+        width="xl"
+      >
+        <SalesReturnPrintCustomizationPanel />
       </SettingsOverlay>
     </>
   );

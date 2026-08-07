@@ -8,6 +8,7 @@ import type {
   SaleReturnListFilters,
   SaleReturnListResult,
   SaleReturnFullResult,
+  SaleReturnSourceResult,
   SlNoResult,
   SaleReturnHoldSavePayload,
   SaleReturnHoldSaveResult,
@@ -15,11 +16,9 @@ import type {
   SaleReturnHoldGetResult,
   Pagination,
 } from "../types";
-import {
-  getActiveToken,
-} from "@/lib/session/runtimeSession";
+import { getActiveToken } from "@/lib/session/runtimeSession";
 
-// ── API helper ────────────────────────────────────────────────────────────────
+// â”€â”€ API helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const API_BASE =
   process.env.NEXT_PUBLIC_KYNFLOW_API_BASE ||
@@ -59,7 +58,7 @@ function triggerSaleReturnPull() {
     .catch(() => {});
 }
 
-// ── READS via API ─────────────────────────────────────────────────────────────
+// â”€â”€ READS via API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function webListSaleReturns(
   licenseId: string,
@@ -74,9 +73,7 @@ export async function webListSaleReturns(
     if (filters.page != null) params.set("page", String(filters.page));
     if (filters.pageSize != null)
       params.set("pageSize", String(filters.pageSize));
-    const data = await apiFetch<any>(
-      `/api/sale-returns?${params.toString()}`,
-    );
+    const data = await apiFetch<any>(`/api/sale-returns?${params.toString()}`);
     return { returns: data.returns ?? [], total: data.total ?? 0 };
   } catch {
     return { returns: [], total: 0 };
@@ -88,6 +85,22 @@ export async function webGetSaleReturnFull(
 ): Promise<SaleReturnFullResult> {
   try {
     return await apiFetch<SaleReturnFullResult>(`/api/sale-returns/${id}`);
+  } catch (err: any) {
+    return { success: false, error: String(err?.message || err) };
+  }
+}
+
+export async function webGetSaleReturnSource(
+  saleId: string,
+  excludeReturnId?: string | null,
+): Promise<SaleReturnSourceResult> {
+  try {
+    const params = new URLSearchParams();
+    if (excludeReturnId) params.set("excludeReturnId", excludeReturnId);
+    const query = params.toString();
+    return await apiFetch<SaleReturnSourceResult>(
+      `/api/sale-returns/source/${encodeURIComponent(saleId)}${query ? `?${query}` : ""}`,
+    );
   } catch (err: any) {
     return { success: false, error: String(err?.message || err) };
   }
@@ -106,7 +119,7 @@ export async function webPeekNextSaleReturnSlNo(
   }
 }
 
-// ── WRITES via API ────────────────────────────────────────────────────────────
+// â”€â”€ WRITES via API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function webCreateSaleReturn(payload: {
   header: SaleReturnCreatePayload;
@@ -156,7 +169,7 @@ export async function webDeleteSaleReturn(
   }
 }
 
-// ── HOLDS — not supported in backend (no SaleReturnHold schema) ───────────────
+// â”€â”€ HOLDS â€” not supported in backend (no SaleReturnHold schema) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function webSaveSaleReturnHold(
   _payload: SaleReturnHoldSavePayload,

@@ -1,21 +1,28 @@
-// src/components/sales/SalesNavigation.tsx
 "use client";
 
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
-import { ArrowLeft, Wifi, WifiOff } from "lucide-react";
+import { ArrowLeft, FilePlus2, Printer, Wifi, WifiOff } from "lucide-react";
 
 interface SalesNavigationProps {
   onNavigate: (path: string) => void;
   title?: string;
   rightSlot?: ReactNode;
+  keyboardEnabled?: boolean;
+  savedBillOpen?: boolean;
+  onPrintBill?: () => void;
+  onNewBill?: () => void;
 }
 
 export default function SalesNavigation({
   onNavigate,
   title,
   rightSlot,
+  keyboardEnabled = true,
+  savedBillOpen = false,
+  onPrintBill,
+  onNewBill,
 }: SalesNavigationProps) {
   const pathname = usePathname();
 
@@ -30,6 +37,7 @@ export default function SalesNavigation({
   const [online, setOnline] = useState(
     typeof navigator !== "undefined" ? navigator.onLine : true,
   );
+
   useEffect(() => {
     const on = () => setOnline(true);
     const off = () => setOnline(false);
@@ -41,47 +49,95 @@ export default function SalesNavigation({
     };
   }, []);
 
+  useEffect(() => {
+    if (!keyboardEnabled) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.repeat) return;
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "b") {
+        event.preventDefault();
+        onNavigate("/dashboard/entries");
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [keyboardEnabled, onNavigate]);
+
   return (
-    <div className="sticky top-0 z-40 bg-[#1e3a5f] border-b border-[#1e3a5f]">
-      <div className="px-3 sm:px-4 py-2.5 flex items-center justify-between">
-        {/* Back to Entries */}
-        <button
-          onClick={() => onNavigate("/dashboard/entries")}
-          className="flex items-center gap-2 text-white/70 hover:text-white transition-colors cursor-pointer"
-          title="Back to Entries"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span className="text-sm font-medium">Entries</span>
-        </button>
+    <div className="sticky top-0 z-40 border-b border-[#1e3a5f] bg-[#1e3a5f]">
+      <div className="flex min-h-[48px] items-center justify-between gap-3 px-3 py-2 sm:px-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <button
+            type="button"
+            onClick={() => onNavigate("/dashboard/entries")}
+            className="flex shrink-0 items-center gap-2 text-white transition-colors hover:text-white"
+            title="Back to Entries (Ctrl/Cmd+B)"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            <span className="hidden text-sm font-medium sm:inline">
+              Entries
+            </span>
+            <kbd className="hidden rounded border border-white/30 bg-white/15 px-1.5 py-0.5 font-mono text-[8px] font-semibold text-white lg:inline-flex">
+              Ctrl+B
+            </kbd>
+          </button>
+          <span className="h-5 w-px shrink-0 bg-white/15" />
+          <div className="flex min-w-0 items-center gap-2">
+            <h1 className="truncate text-sm font-semibold text-white sm:text-base lg:text-lg">
+              {inferredTitle}
+            </h1>
+            {savedBillOpen ? (
+              <span className="hidden shrink-0 rounded-full border border-emerald-300/25 bg-emerald-400/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-200 md:inline-flex">
+                Saved bill open
+              </span>
+            ) : null}
+          </div>
+        </div>
 
-        {/* Page Title */}
-        <h1 className="text-sm sm:text-base lg:text-lg font-semibold text-white truncate max-w-[120px] sm:max-w-none">
-          {inferredTitle}
-        </h1>
-
-        <div className="flex min-w-0 items-center justify-end gap-2">
-          {rightSlot && <div className="min-w-0">{rightSlot}</div>}
-
-          {/* Online/Offline pill */}
+        <div className="flex min-w-0 shrink-0 items-center justify-end gap-1.5">
+          {rightSlot ? <div className="min-w-0">{rightSlot}</div> : null}
+          {savedBillOpen && onPrintBill ? (
+            <button
+              type="button"
+              onClick={onPrintBill}
+              title="Print Bill (Ctrl/Cmd+P)"
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-white/20 bg-white/15 px-2.5 text-xs font-semibold text-white transition hover:bg-white/20"
+            >
+              <Printer className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Print</span>
+              <kbd className="hidden rounded border border-white/30 bg-white/15 px-1 py-0.5 font-mono text-[8px] text-white xl:inline-flex">
+                Ctrl+P
+              </kbd>
+            </button>
+          ) : null}
+          {savedBillOpen && onNewBill ? (
+            <button
+              type="button"
+              onClick={onNewBill}
+              title="Start New Bill (Ctrl/Cmd+N)"
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-white/25 bg-white px-2.5 text-xs font-semibold text-[#1e3a5f] transition hover:bg-slate-100"
+            >
+              <FilePlus2 className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">New Bill</span>
+              <kbd className="hidden rounded border border-slate-200 bg-slate-100 px-1 py-0.5 font-mono text-[8px] text-slate-500 xl:inline-flex">
+                Ctrl+N
+              </kbd>
+            </button>
+          ) : null}
           <div
-            className={
-              "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium shrink-0 " +
-              (online
-                ? "bg-emerald-500/20 text-emerald-300 border border-emerald-400/30"
-                : "bg-amber-500/20 text-amber-300 border border-amber-400/30")
-            }
+            className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium ${online ? "border-emerald-400/30 bg-emerald-500/20 text-emerald-300" : "border-amber-400/30 bg-amber-500/20 text-amber-300"}`}
             title={online ? "Online" : "Offline"}
           >
             {online ? (
-              <Wifi className="w-3.5 h-3.5" />
+              <Wifi className="h-3.5 w-3.5" />
             ) : (
-              <WifiOff className="w-3.5 h-3.5" />
+              <WifiOff className="h-3.5 w-3.5" />
             )}
-            <span>{online ? "Online" : "Offline"}</span>
+            <span className="hidden md:inline">
+              {online ? "Online" : "Offline"}
+            </span>
           </div>
         </div>
       </div>
-      {/* Brand gradient separator */}
       <div className="h-[2px] bg-gradient-to-r from-[#20b7ff] via-[#b026ff] to-[#20b7ff]" />
     </div>
   );

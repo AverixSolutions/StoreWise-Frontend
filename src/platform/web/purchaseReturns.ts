@@ -8,6 +8,7 @@ import type {
   PurchaseReturnListFilters,
   PurchaseReturnListResult,
   PurchaseReturnFullResult,
+  PurchaseReturnSourceResult,
   PurchaseReturnRow,
   SlNoResult,
   PurchaseReturnHoldSavePayload,
@@ -170,6 +171,22 @@ export async function webGetPurchaseReturnFull(
       `/api/purchase-returns/${id}`,
     );
     return data;
+  } catch (err: any) {
+    return { success: false, error: String(err?.message || err) };
+  }
+}
+
+export async function webGetPurchaseReturnSource(
+  purchaseId: string,
+  excludeReturnId?: string | null,
+): Promise<PurchaseReturnSourceResult> {
+  try {
+    const params = new URLSearchParams();
+    if (excludeReturnId) params.set("excludeReturnId", excludeReturnId);
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    return await apiFetch<PurchaseReturnSourceResult>(
+      `/api/purchase-returns/source/${encodeURIComponent(purchaseId)}${suffix}`,
+    );
   } catch (err: any) {
     return { success: false, error: String(err?.message || err) };
   }

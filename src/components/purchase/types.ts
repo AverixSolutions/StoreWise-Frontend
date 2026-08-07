@@ -27,6 +27,15 @@ export type AvailableNamedRate = {
   isDefault?: boolean;
 };
 
+export type ReturnSellingRateColumn = {
+  key: string;
+  rateTypeId?: string | null;
+  code?: string | null;
+  name: string;
+  isDefault?: boolean;
+  legacy?: boolean;
+};
+
 export interface ItemRow {
   lineNo: number;
   productId: string;
@@ -78,6 +87,18 @@ export interface ItemRow {
   rateSource?: "MASTER" | "CUSTOM" | "LEGACY";
   availableRates?: AvailableNamedRate[];
   sellingRatesJson?: string | null;
+
+  sourcePurchaseId?: string | null;
+  sourcePurchaseItemId?: string | null;
+  purchasedQuantity?: number;
+  previouslyReturnedQuantity?: number;
+  remainingReturnableQuantity?: number;
+  sourceDiscountPerUnit?: number;
+  sourceAvailableStock?: number;
+
+  sourceSaleId?: string | null;
+  sourceSaleItemId?: string | null;
+  soldQuantity?: number;
 }
 
 export interface HeaderForm {
@@ -91,6 +112,7 @@ export interface HeaderForm {
   discount: number;
   purchaseType: PurchaseType;
   typeId?: string | null;
+  sourcePurchaseId?: string | null;
 }
 
 export interface BatchInfo {

@@ -116,7 +116,9 @@ app.whenReady().then(async () => {
       now,
     );
 
-    db.prepare(`DELETE FROM _migrations WHERE name='multi_rate_master_v1'`).run();
+    db.prepare(
+      `DELETE FROM _migrations WHERE name='multi_rate_master_v1'`,
+    ).run();
     db.close();
     db = loadDb();
 
@@ -203,7 +205,11 @@ app.whenReady().then(async () => {
     registerRateHandlers();
     const invoke = async (channel, ...args) => {
       const handler = ipcMain._invokeHandlers?.get(channel);
-      assert.equal(typeof handler, "function", `${channel} should be registered`);
+      assert.equal(
+        typeof handler,
+        "function",
+        `${channel} should be registered`,
+      );
       return handler({}, ...args);
     };
 
@@ -234,53 +240,88 @@ app.whenReady().then(async () => {
       "SQLite bulk results should be returned in final sort order",
     );
     assert.equal(
-      db.prepare(`SELECT id FROM rate_types WHERE licenseId=? AND isDefault=1`).get("legacy-license").id,
+      db
+        .prepare(`SELECT id FROM rate_types WHERE licenseId=? AND isDefault=1`)
+        .get("legacy-license").id,
       originalDefaultId,
       "no supplied SQLite default must preserve the existing default",
     );
     assert.equal(
-      db.prepare(`SELECT COUNT(*) AS count FROM rate_types WHERE code IN ('BULK_ALPHA','BULK_BETA') AND isSynced=0`).get().count,
+      db
+        .prepare(
+          `SELECT COUNT(*) AS count FROM rate_types WHERE code IN ('BULK_ALPHA','BULK_BETA') AND isSynced=0`,
+        )
+        .get().count,
       2,
       "SQLite bulk-created rows must be dirty for normal Rate Type sync",
     );
 
     const switchedBulk = await invoke("rate-type:create-bulk", {
       licenseId: "legacy-license",
-      rows: [{
-        name: "Bulk Default",
-        code: "BULK_DEFAULT",
-        sortOrder: 50,
-        isActive: true,
-        isDefault: true,
-      }],
+      rows: [
+        {
+          name: "Bulk Default",
+          code: "BULK_DEFAULT",
+          sortOrder: 50,
+          isActive: true,
+          isDefault: true,
+        },
+      ],
     });
     assert.equal(switchedBulk.success, true, switchedBulk.error);
     assert.equal(
-      db.prepare(`SELECT code FROM rate_types WHERE licenseId=? AND isDefault=1`).get("legacy-license").code,
+      db
+        .prepare(
+          `SELECT code FROM rate_types WHERE licenseId=? AND isDefault=1`,
+        )
+        .get("legacy-license").code,
       "BULK_DEFAULT",
       "one supplied SQLite default must switch atomically",
     );
     assert.equal(
-      (await invoke("rate-type:set-default", { licenseId: "legacy-license", id: originalDefaultId })).success,
+      (
+        await invoke("rate-type:set-default", {
+          licenseId: "legacy-license",
+          id: originalDefaultId,
+        })
+      ).success,
       true,
     );
 
-    db.prepare(`
+    db.prepare(
+      `
       CREATE TEMP TRIGGER force_rate_bulk_failure
       BEFORE INSERT ON rate_types
       WHEN NEW.code='FAIL_BULK'
       BEGIN SELECT RAISE(ABORT, 'forced bulk failure'); END
-    `).run();
+    `,
+    ).run();
     const failedBulk = await invoke("rate-type:create-bulk", {
       licenseId: "legacy-license",
       rows: [
-        { name: "Before Failure", code: "BEFORE_FAILURE", sortOrder: 60, isActive: true, isDefault: false },
-        { name: "Forced Failure", code: "FAIL_BULK", sortOrder: 70, isActive: true, isDefault: false },
+        {
+          name: "Before Failure",
+          code: "BEFORE_FAILURE",
+          sortOrder: 60,
+          isActive: true,
+          isDefault: false,
+        },
+        {
+          name: "Forced Failure",
+          code: "FAIL_BULK",
+          sortOrder: 70,
+          isActive: true,
+          isDefault: false,
+        },
       ],
     });
     assert.equal(failedBulk.success, false);
     assert.equal(
-      db.prepare(`SELECT COUNT(*) AS count FROM rate_types WHERE code IN ('BEFORE_FAILURE','FAIL_BULK')`).get().count,
+      db
+        .prepare(
+          `SELECT COUNT(*) AS count FROM rate_types WHERE code IN ('BEFORE_FAILURE','FAIL_BULK')`,
+        )
+        .get().count,
       0,
       "a SQLite failure must roll back every inserted row",
     );
@@ -288,36 +329,51 @@ app.whenReady().then(async () => {
 
     const crossedLicense = await invoke("rate-type:create-bulk", {
       licenseId: "legacy-license",
-      rows: [{
-        licenseId: "another-license",
-        name: "Crossed License",
-        code: "CROSSED_LICENSE",
-        sortOrder: 80,
-        isActive: true,
-        isDefault: false,
-      }],
+      rows: [
+        {
+          licenseId: "another-license",
+          name: "Crossed License",
+          code: "CROSSED_LICENSE",
+          sortOrder: 80,
+          isActive: true,
+          isDefault: false,
+        },
+      ],
     });
     assert.equal(crossedLicense.success, false);
     assert.match(crossedLicense.error, /cannot cross license boundaries/i);
     assert.equal(
-      db.prepare(`SELECT COUNT(*) AS count FROM rate_types WHERE code='CROSSED_LICENSE'`).get().count,
+      db
+        .prepare(
+          `SELECT COUNT(*) AS count FROM rate_types WHERE code='CROSSED_LICENSE'`,
+        )
+        .get().count,
       0,
     );
 
     const invalidRuntimeBulk = await invoke("rate-type:create-bulk", {
       licenseId: "legacy-license",
-      rows: [{
-        name: "Invalid Runtime Row",
-        code: "INVALID_RUNTIME_ROW",
-        sortOrder: null,
-        isActive: true,
-        isDefault: false,
-      }],
+      rows: [
+        {
+          name: "Invalid Runtime Row",
+          code: "INVALID_RUNTIME_ROW",
+          sortOrder: null,
+          isActive: true,
+          isDefault: false,
+        },
+      ],
     });
     assert.equal(invalidRuntimeBulk.success, false);
-    assert.match(invalidRuntimeBulk.error, /order must be a non-negative whole number/i);
+    assert.match(
+      invalidRuntimeBulk.error,
+      /order must be a non-negative whole number/i,
+    );
     assert.equal(
-      db.prepare(`SELECT COUNT(*) AS count FROM rate_types WHERE code='INVALID_RUNTIME_ROW'`).get().count,
+      db
+        .prepare(
+          `SELECT COUNT(*) AS count FROM rate_types WHERE code='INVALID_RUNTIME_ROW'`,
+        )
+        .get().count,
       0,
       "runtime bulk validation must reject coercible invalid sort orders",
     );
@@ -371,14 +427,16 @@ app.whenReady().then(async () => {
     assert.equal(bulkDefaults.success, true, bulkDefaults.error);
     assert.deepEqual(
       db
-        .prepare(`
+        .prepare(
+          `
           SELECT licenseId, COUNT(*) AS count
           FROM rate_types
           WHERE licenseId IN ('sync-license-a', 'sync-license-b')
             AND isDefault=1 AND isActive=1 AND deletedAt IS NULL
           GROUP BY licenseId
           ORDER BY licenseId
-        `)
+        `,
+        )
         .all(),
       [
         { licenseId: "sync-license-a", count: 1 },
@@ -414,13 +472,16 @@ app.whenReady().then(async () => {
       true,
     );
     assert.equal(
-      db.prepare(`SELECT salePrice FROM products WHERE id='legacy-product'`).get()
-        .salePrice,
+      db
+        .prepare(`SELECT salePrice FROM products WHERE id='legacy-product'`)
+        .get().salePrice,
       70,
     );
     assert.equal(
       db
-        .prepare(`SELECT salePrice FROM product_batches WHERE id='legacy-batch'`)
+        .prepare(
+          `SELECT salePrice FROM product_batches WHERE id='legacy-batch'`,
+        )
         .get().salePrice,
       70,
       "batch mirror should fall back to the product default",
@@ -438,7 +499,9 @@ app.whenReady().then(async () => {
     );
     assert.equal(
       db
-        .prepare(`SELECT salePrice FROM product_batches WHERE id='legacy-batch'`)
+        .prepare(
+          `SELECT salePrice FROM product_batches WHERE id='legacy-batch'`,
+        )
         .get().salePrice,
       68,
     );
@@ -455,7 +518,9 @@ app.whenReady().then(async () => {
     );
     assert.equal(
       db
-        .prepare(`SELECT salePrice FROM product_batches WHERE id='legacy-batch'`)
+        .prepare(
+          `SELECT salePrice FROM product_batches WHERE id='legacy-batch'`,
+        )
         .get().salePrice,
       70,
     );
@@ -599,38 +664,38 @@ app.whenReady().then(async () => {
     assert.equal(savedSaleItem.rateTypeName, "Wholesale");
     assert.equal(savedSaleItem.rate, 72);
     const updatedSale = await invoke("sale:update", {
-          id: sale.saleId,
-          header: {
-            licenseId: "legacy-license",
-            saleType: "CASH",
-            saleDate: now,
-            entryTime: now,
-            discount: 0,
-          },
-          items: [
-            {
-              productId: "legacy-product",
-              batchId: currentPurchasedItem.batchId,
-              quantity: 1,
-              unit: "NOS",
-              rate: 72,
-              salePrice: 72,
-              taxPercent: "NT",
-              taxAmount: 0,
-              discount: 0,
-              discountType: "ABS",
-              profit: 0,
-              totalCost: 72,
-              billedValue: 72,
-              effectiveUnitValue: 72,
-              lineNo: 1,
-              rateTypeId: wholesale.id,
-              rateTypeCode: "WHOLESALE",
-              rateTypeName: "Wholesale",
-              rateSource: "MASTER",
-            },
-          ],
-        });
+      id: sale.saleId,
+      header: {
+        licenseId: "legacy-license",
+        saleType: "CASH",
+        saleDate: now,
+        entryTime: now,
+        discount: 0,
+      },
+      items: [
+        {
+          productId: "legacy-product",
+          batchId: currentPurchasedItem.batchId,
+          quantity: 1,
+          unit: "NOS",
+          rate: 72,
+          salePrice: 72,
+          taxPercent: "NT",
+          taxAmount: 0,
+          discount: 0,
+          discountType: "ABS",
+          profit: 0,
+          totalCost: 72,
+          billedValue: 72,
+          effectiveUnitValue: 72,
+          lineNo: 1,
+          rateTypeId: wholesale.id,
+          rateTypeCode: "WHOLESALE",
+          rateTypeName: "Wholesale",
+          rateSource: "MASTER",
+        },
+      ],
+    });
     assert.equal(updatedSale.success, true, updatedSale.error);
 
     const customSale = await invoke(
@@ -712,10 +777,22 @@ app.whenReady().then(async () => {
     assert.equal(savedReturnItem.rate, 72);
     assert.equal(savedReturnItem.rateTypeName, "Wholesale");
 
+    db.prepare(
+      `UPDATE purchases
+       SET supplierId=?, supplierName=?
+       WHERE id=?`,
+    ).run(
+      "legacy-return-supplier",
+      "Legacy Return Supplier",
+      purchase.purchaseId,
+    );
     const purchaseReturn = await invoke("purchase-return:create", {
       header: {
         licenseId: "legacy-license",
         userId: "test-user",
+        purchaseId: purchase.purchaseId,
+        supplierId: "legacy-return-supplier",
+        supplierName: "Legacy Return Supplier",
         purchaseType: "CASH",
         returnDate: now,
         entryTime: now,
@@ -723,6 +800,7 @@ app.whenReady().then(async () => {
       },
       items: [
         {
+          purchaseItemId: currentPurchasedItem.id,
           productId: "legacy-product",
           batchId: currentPurchasedItem.batchId,
           quantity: 1,
@@ -743,12 +821,28 @@ app.whenReady().then(async () => {
       ],
     });
     assert.equal(purchaseReturn.success, true, purchaseReturn.error);
+    const savedPurchaseReturn = db
+      .prepare(`SELECT purchaseId FROM purchase_returns WHERE id=?`)
+      .get(purchaseReturn.returnId);
     assert.equal(
-      db
-        .prepare(`SELECT sellingRatesJson FROM purchase_return_items WHERE returnId=?`)
-        .get(purchaseReturn.returnId).sellingRatesJson,
-      sellingRatesJson,
+      savedPurchaseReturn.purchaseId,
+      purchase.purchaseId,
+      "purchase returns must preserve their source Purchase",
     );
+
+    const savedPurchaseReturnItem = db
+      .prepare(
+        `SELECT purchaseItemId, sellingRatesJson
+         FROM purchase_return_items
+         WHERE returnId=?`,
+      )
+      .get(purchaseReturn.returnId);
+    assert.equal(
+      savedPurchaseReturnItem.purchaseItemId,
+      currentPurchasedItem.id,
+      "purchase return items must preserve their source Purchase item",
+    );
+    assert.equal(savedPurchaseReturnItem.sellingRatesJson, sellingRatesJson);
     assert.equal(
       db
         .prepare(
@@ -925,8 +1019,9 @@ app.whenReady().then(async () => {
       true,
     );
     assert.equal(
-      db.prepare(`SELECT salePrice FROM products WHERE id='legacy-product'`).get()
-        .salePrice,
+      db
+        .prepare(`SELECT salePrice FROM products WHERE id='legacy-product'`)
+        .get().salePrice,
       77,
     );
     assert.equal(
