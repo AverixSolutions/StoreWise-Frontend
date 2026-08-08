@@ -107,7 +107,7 @@ import {
   webSaveOfferTargetProducts,
   webToggleOffer,
 } from "./offers";
-// â”€â”€ purchase imports â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── purchase imports ──────────────────────────────────────────────────────────
 import {
   webListPurchases,
   webGetPurchaseFull,
@@ -165,7 +165,7 @@ import {
   webGetCustomerDistincts,
 } from "./customers";
 
-// â”€â”€ purchase return imports â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── purchase return imports ───────────────────────────────────────────────────
 import {
   webCreatePurchaseReturn,
   webUpdatePurchaseReturn,
@@ -180,7 +180,7 @@ import {
   webDeletePurchaseReturnHold,
 } from "./purchaseReturns";
 
-// â”€â”€ sale return imports â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── sale return imports ───────────────────────────────────────────────────────
 import {
   webCreateSaleReturn,
   webUpdateSaleReturn,
@@ -247,7 +247,7 @@ export const webPlatform: PlatformAPI = {
   getDashboardOverview: (licenseId: string, days = 7) =>
     webGetDashboardOverview(licenseId, days),
 
-  // â”€â”€ Products â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Products ──────────────────────────────────────────────────────────────
 
   getNextCode: (licenseId: string) => webGetNextCode(licenseId),
 
@@ -301,7 +301,7 @@ export const webPlatform: PlatformAPI = {
   deleteBatch: (batchId: string) => webDeleteBatch(batchId),
   rebuildProductStock: (productId: string) => webRebuildProductStock(productId),
 
-  // â”€â”€ Categories â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Categories ────────────────────────────────────────────────────────────
   listCategories: (licenseId: string): Promise<CategoryListResult> =>
     webListCategories(licenseId),
   saveCategory: (
@@ -310,13 +310,13 @@ export const webPlatform: PlatformAPI = {
   deleteCategory: (id: string): Promise<MutationResult> =>
     webDeleteCategory(id),
 
-  // â”€â”€ Brands â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Brands ────────────────────────────────────────────────────────────────
   listBrands: (licenseId: string): Promise<BrandListResult> =>
     webListBrands(licenseId),
   saveBrand: (payload: BrandSavePayload): Promise<any> => webSaveBrand(payload),
   deleteBrand: (id: string): Promise<MutationResult> => webDeleteBrand(id),
 
-  // â”€â”€ Units â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Units ────────────────────────────────────────────────────────────────
   listUnits: (licenseId: string): Promise<UnitListResult> =>
     webListUnits(licenseId),
   saveUnit: (payload: UnitSavePayload): Promise<UnitMutationResult> =>
@@ -338,7 +338,7 @@ export const webPlatform: PlatformAPI = {
     webListProductBatchRates(licenseId, productId, batchId),
   saveProductBatchRates: (payload) => webSaveProductBatchRates(payload),
 
-  // â”€â”€ Tax â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Tax ───────────────────────────────────────────────────────────────────
   listTaxCategories: (licenseId: string) => webListTaxCategories(licenseId),
   saveTaxCategory: (payload) => webSaveTaxCategory(payload),
   deleteTaxCategory: (id: string) => webDeleteTaxCategory(id),
@@ -346,7 +346,7 @@ export const webPlatform: PlatformAPI = {
   listDefaultableAccounts: (licenseId: string) =>
     webListDefaultableAccounts(licenseId),
 
-  // â”€â”€ Shop Settings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Shop Settings ─────────────────────────────────────────────────────────
   getShopSettings: async (licenseId: string) => {
     ensureOnlineSyncHook();
     return getWebShopSettings(licenseId);
@@ -381,7 +381,7 @@ export const webPlatform: PlatformAPI = {
   listOfferTargetProducts: (offerId) => webListOfferTargetProducts(offerId),
   saveOfferTargetProducts: (payload) => webSaveOfferTargetProducts(payload),
 
-  // â”€â”€ Purchases â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Purchases ─────────────────────────────────────────────────────────────
   createPurchase: (
     purchase: PurchaseCreatePayload,
     items: PurchaseItemInput[],
@@ -456,7 +456,7 @@ export const webPlatform: PlatformAPI = {
     updates: BulkPriceUpdate[],
   ): Promise<MutationResult> => webBulkUpdateProductPrices(updates),
 
-  // â”€â”€ Purchase Returns â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Purchase Returns ──────────────────────────────────────────────────────
   createPurchaseReturn: (payload) => webCreatePurchaseReturn(payload),
   updatePurchaseReturn: (payload) => webUpdatePurchaseReturn(payload),
   deletePurchaseReturn: (id) => webDeletePurchaseReturn(id),
@@ -473,7 +473,7 @@ export const webPlatform: PlatformAPI = {
   getPurchaseReturnHold: (id) => webGetPurchaseReturnHold(id),
   deletePurchaseReturnHold: (id) => webDeletePurchaseReturnHold(id),
 
-  // â”€â”€ Sales â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Sales ─────────────────────────────────────────────────────────────────
   createSale: (sale, items) => webCreateSale(sale, items),
   updateSale: (payload) => webUpdateSale(payload),
   deleteSale: (id) => webDeleteSale(id),
@@ -486,7 +486,7 @@ export const webPlatform: PlatformAPI = {
   getSaleHold: (id) => webGetSaleHold(id),
   deleteSaleHold: (id) => webDeleteSaleHold(id),
 
-  // â”€â”€ Sale Returns â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Sale Returns ──────────────────────────────────────────────────────────
   createSaleReturn: (payload) => webCreateSaleReturn(payload),
   updateSaleReturn: (payload) => webUpdateSaleReturn(payload),
   deleteSaleReturn: (id) => webDeleteSaleReturn(id),
@@ -502,7 +502,7 @@ export const webPlatform: PlatformAPI = {
   getSaleReturnHold: (id) => webGetSaleReturnHold(id),
   deleteSaleReturnHold: (id) => webDeleteSaleReturnHold(id),
 
-  // â”€â”€ Quotations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Quotations ────────────────────────────────────────────────────────────
   createQuotation: (header, items) => webCreateQuotation(header, items),
   updateQuotation: (payload) => webUpdateQuotation(payload),
   deleteQuotation: (id) => webDeleteQuotation(id),
@@ -515,6 +515,6 @@ export const webPlatform: PlatformAPI = {
   markQuotationConverted: (quotationId, saleId) =>
     webMarkQuotationConverted(quotationId, saleId),
 
-  // â”€â”€ Print â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Print ─────────────────────────────────────────────────────────────────
   getPrinters: async () => [],
 };

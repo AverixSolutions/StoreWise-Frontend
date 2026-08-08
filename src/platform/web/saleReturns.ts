@@ -18,7 +18,7 @@ import type {
 } from "../types";
 import { getActiveToken } from "@/lib/session/runtimeSession";
 
-// â”€â”€ API helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── API helper ────────────────────────────────────────────────────────────────
 
 const API_BASE =
   process.env.NEXT_PUBLIC_KYNFLOW_API_BASE ||
@@ -58,7 +58,7 @@ function triggerSaleReturnPull() {
     .catch(() => {});
 }
 
-// â”€â”€ READS via API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── READS via API ─────────────────────────────────────────────────────────────
 
 export async function webListSaleReturns(
   licenseId: string,
@@ -119,7 +119,7 @@ export async function webPeekNextSaleReturnSlNo(
   }
 }
 
-// â”€â”€ WRITES via API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── WRITES via API ────────────────────────────────────────────────────────────
 
 export async function webCreateSaleReturn(payload: {
   header: SaleReturnCreatePayload;
@@ -169,7 +169,7 @@ export async function webDeleteSaleReturn(
   }
 }
 
-// â”€â”€ HOLDS â€” not supported in backend (no SaleReturnHold schema) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── HOLDS — not supported in backend (no SaleReturnHold schema) ───────────────
 
 export async function webSaveSaleReturnHold(
   _payload: SaleReturnHoldSavePayload,

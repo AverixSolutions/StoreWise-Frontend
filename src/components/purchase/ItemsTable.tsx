@@ -321,13 +321,13 @@ export default function ItemsTable({
               </th>
             ) : null}
 
-            {/* Hidden on mobile/tablet â€” show from lg breakpoint */}
+            {/* Hidden on mobile/tablet — show from lg breakpoint */}
             {uiSettings.showLineType ? (
               <th className="hidden min-w-[80px] px-2.5 py-2 text-center text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80 lg:table-cell">
                 Type
               </th>
             ) : null}
-            {/* Hidden on mobile â€” show from md breakpoint */}
+            {/* Hidden on mobile — show from md breakpoint */}
             {uiSettings.showMfgDate ? (
               <th className="hidden min-w-[120px] px-2.5 py-2 text-center text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80 md:table-cell">
                 MFG

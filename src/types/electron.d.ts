@@ -351,7 +351,7 @@ declare global {
         batchId: string,
       ) => Promise<{ success: boolean; error?: string }>;
 
-      // â”€â”€â”€ Purchases â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      // ─── Purchases ──────────────────────────────────────────────────────────
 
       createPurchase: (
         purchase: any, // header may include typeId?: string | null
@@ -386,7 +386,7 @@ declare global {
         records: Array<PurchaseRecord & { typeId?: string | null }>,
       ) => Promise<{ success: boolean; upserted: number }>;
 
-      // â”€â”€â”€ Sales â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      // ─── Sales ──────────────────────────────────────────────────────────────
 
       createSale: (
         header: any, // may include typeId?: string | null
@@ -428,9 +428,9 @@ declare global {
         records: Array<SaleRecord & { typeId?: string | null }>,
       ) => Promise<{ success: boolean; upserted: number }>;
 
-      // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      // ────────────────────────────────────────────────────────────────────────
 
-      // â”€â”€â”€ Purchase Returns â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      // ─── Purchase Returns ──────────────────────────────────────────────────────
       createPurchaseReturn: (payload: {
         header: any;
         items: any[];
@@ -658,8 +658,8 @@ declare global {
         settings?: {
           licenseId: string;
           shopName: string;
-          logoDataUrl?: string | null; // desktop only â€” base64 in SQLite
-          logoUrl?: string | null; // web only â€” R2 public URL
+          logoDataUrl?: string | null; // desktop only — base64 in SQLite
+          logoUrl?: string | null; // web only — R2 public URL
           addressLine1?: string | null;
           addressLine2?: string | null;
           city?: string | null;
@@ -754,7 +754,7 @@ declare global {
         params?: { q?: string | null },
       ) => Promise<{ count: number }>;
 
-      // â”€â”€â”€ Customers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      // ─── Customers ──────────────────────────────────────────────────────────
       listCustomers: (
         licenseId: string,
         filters?: {
@@ -1024,7 +1024,7 @@ declare global {
         records: any[],
       ) => Promise<{ success: boolean; upserted: number }>;
 
-      // â”€â”€â”€ Customer Transaction Sync â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      // ─── Customer Transaction Sync ──────────────────────────────────────────
       getDirtyCustomerTransactions: (
         licenseId: string,
         limit?: number,

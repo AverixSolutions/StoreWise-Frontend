@@ -371,7 +371,7 @@ export default function ItemTableRow({
               </span>
               {Number(r.offerDiscountAmount || 0) > 0 && (
                 <span className="text-[10px] font-semibold text-emerald-600">
-                  Saved â‚¹{round2(r.offerDiscountAmount || 0).toFixed(2)}
+                  Saved ₹{round2(r.offerDiscountAmount || 0).toFixed(2)}
                 </span>
               )}
             </div>
@@ -482,7 +482,7 @@ export default function ItemTableRow({
         </>
       ) : null}
 
-      {/* Sales rate type â€” placed immediately before Rate */}
+      {/* Sales rate type — placed immediately before Rate */}
       {mode === "SALE" || mode === "QUOTATION" ? (
         <td className="min-w-[132px] max-w-[148px] px-2 py-2">
           {mode === "SALE" || mode === "QUOTATION" ? (
@@ -696,7 +696,7 @@ export default function ItemTableRow({
                   step="0.01"
                   min={0}
                   value={amount == null ? "" : round2(amount)}
-                  placeholder="â€”"
+                  placeholder="—"
                   inputMode="decimal"
                   data-return-rate={`${idx}:${returnRateIndex}`}
                   onFocus={(event) => event.currentTarget.select()}
@@ -788,7 +788,7 @@ export default function ItemTableRow({
                   }
                   title="Amount"
                 >
-                  â‚¹
+                  ₹
                 </button>
                 <button
                   type="button"
@@ -809,7 +809,7 @@ export default function ItemTableRow({
               <div className="relative flex-1 min-w-[80px]">
                 {r.discountType === "ABS" ? (
                   <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[11px] text-gray-500">
-                    â‚¹
+                    ₹
                   </span>
                 ) : (
                   <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-gray-500">
@@ -859,7 +859,7 @@ export default function ItemTableRow({
                       onUpdateRow(idx, { discountType: "ABS" });
                       return;
                     }
-                    if (e.key === "â‚¹" || e.key === "$") {
+                    if (e.key === "₹" || e.key === "$") {
                       e.preventDefault();
                       onUpdateRow(idx, { discountType: "ABS" });
                       return;
@@ -1143,7 +1143,7 @@ export default function ItemTableRow({
           {/* Unit Billed */}
           <td className="px-2.5 py-2 min-w-[110px] hidden lg:table-cell text-center">
             <span className="inline-flex items-center px-2 py-1 rounded-md bg-cyan-50 text-cyan-700 ring-1 ring-cyan-200/70 text-xs font-semibold">
-              â‚¹{round2(r.unitBilled || 0).toFixed(2)}
+              ₹{round2(r.unitBilled || 0).toFixed(2)}
             </span>
           </td>
         </>
@@ -1154,7 +1154,7 @@ export default function ItemTableRow({
         className={`px-2.5 py-2 min-w-[90px] sticky [right:var(--actw)] ${stickyRowBg} z-40 border-l border-slate-300 text-center transition-colors`}
       >
         <span className="inline-flex items-center px-2 py-1 rounded-md bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200/60 text-xs font-semibold">
-          â‚¹{round2(r.billedValue || 0).toFixed(2)}
+          ₹{round2(r.billedValue || 0).toFixed(2)}
         </span>
       </td>
 

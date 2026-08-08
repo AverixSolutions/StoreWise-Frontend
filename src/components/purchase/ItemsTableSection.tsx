@@ -121,7 +121,7 @@ export default function ItemsTableSection({
         style={{ background: "#1e3a5f" }}
       >
         <div className="flex items-center gap-2.5">
-          {/* Change 2 â€” Mobile "Bill Details" button in header */}
+          {/* Change 2 — Mobile "Bill Details" button in header */}
           {onOpenMobileSheet && (
             <button
               onClick={onOpenMobileSheet}
@@ -183,7 +183,7 @@ export default function ItemsTableSection({
           </div>
         </div>
 
-        {/* Change 1 â€” Responsive toolbar with wrapped buttons and hidden labels */}
+        {/* Change 1 — Responsive toolbar with wrapped buttons and hidden labels */}
         <div className="flex items-center gap-1.5 flex-wrap justify-end">
           {barcodeEnabled && printBarcodesSlot}
           {offersSlot}
@@ -303,9 +303,9 @@ export default function ItemsTableSection({
 
       {/* Table container */}
       <div className="flex-1 min-h-0 overflow-auto" data-grid-scroll-container>
-        {/* Horizontal scroll hint â€” mobile only */}
+        {/* Horizontal scroll hint — mobile only */}
         <div className="md:hidden text-[10px] text-slate-400 px-3 py-1 bg-slate-50 border-b">
-          â† Scroll horizontally for more columns
+          ← Scroll horizontally for more columns
         </div>
         <ItemsTable
           rows={rows}
@@ -325,7 +325,7 @@ export default function ItemsTableSection({
         />
       </div>
 
-      {/* Change 3 â€” Compact footer on mobile */}
+      {/* Change 3 — Compact footer on mobile */}
       <div className="px-5 py-3 border-t border-slate-200 bg-slate-50 flex-shrink-0 z-10">
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
           <div className="flex items-center gap-2 text-xs text-slate-500">
@@ -342,7 +342,7 @@ export default function ItemsTableSection({
                 Sub Total
               </div>
               <div className="font-semibold text-slate-700">
-                â‚¹ {subTotal.toFixed(2)}
+                ₹ {subTotal.toFixed(2)}
               </div>
             </div>
 
@@ -352,7 +352,7 @@ export default function ItemsTableSection({
                   Offer Savings
                 </div>
                 <div className="font-semibold text-emerald-600">
-                  â‚¹ {Number(totalOfferSavings ?? 0).toFixed(2)}
+                  ₹ {Number(totalOfferSavings ?? 0).toFixed(2)}
                 </div>
               </div>
             )}
@@ -362,7 +362,7 @@ export default function ItemsTableSection({
                 Bill Discount
               </div>
               <div className="font-semibold text-rose-500">
-                - â‚¹ {Number(headerDiscount ?? 0).toFixed(2)}
+                - ₹ {Number(headerDiscount ?? 0).toFixed(2)}
               </div>
             </div>
 
@@ -371,7 +371,7 @@ export default function ItemsTableSection({
                 Grand Total
               </div>
               <div className="font-bold text-[#1e3a5f] text-base sm:text-lg">
-                â‚¹ {Number(grandTotal).toFixed(2)}
+                ₹ {Number(grandTotal).toFixed(2)}
               </div>
             </div>
           </div>
