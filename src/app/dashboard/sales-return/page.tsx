@@ -146,6 +146,7 @@ function SalesReturnPageInner() {
     null,
   );
   const sourceDeepLinkLoaded = useRef<string | null>(null);
+  const initialItemFocusDone = useRef(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingSlNo, setEditingSlNo] = useState<number | null>(null);
   const [openingId, setOpeningId] = useState<string | undefined>();
@@ -182,6 +183,20 @@ function SalesReturnPageInner() {
     setUserId(localStorage.getItem("userName") || "U1");
     setUiSettings(loadSalesReturnUiSettings());
   }, []);
+
+  useEffect(() => {
+    if (!isClient || openId || deepLinkSaleId || initialItemFocusDone.current) {
+      return;
+    }
+
+    initialItemFocusDone.current = true;
+    const timer = window.setTimeout(
+      () => focusSalesReturnCell(0, "product"),
+      80,
+    );
+    return () => window.clearTimeout(timer);
+  }, [isClient, openId, deepLinkSaleId]);
+
   const loadCustomers = useCallback(async () => {
     const res = await platform.listCustomers?.(licenseId, {
       q: "",
@@ -754,39 +769,17 @@ function SalesReturnPageInner() {
             : r,
         ),
       );
-      if (batches.length === 1) {
-        const b = batches[0];
-        const batchRatePatch = await resolveReturnRatePatch(
-          productId,
-          b.id,
-          b.salePrice ?? product.salePrice,
-        );
-        setRows((prev) =>
-          prev.map((r, i) =>
-            i === index
-              ? (calcRow({
-                  ...r,
-                  ...base,
-                  batchId: b.id,
-                  barcode: barcodeEnabled ? b.barcode || "" : "",
-                  batchNo: b.batchNo || "",
-                  purchaseBatchNo: b.purchaseBatchNo || b.batchNo || "",
-                  mfgDate: b.mfgDate || null,
-                  expiryDate: b.expiryDate || null,
-                  mrp: b.mrp ?? null,
-                  ...batchRatePatch,
-                } as ItemRow) as SalesReturnItemRow)
-              : r,
-          ),
-        );
-      } else if (batches.length > 1) {
+      if (batches.length > 0) {
         setBatchPicker({
           rowIndex: index,
           productId,
           batches,
           productName: product.name,
         });
+        return;
       }
+
+      window.setTimeout(() => focusSalesReturnCell(index, "quantity"), 20);
     },
     [sourceSaleId, getBatches, barcodeEnabled, resolveReturnRatePatch],
   );
@@ -1061,13 +1054,15 @@ function SalesReturnPageInner() {
       setBillDetailsOpen(true);
     }
     window.setTimeout(() => {
-      const target =
-        document.querySelector<HTMLElement>(
-          '[data-sr-header-focus="customer"]',
-        ) ||
-        document.querySelector<HTMLElement>(
-          '[data-sr-header-focus="sourceSale"]',
-        );
+      const target = Array.from(
+        document.querySelectorAll<HTMLElement>(
+          '[data-sr-header-focus="customer"], [data-sr-header-focus="sourceSale"]',
+        ),
+      ).find(
+        (element) =>
+          !element.hasAttribute("disabled") &&
+          element.getClientRects().length > 0,
+      );
       target?.focus({ preventScroll: true });
       target?.scrollIntoView({ block: "nearest", inline: "nearest" });
     }, 0);
@@ -1441,7 +1436,16 @@ function SalesReturnPageInner() {
       />
       <BatchSelectModal
         isOpen={Boolean(batchPicker)}
-        onClose={() => setBatchPicker(null)}
+        onClose={() => {
+          const rowIndex = batchPicker?.rowIndex;
+          setBatchPicker(null);
+          if (rowIndex != null) {
+            window.setTimeout(
+              () => focusSalesReturnCell(rowIndex, "product"),
+              20,
+            );
+          }
+        }}
         batches={batchPicker?.batches || []}
         productName={batchPicker?.productName}
         nextBarcode=""

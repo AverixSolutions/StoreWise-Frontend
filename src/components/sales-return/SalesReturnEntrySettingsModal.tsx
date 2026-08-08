@@ -10,18 +10,13 @@ import {
   Settings,
   X,
 } from "lucide-react";
-import { platform } from "@/platform";
-import SearchableDropdown from "@/components/ui/SearchableDropdown";
-import SalesReturnPrintCustomizationPanel from "@/components/print/SalesReturnPrintCustomizationPanel";
-import { getTaskPref, setTaskPref } from "@/lib/print/printPreferences";
 import {
   DEFAULT_SALES_RETURN_UI_SETTINGS,
   type SalesReturnUiSettings,
 } from "./salesReturnUiSettings";
+import SalesReturnPrintSettingsPanel from "./SalesReturnPrintSettingsPanel";
 
 type Tab = "bill" | "columns" | "print";
-type PrinterInfo = { name: string; displayName: string; isDefault: boolean };
-
 type ToggleDefinition =
   | {
       group: "billDetails";
@@ -76,6 +71,12 @@ const billToggles: Extract<ToggleDefinition, { group: "billDetails" }>[] = [
 ];
 
 const columnToggles: Extract<ToggleDefinition, { group: "itemColumns" }>[] = [
+  {
+    group: "itemColumns",
+    key: "unit",
+    label: "Unit",
+    description: "Show the Sales-style unit picker when needed.",
+  },
   {
     group: "itemColumns",
     key: "tax",
@@ -178,29 +179,10 @@ export default function SalesReturnEntrySettingsModal({
 }) {
   const [activeTab, setActiveTab] = useState<Tab>("bill");
   const [draft, setDraft] = useState(value);
-  const [printers, setPrinters] = useState<PrinterInfo[]>([]);
-  const [printPref, setPrintPrefState] = useState(() =>
-    getTaskPref("salesReturn"),
-  );
 
   useEffect(() => {
     if (!isOpen) return;
     setDraft(value);
-    setPrintPrefState(getTaskPref("salesReturn"));
-
-    let cancelled = false;
-    platform
-      .getPrinters?.()
-      .then((rows) => {
-        if (!cancelled) setPrinters((rows || []) as PrinterInfo[]);
-      })
-      .catch(() => {
-        if (!cancelled) setPrinters([]);
-      });
-
-    return () => {
-      cancelled = true;
-    };
   }, [isOpen, value]);
 
   useEffect(() => {
@@ -220,23 +202,8 @@ export default function SalesReturnEntrySettingsModal({
 
   const definitions = activeTab === "bill" ? billToggles : columnToggles;
 
-  function setPref(patch: Partial<typeof printPref>) {
-    const next = { ...printPref, ...patch };
-    setPrintPrefState(next);
-    setTaskPref("salesReturn", patch);
-  }
-
   function resetActiveTab() {
-    if (activeTab === "print") {
-      const next = {
-        printer: null,
-        preview: true,
-        paperSize: "thermal" as const,
-      };
-      setPrintPrefState(next);
-      setTaskPref("salesReturn", next);
-      return;
-    }
+    if (activeTab === "print") return;
 
     setDraft((current) => {
       const next = {
@@ -373,98 +340,7 @@ export default function SalesReturnEntrySettingsModal({
           </div>
 
           {activeTab === "print" ? (
-            <div className="space-y-3">
-              <section className="rounded-xl border border-slate-200 bg-white p-3">
-                <h4 className="text-xs font-semibold text-slate-800">
-                  Print destination
-                </h4>
-                <div className="mt-2 grid gap-2 sm:grid-cols-3">
-                  <div>
-                    <label className="mb-1 block text-[10px] font-semibold text-slate-600">
-                      Printer
-                    </label>
-                    <SearchableDropdown
-                      value={printPref.printer || ""}
-                      onChange={(printer) =>
-                        setPref({ printer: printer || null })
-                      }
-                      options={[
-                        { value: "", label: "System default printer" },
-                        ...printers.map((printer) => ({
-                          value: printer.name,
-                          label: `${printer.displayName || printer.name}${
-                            printer.isDefault ? " (Default)" : ""
-                          }`,
-                        })),
-                      ]}
-                      placeholder="System default printer"
-                      autoOpenOnFocus
-                      controlClassName="h-9 text-xs"
-                      menuClassName="z-[1900] max-h-56 text-xs"
-                      buttonProps={{ "aria-label": "Sales Return printer" }}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-1 block text-[10px] font-semibold text-slate-600">
-                      Paper
-                    </label>
-                    <div className="grid grid-cols-2 rounded-lg bg-slate-100 p-1">
-                      {(["A4", "thermal"] as const).map((paperSize) => (
-                        <button
-                          key={paperSize}
-                          type="button"
-                          onClick={() => setPref({ paperSize })}
-                          className={`h-7 rounded-md text-[10px] font-semibold transition ${
-                            printPref.paperSize === paperSize
-                              ? "bg-white text-slate-900 shadow-sm"
-                              : "text-slate-500 hover:text-slate-700"
-                          }`}
-                        >
-                          {paperSize === "thermal" ? "80mm" : "A4"}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="mb-1 block text-[10px] font-semibold text-slate-600">
-                      Preview
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setPref({ preview: !printPref.preview })}
-                      className={`flex h-9 w-full items-center justify-between rounded-lg border px-2.5 text-[10px] font-semibold transition ${
-                        printPref.preview
-                          ? "border-cyan-300 bg-cyan-50 text-cyan-800"
-                          : "border-slate-200 bg-white text-slate-600"
-                      }`}
-                    >
-                      <span>
-                        {printPref.preview ? "Preview on" : "Direct print"}
-                      </span>
-                      <span
-                        className={`relative inline-flex h-4 w-8 items-center rounded-full ${
-                          printPref.preview ? "bg-cyan-500" : "bg-slate-300"
-                        }`}
-                      >
-                        <span
-                          className={`h-3 w-3 rounded-full bg-white shadow transition-transform ${
-                            printPref.preview
-                              ? "translate-x-[17px]"
-                              : "translate-x-[3px]"
-                          }`}
-                        />
-                      </span>
-                    </button>
-                  </div>
-                </div>
-              </section>
-
-              <section className="rounded-xl border border-slate-200 bg-white p-3">
-                <SalesReturnPrintCustomizationPanel compact />
-              </section>
-            </div>
+            <SalesReturnPrintSettingsPanel />
           ) : (
             <div className="grid gap-2 sm:grid-cols-2">
               {definitions.map((definition) => (
@@ -480,14 +356,20 @@ export default function SalesReturnEntrySettingsModal({
         </div>
 
         <div className="flex items-center justify-between gap-2 border-t border-slate-200 bg-white px-3 py-3 sm:px-4">
-          <button
-            type="button"
-            onClick={resetActiveTab}
-            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-            Reset tab
-          </button>
+          {activeTab === "print" ? (
+            <span className="text-[10px] text-slate-500">
+              Print changes save immediately.
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={resetActiveTab}
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              Reset tab
+            </button>
+          )}
 
           <div className="flex items-center gap-2">
             <button

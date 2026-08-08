@@ -1,6 +1,7 @@
 import { getTaskPref, type PaperSize } from "@/lib/print/printPreferences";
 
-const STORAGE_KEY = "kynflow_sales_return_ui_settings_v1";
+const LEGACY_STORAGE_KEY = "kynflow_sales_return_ui_settings_v1";
+const STORAGE_KEY = "kynflow_sales_return_ui_settings_v2";
 
 export type SalesReturnBillField =
   | "billNo"
@@ -12,7 +13,14 @@ export type SalesReturnBillField =
   | "discount";
 
 export type SalesReturnItemColumn =
-  "code" | "barcode" | "mrp" | "tax" | "discount" | "rateType" | "amount";
+  | "code"
+  | "barcode"
+  | "unit"
+  | "mrp"
+  | "tax"
+  | "discount"
+  | "rateType"
+  | "amount";
 
 export type SalesReturnUiSettings = {
   billDetails: Record<SalesReturnBillField, boolean>;
@@ -32,8 +40,9 @@ export const DEFAULT_SALES_RETURN_UI_SETTINGS: SalesReturnUiSettings = {
   itemColumns: {
     code: true,
     barcode: true,
+    unit: false,
     mrp: false,
-    tax: true,
+    tax: false,
     discount: true,
     rateType: true,
     amount: true,
@@ -43,17 +52,36 @@ export const DEFAULT_SALES_RETURN_UI_SETTINGS: SalesReturnUiSettings = {
 export function loadSalesReturnUiSettings(): SalesReturnUiSettings {
   if (typeof window === "undefined") return DEFAULT_SALES_RETURN_UI_SETTINGS;
   try {
-    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
-    return {
+    const currentRaw = localStorage.getItem(STORAGE_KEY);
+    if (currentRaw) {
+      const raw = JSON.parse(currentRaw);
+      return {
+        billDetails: {
+          ...DEFAULT_SALES_RETURN_UI_SETTINGS.billDetails,
+          ...(raw.billDetails || {}),
+        },
+        itemColumns: {
+          ...DEFAULT_SALES_RETURN_UI_SETTINGS.itemColumns,
+          ...(raw.itemColumns || {}),
+        },
+      };
+    }
+
+    const legacy = JSON.parse(localStorage.getItem(LEGACY_STORAGE_KEY) || "{}");
+    const migrated: SalesReturnUiSettings = {
       billDetails: {
         ...DEFAULT_SALES_RETURN_UI_SETTINGS.billDetails,
-        ...(raw.billDetails || {}),
+        ...(legacy.billDetails || {}),
       },
       itemColumns: {
         ...DEFAULT_SALES_RETURN_UI_SETTINGS.itemColumns,
-        ...(raw.itemColumns || {}),
+        ...(legacy.itemColumns || {}),
+        unit: false,
+        tax: false,
       },
     };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
+    return migrated;
   } catch {
     return DEFAULT_SALES_RETURN_UI_SETTINGS;
   }

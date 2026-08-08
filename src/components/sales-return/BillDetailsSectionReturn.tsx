@@ -12,6 +12,7 @@ import {
   UserRound,
   Wallet,
 } from "lucide-react";
+import { useRef } from "react";
 import SearchableDropdown from "@/components/ui/SearchableDropdown";
 import {
   fromDateTime,
@@ -73,6 +74,9 @@ export default function BillDetailsSectionReturn(props: {
     onFocusItems,
   } = props;
 
+  const sectionRef = useRef<HTMLElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
   if (!expanded && !mobileSheet) {
     return (
       <aside
@@ -121,35 +125,74 @@ export default function BillDetailsSectionReturn(props: {
     ...(visible.discount ? (["discount"] as HeaderField[]) : []),
   ];
 
+  function keepHeaderFieldVisible(target: HTMLElement) {
+    const scrollPanel = scrollRef.current;
+    if (!scrollPanel) return;
+
+    const panelRect = scrollPanel.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const safeTop = panelRect.top + 12;
+    const safeBottom = panelRect.bottom - 24;
+
+    if (targetRect.top < safeTop) {
+      scrollPanel.scrollTop -= safeTop - targetRect.top;
+    } else if (targetRect.bottom > safeBottom) {
+      scrollPanel.scrollTop += targetRect.bottom - safeBottom;
+    }
+  }
+
+  function getHeaderTarget(field: HeaderField) {
+    const root = sectionRef.current;
+    if (!root) return null;
+    const selector =
+      field === "saleType"
+        ? '[data-sr-header-focus="saleType"][aria-pressed="true"]'
+        : `[data-sr-header-focus="${field}"]`;
+    const target = root.querySelector<HTMLElement>(selector);
+    if (
+      !target ||
+      target.hasAttribute("disabled") ||
+      target.getClientRects().length === 0
+    ) {
+      return null;
+    }
+    return target;
+  }
+
   function focusHeaderField(field: HeaderField) {
-    window.requestAnimationFrame(() => {
-      const target = document.querySelector<HTMLElement>(
-        `[data-sr-header-focus="${field}"]`,
-      );
-      if (!target || target.hasAttribute("disabled")) return;
+    const target = getHeaderTarget(field);
+    if (!target) return false;
+
+    window.setTimeout(() => {
       target.focus({ preventScroll: true });
       if (target instanceof HTMLInputElement) {
         try {
           target.select();
         } catch {}
       }
-      target.scrollIntoView({ block: "nearest", inline: "nearest" });
-    });
+      window.requestAnimationFrame(() => keepHeaderFieldVisible(target));
+    }, 0);
+    return true;
   }
 
   function moveHeaderFocus(field: HeaderField, direction: 1 | -1) {
     const index = headerFields.indexOf(field);
     if (index < 0) return;
-    const nextIndex = index + direction;
-    if (nextIndex < 0) {
-      focusHeaderField(headerFields[0]);
-      return;
+
+    let nextIndex = index + direction;
+    while (nextIndex >= 0 && nextIndex < headerFields.length) {
+      if (focusHeaderField(headerFields[nextIndex])) return;
+      nextIndex += direction;
     }
-    if (nextIndex >= headerFields.length) {
+
+    if (direction === 1) {
       onFocusItems?.();
       return;
     }
-    focusHeaderField(headerFields[nextIndex]);
+
+    for (const candidate of headerFields) {
+      if (focusHeaderField(candidate)) return;
+    }
   }
 
   function handleHeaderKeyDownCapture(event: React.KeyboardEvent<HTMLElement>) {
@@ -181,6 +224,7 @@ export default function BillDetailsSectionReturn(props: {
 
   return (
     <section
+      ref={sectionRef}
       className={panelClass}
       onKeyDownCapture={handleHeaderKeyDownCapture}
     >
@@ -214,7 +258,10 @@ export default function BillDetailsSectionReturn(props: {
         </div>
       ) : null}
 
-      <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto scroll-smooth">
+      <div
+        ref={scrollRef}
+        className="no-scrollbar min-h-0 flex-1 overflow-y-auto scroll-smooth"
+      >
         <div className="space-y-3 bg-white px-3 pb-4 pt-3">
           <div>
             <label className={labelCls}>
@@ -265,13 +312,27 @@ export default function BillDetailsSectionReturn(props: {
                     moveHeaderFocus("customer", direction)
                   }
                   options={[
-                    ...(header.saleType === "CASH"
-                      ? [{ value: "", label: "Cash Customer / No customer" }]
+                    ...(header.customer &&
+                    !customers.some(
+                      (customer) => customer.id === header.customer?.id,
+                    )
+                      ? [
+                          {
+                            value: header.customer.id,
+                            label: header.customer.name,
+                          },
+                        ]
                       : []),
-                    ...customers.map((customer) => ({
-                      value: customer.id,
-                      label: customer.name,
-                    })),
+                    ...customers
+                      .filter(
+                        (customer) =>
+                          String(customer.id || "").trim().length > 0 &&
+                          String(customer.name || "").trim().length > 0,
+                      )
+                      .map((customer) => ({
+                        value: String(customer.id).trim(),
+                        label: String(customer.name).trim(),
+                      })),
                   ]}
                   placeholder="Select customer..."
                   controlClassName="h-8 px-2 text-xs"
@@ -335,6 +396,7 @@ export default function BillDetailsSectionReturn(props: {
               optionClassName="text-xs"
               menuClassName="z-[1150] max-h-64 text-xs"
               buttonProps={{
+                disabled: !header.customer,
                 "data-sr-header-focus": "sourceSale",
                 "aria-label": "Sale bill",
                 title:

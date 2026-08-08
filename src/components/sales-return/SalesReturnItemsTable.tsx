@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef } from "react";
 import {
   FileText,
   Info,
@@ -20,7 +21,7 @@ import {
 } from "./keyboardGrid";
 
 const input =
-  "h-8 w-full rounded border border-gray-300 bg-white px-2 text-xs text-slate-800 outline-none transition-colors " +
+  "purchase-grid-input h-8 w-full rounded border border-gray-300 bg-white px-2 text-xs text-slate-800 outline-none transition-colors " +
   "selection:bg-[#1e3a5f] selection:text-white focus:border-[#20b7ff] focus:ring-1 focus:ring-[#20b7ff]/20";
 const unitOptions = ["NOS", "KG", "LTR", "MTR"].map((value) => ({
   value,
@@ -78,11 +79,12 @@ export default function SalesReturnItemsTable({
 }) {
   const columns = settings.itemColumns;
   const itemCount = rows.filter((row) => row.productId).length;
+  const productSelectionPending = useRef<Set<number>>(new Set());
   const activeColumns = [
     ...(!sourceLinked ? (["product"] as SalesReturnColKey[]) : []),
     ...(barcodeEnabled ? (["barcode"] as SalesReturnColKey[]) : []),
     "quantity",
-    "unit",
+    ...(columns.unit ? (["unit"] as SalesReturnColKey[]) : []),
     "rateType",
     "rate",
     ...(columns.tax ? (["tax"] as SalesReturnColKey[]) : []),
@@ -230,7 +232,8 @@ export default function SalesReturnItemsTable({
               type="button"
               onClick={onOpenDetails}
               className="inline-flex h-7 items-center justify-center gap-1 rounded-md border border-cyan-300/30 bg-cyan-300/15 px-2 text-cyan-50 transition hover:bg-cyan-300/20"
-              title="Linked Sale Details (F5)"
+              title="Source Sale Details (F5)"
+              aria-label="Open Source Sale Details"
             >
               <Info className="h-3.5 w-3.5" />
               <kbd className="font-mono text-[8px] font-semibold text-white">
@@ -321,9 +324,11 @@ export default function SalesReturnItemsTable({
               <th className="min-w-[88px] px-2.5 py-2 text-center text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80">
                 Qty
               </th>
-              <th className="min-w-[74px] px-2.5 py-2 text-center text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80">
-                Unit
-              </th>
+              {columns.unit ? (
+                <th className="min-w-[74px] px-2.5 py-2 text-center text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80">
+                  Unit
+                </th>
+              ) : null}
               <th className="min-w-[132px] max-w-[148px] px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80">
                 Rate Type
               </th>
@@ -393,10 +398,24 @@ export default function SalesReturnItemsTable({
                   >
                     <SearchableDropdown
                       value={row.productId || ""}
-                      onChange={(value) => onSelectProduct(index, value)}
-                      onEnter={(direction) =>
-                        moveFrom(index, "product", direction)
-                      }
+                      onChange={(value) => {
+                        productSelectionPending.current.add(index);
+                        window.setTimeout(
+                          () => productSelectionPending.current.delete(index),
+                          100,
+                        );
+                        onSelectProduct(index, value);
+                      }}
+                      onEnter={(direction) => {
+                        if (
+                          direction === 1 &&
+                          productSelectionPending.current.delete(index)
+                        ) {
+                          return;
+                        }
+                        productSelectionPending.current.delete(index);
+                        moveFrom(index, "product", direction);
+                      }}
                       options={products.map((product) => ({
                         value: product.id,
                         label: product.name,
@@ -453,7 +472,7 @@ export default function SalesReturnItemsTable({
                           ? Number(row.remainingReturnableQuantity || 0)
                           : undefined
                       }
-                      step="0.001"
+                      step="1"
                       disabled={noRemaining}
                       value={row.quantity ?? 0}
                       onChange={(event) =>
@@ -490,39 +509,40 @@ export default function SalesReturnItemsTable({
                     ) : null}
                   </td>
 
-                  <td className="min-w-[76px] px-2.5 py-2">
-                    <SearchableDropdown
-                      value={row.unit || "NOS"}
-                      onChange={(value) =>
-                        onUpdateRow(index, { unit: value as any })
-                      }
-                      onEnter={(direction) =>
-                        moveFrom(index, "unit", direction)
-                      }
-                      options={
-                        unitOptions.some((option) => option.value === row.unit)
-                          ? unitOptions
-                          : [
-                              {
-                                value: String(row.unit || ""),
-                                label: String(row.unit || ""),
-                              },
-                              ...unitOptions,
-                            ]
-                      }
-                      placeholder="Unit"
-                      autoOpenOnFocus
-                      controlClassName="h-8 w-full px-2 text-xs"
-                      inputClassName="h-8 text-xs"
-                      optionClassName="text-xs"
-                      menuClassName="z-[1100] text-xs"
-                      buttonProps={{
-                        "data-cell": `${index}:unit`,
-                        title:
-                          "Enter to open/select, Shift+Enter to move backward",
-                      }}
-                    />
-                  </td>
+                  {columns.unit ? (
+                    <td className="min-w-[74px] px-2.5 py-2">
+                      <CompactDropdown
+                        value={row.unit || ""}
+                        onChange={(value) =>
+                          onUpdateRow(index, { unit: value as any })
+                        }
+                        onEnter={(direction) =>
+                          moveFrom(index, "unit", direction)
+                        }
+                        autoOpenOnFocus
+                        options={
+                          unitOptions.some(
+                            (option) => option.value === row.unit,
+                          )
+                            ? unitOptions
+                            : [
+                                {
+                                  value: String(row.unit || ""),
+                                  label: String(row.unit || ""),
+                                },
+                                ...unitOptions,
+                              ]
+                        }
+                        placeholder="Unit"
+                        className="w-full [&_*]:text-xs [&_button]:h-8 [&_button]:px-2"
+                        buttonProps={{
+                          "data-cell": `${index}:unit`,
+                          title:
+                            "Enter to open/select, Shift+Enter to move backward",
+                        }}
+                      />
+                    </td>
+                  ) : null}
 
                   <td className="min-w-[132px] max-w-[148px] px-2 py-2">
                     <CompactDropdown
@@ -621,7 +641,7 @@ export default function SalesReturnItemsTable({
 
                   {columns.tax ? (
                     <td className="px-2.5 py-2">
-                      <SearchableDropdown
+                      <CompactDropdown
                         value={String(row.taxPercent || "NT")}
                         onChange={(value) =>
                           onUpdateRow(index, { taxPercent: value as any })
@@ -629,13 +649,10 @@ export default function SalesReturnItemsTable({
                         onEnter={(direction) =>
                           moveFrom(index, "tax", direction)
                         }
+                        autoOpenOnFocus
                         options={taxOptions}
                         placeholder="Tax"
-                        autoOpenOnFocus
-                        controlClassName="h-8 w-full px-2 text-xs"
-                        inputClassName="h-8 text-xs"
-                        optionClassName="text-xs"
-                        menuClassName="z-[1100] text-xs"
+                        className="w-full [&_*]:text-xs [&_button]:h-8 [&_button]:px-2"
                         buttonProps={{
                           "data-cell": `${index}:tax`,
                           title:
@@ -717,17 +734,18 @@ export default function SalesReturnItemsTable({
                   <td
                     className={`sticky right-0 z-40 w-[56px] min-w-[56px] border-l border-slate-300 px-2.5 py-2 transition-colors ${stickyRowBg}`}
                   >
-                    {!sourceLinked && rows.length > 1 ? (
+                    <div className="flex justify-center">
                       <button
                         type="button"
                         onClick={() => onRemoveRow(index)}
+                        disabled={sourceLinked || rows.length <= 1}
                         className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-rose-50 text-rose-500 transition-all duration-200 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-40"
                         aria-label={`Remove return row ${index + 1}`}
                         title="Remove Item"
                       >
                         <X className="h-3.5 w-3.5" />
                       </button>
-                    ) : null}
+                    </div>
                   </td>
                 </tr>
               );

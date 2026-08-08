@@ -1,13 +1,30 @@
 "use client";
 
-import { useEffect } from "react";
-import { X, Link2 } from "lucide-react";
+import { useEffect, useMemo } from "react";
+import { FileSearch2, X } from "lucide-react";
 import type { SaleReturnSourceResult } from "@/platform/types";
 import type { SalesReturnItemRow } from "./types";
 
-function money(v: unknown) {
-  return `Rs. ${Number(v || 0).toFixed(2)}`;
+function qty(value: unknown) {
+  const number = Number(value || 0);
+  return Number.isInteger(number)
+    ? String(number)
+    : number.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
 }
+
+function money(value: unknown) {
+  const number = Number(value || 0);
+  return Number.isFinite(number) ? number.toFixed(2) : "0.00";
+}
+
+function date(value: unknown) {
+  if (!value) return "-";
+  const parsed = new Date(String(value));
+  return Number.isNaN(parsed.getTime())
+    ? String(value)
+    : parsed.toLocaleDateString("en-IN");
+}
+
 export default function SalesReturnSourceDetailsModal({
   isOpen,
   source,
@@ -32,133 +49,167 @@ export default function SalesReturnSourceDetailsModal({
     return () => window.removeEventListener("keydown", onKey, true);
   }, [isOpen, onClose]);
 
-  if (!isOpen) return null;
-  const sale = source?.sale;
-  const items = source?.items || [];
+  const returnQtyBySourceItem = useMemo(() => {
+    const map = new Map<string, number>();
+    rows.forEach((row) => {
+      if (!row.sourceSaleItemId) return;
+      map.set(row.sourceSaleItemId, Number(row.quantity || 0));
+    });
+    return map;
+  }, [rows]);
+
+  if (!isOpen || !source) return null;
+
+  const sale = source.sale;
+  const items = source.items || [];
+  const reference = String(sale?.billNo || "").trim() || "Sale bill";
+
   return (
-    <div
-      className="fixed inset-0 z-[1650] flex items-end justify-center bg-slate-950/45 p-0 backdrop-blur-sm sm:items-center sm:p-4"
-      role="dialog"
-      aria-modal="true"
-    >
-      <div className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-t-3xl border border-slate-200 bg-white shadow-2xl sm:rounded-3xl">
-        <header className="flex items-center justify-between border-b border-slate-200 px-4 py-3 sm:px-5">
-          <div className="flex items-center gap-3">
-            <div className="grid h-9 w-9 place-items-center rounded-xl bg-cyan-50 text-cyan-700">
-              <Link2 className="h-4 w-4" />
+    <div className="fixed inset-0 z-[1300] flex items-end justify-center bg-black/55 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+      <button
+        type="button"
+        aria-label="Close source Sale details"
+        className="absolute inset-0 cursor-default"
+        onClick={onClose}
+      />
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="sales-return-source-details-title"
+        className="relative flex max-h-[88dvh] w-full flex-col overflow-hidden rounded-t-[22px] border border-slate-200 bg-white shadow-2xl sm:max-w-5xl sm:rounded-[22px]"
+      >
+        <header className="shrink-0 bg-[linear-gradient(135deg,#091120_0%,#0f1e38_62%,#16213d_100%)] px-4 py-3.5 text-white sm:px-5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 items-start gap-3">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cyan-400/15 text-cyan-300">
+                <FileSearch2 className="h-4 w-4" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-white/45">
+                  Source Sale
+                </p>
+                <h3
+                  id="sales-return-source-details-title"
+                  className="truncate text-base font-semibold"
+                >
+                  {reference}
+                </h3>
+                <p className="mt-0.5 text-[10px] text-white/55">
+                  Sold / returned / remaining limits stay here instead of taking
+                  space inside the item grid.
+                </p>
+              </div>
             </div>
-            <div>
-              <h2 className="text-base font-semibold text-slate-950">
-                Source Sale Details
-              </h2>
-              <p className="text-xs text-slate-500">
-                F5 opens this view. Remaining = sold - previous linked returns.
-              </p>
+            <button
+              type="button"
+              onClick={onClose}
+              title="Close (Esc)"
+              className="rounded-lg p-2 text-white/65 transition hover:bg-white/10 hover:text-white"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </header>
+
+        <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
+          <div className="mb-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              ["Customer", sale?.customerName || "-"],
+              ["Sale date", date(sale?.saleDate)],
+              ["Sale type", sale?.saleType || "-"],
+              ["Source items", String(items.length)],
+            ].map(([label, value]) => (
+              <div
+                key={label}
+                className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
+              >
+                <p className="text-[9px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+                  {label}
+                </p>
+                <p className="mt-0.5 truncate text-xs font-semibold text-slate-800">
+                  {value}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          <div className="overflow-hidden rounded-xl border border-slate-200">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[940px] border-collapse text-xs">
+                <thead className="bg-slate-100 text-[9px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                  <tr>
+                    <th className="px-3 py-2 text-left">Item</th>
+                    <th className="px-3 py-2 text-left">Batch</th>
+                    <th className="px-3 py-2 text-right">Rate</th>
+                    <th className="px-3 py-2 text-left">Rate type</th>
+                    <th className="px-3 py-2 text-right">Sold</th>
+                    <th className="px-3 py-2 text-right">Returned</th>
+                    <th className="px-3 py-2 text-right">Remaining</th>
+                    <th className="px-3 py-2 text-right">Return now</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white">
+                  {items.map((item: any, index: number) => (
+                    <tr key={item.id || index} className="text-slate-700">
+                      <td className="px-3 py-2">
+                        <div className="font-semibold text-slate-900">
+                          {item.productName || `Item ${index + 1}`}
+                        </div>
+                        <div className="text-[9px] text-slate-400">
+                          {item.productCode || item.productId || ""}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2">{item.batchNo || "-"}</td>
+                      <td className="px-3 py-2 text-right font-medium">
+                        Rs. {money(item.rate)}
+                      </td>
+                      <td className="px-3 py-2">
+                        {item.rateTypeName ||
+                          item.rateTypeCode ||
+                          item.rateSource ||
+                          "Legacy"}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {qty(item.quantity)}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {qty(item.previouslyReturnedQuantity)}
+                      </td>
+                      <td className="px-3 py-2 text-right font-semibold text-cyan-700">
+                        {qty(item.remainingReturnableQuantity)}
+                      </td>
+                      <td className="px-3 py-2 text-right font-semibold text-slate-900">
+                        {qty(returnQtyBySourceItem.get(item.id) || 0)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
+
+          <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[10px] leading-4 text-amber-800">
+            A source-linked Sales Return cannot exceed the remaining quantity
+            from the selected Sale bill.
+          </div>
+        </div>
+
+        <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-4 py-3">
+          <span className="text-[10px] text-slate-500">
+            Shortcut:{" "}
+            <kbd className="rounded border border-slate-300 bg-white px-1.5 py-0.5 font-mono text-[9px] font-semibold">
+              F5
+            </kbd>
+          </span>
           <button
             type="button"
             onClick={onClose}
-            className="grid h-9 w-9 place-items-center rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50"
-            aria-label="Close Source Sale details"
+            className="h-9 rounded-lg bg-slate-900 px-4 text-xs font-semibold text-white hover:bg-slate-800"
           >
-            <X className="h-4 w-4" />
+            Done
           </button>
-        </header>
-        <div className="grid gap-2 border-b border-slate-200 bg-slate-50 p-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-xl bg-white p-3">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              Sale Bill
-            </div>
-            <div className="mt-1 text-sm font-semibold text-slate-900">
-              {sale?.billNo || sale?.id || "-"}
-            </div>
-          </div>
-          <div className="rounded-xl bg-white p-3">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              Customer
-            </div>
-            <div className="mt-1 text-sm font-semibold text-slate-900">
-              {sale?.customerName || "-"}
-            </div>
-          </div>
-          <div className="rounded-xl bg-white p-3">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              Original Sale Date
-            </div>
-            <div className="mt-1 text-sm font-semibold text-slate-900">
-              {sale?.saleDate
-                ? new Date(sale.saleDate).toLocaleDateString("en-IN")
-                : "-"}
-            </div>
-          </div>
-          <div className="rounded-xl bg-white p-3">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              Sale Type
-            </div>
-            <div className="mt-1 text-sm font-semibold text-slate-900">
-              {sale?.saleType || "-"}
-            </div>
-          </div>
-        </div>
-        <div className="min-h-0 flex-1 overflow-auto">
-          <table className="min-w-[1040px] w-full text-left text-xs">
-            <thead className="sticky top-0 z-10 bg-slate-950 text-white">
-              <tr>
-                <th className="px-3 py-2.5">Product</th>
-                <th className="px-3 py-2.5">Original Batch</th>
-                <th className="px-3 py-2.5 text-right">Original Rate</th>
-                <th className="px-3 py-2.5">Rate Type</th>
-                <th className="px-3 py-2.5 text-right">Sold Qty</th>
-                <th className="px-3 py-2.5 text-right">Previous Returns</th>
-                <th className="px-3 py-2.5 text-right">Remaining</th>
-                <th className="px-3 py-2.5 text-right">Current Return</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((it: any) => {
-                const row = rows.find((r) => r.sourceSaleItemId === it.id);
-                return (
-                  <tr key={it.id} className="border-b border-slate-100">
-                    <td className="px-3 py-2.5">
-                      <div className="font-semibold text-slate-900">
-                        {it.productName || it.productId}
-                      </div>
-                      <div className="text-[10px] text-slate-400">
-                        {it.productCode || ""}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2.5 text-slate-600">
-                      {it.batchNo || "-"}
-                    </td>
-                    <td className="px-3 py-2.5 text-right font-medium">
-                      {money(it.rate)}
-                    </td>
-                    <td className="px-3 py-2.5 text-slate-600">
-                      {it.rateTypeName ||
-                        it.rateTypeCode ||
-                        it.rateSource ||
-                        "Legacy"}
-                    </td>
-                    <td className="px-3 py-2.5 text-right">
-                      {Number(it.quantity || 0)}
-                    </td>
-                    <td className="px-3 py-2.5 text-right">
-                      {Number(it.previouslyReturnedQuantity || 0)}
-                    </td>
-                    <td className="px-3 py-2.5 text-right font-bold text-cyan-700">
-                      {Number(it.remainingReturnableQuantity || 0)}
-                    </td>
-                    <td className="px-3 py-2.5 text-right font-bold text-slate-950">
-                      {Number(row?.quantity || 0)}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+        </footer>
+      </section>
     </div>
   );
 }
