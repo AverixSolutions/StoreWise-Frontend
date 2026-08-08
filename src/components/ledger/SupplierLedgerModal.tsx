@@ -14,11 +14,11 @@ import {
   CheckCircle2,
   Clock,
 } from "lucide-react";
-import Dropdown from "@/components/ui/Dropdown";
+import CompactDropdown from "@/components/ui/CompactDropdown";
 import { platform } from "@/platform";
 
 const inputCls =
-  "w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 outline-none shadow-[0_1px_4px_rgba(0,0,0,0.06)] transition focus:border-cyan-400 focus:ring-4 focus:ring-cyan-400/15";
+  "w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 outline-none shadow-[0_1px_4px_rgba(0,0,0,0.06)] transition selection:bg-white selection:text-[#1e3a5f] focus:border-[#20b7ff] focus:bg-[#1e3a5f] focus:text-white focus:placeholder:text-white/60 focus:ring-2 focus:ring-[#20b7ff]/30";
 
 function SectionCard({
   icon: Icon,
@@ -215,6 +215,93 @@ export default function LedgerModal({
   const [markingId, setMarkingId] = useState<string | null>(null);
   const [refetchKey, setRefetchKey] = useState(0);
 
+  type PaymentField =
+    | "amount"
+    | "date"
+    | "mode"
+    | "chequeNo"
+    | "chequeIssueDate"
+    | "chequeClearanceDate"
+    | "notes"
+    | "billSearch"
+    | "save";
+
+  function paymentFieldOrder(): PaymentField[] {
+    const fields: PaymentField[] = ["amount", "date", "mode"];
+    if (payMode === "CHEQUE") {
+      fields.push("chequeNo", "chequeIssueDate", "chequeClearanceDate");
+    }
+    fields.push("notes");
+    if (billWise) fields.push("billSearch");
+    fields.push("save");
+    return fields;
+  }
+
+  function focusPaymentField(field: PaymentField) {
+    requestAnimationFrame(() => {
+      const element = document.querySelector<HTMLElement>(
+        `[data-supplier-ledger-field="${field}"]`,
+      );
+      element?.focus({ preventScroll: true });
+      if (element instanceof HTMLInputElement) element.select();
+    });
+  }
+
+  function movePaymentFocus(field: PaymentField, direction: 1 | -1) {
+    const fields = paymentFieldOrder();
+    const index = fields.indexOf(field);
+    if (index < 0) return;
+    const next = fields[index + direction];
+    if (next) focusPaymentField(next);
+  }
+
+  function focusAllocation(direction: 1 | -1 = 1, current?: HTMLElement) {
+    const inputs = Array.from(
+      document.querySelectorAll<HTMLInputElement>(
+        "[data-supplier-ledger-allocation]",
+      ),
+    );
+    if (!inputs.length) {
+      focusPaymentField("save");
+      return;
+    }
+
+    if (!current) {
+      const target = direction === 1 ? inputs[0] : inputs[inputs.length - 1];
+      target.focus({ preventScroll: true });
+      target.select();
+      return;
+    }
+
+    const index = inputs.indexOf(current as HTMLInputElement);
+    const target = inputs[index + direction];
+    if (target) {
+      target.focus({ preventScroll: true });
+      target.select();
+      return;
+    }
+
+    if (direction === 1) focusPaymentField("save");
+    else focusPaymentField("billSearch");
+  }
+
+  function handlePaymentFieldKeyDown(
+    field: PaymentField,
+    event: React.KeyboardEvent<HTMLElement>,
+  ) {
+    if (event.key !== "Enter" || event.ctrlKey || event.metaKey) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const direction: 1 | -1 = event.shiftKey ? -1 : 1;
+
+    if (field === "billSearch" && direction === 1) {
+      focusAllocation(1);
+      return;
+    }
+
+    movePaymentFocus(field, direction);
+  }
+
   useEffect(() => {
     const t = setTimeout(() => setBillQueryDebounced(billQuery.trim()), 250);
     return () => clearTimeout(t);
@@ -282,9 +369,63 @@ export default function LedgerModal({
 
   useEffect(() => {
     if (!isOpen) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+
+    const focusInitial = window.setTimeout(
+      () => focusPaymentField("amount"),
+      0,
+    );
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+
+      if (event.key === "F2") {
+        event.preventDefault();
+        focusPaymentField("amount");
+        return;
+      }
+
+      if (event.key === "F3") {
+        event.preventDefault();
+        const billSearch = document.querySelector<HTMLElement>(
+          '[data-supplier-ledger-field="billSearch"]',
+        );
+        if (billSearch) focusPaymentField("billSearch");
+        else focusPaymentField("notes");
+        return;
+      }
+
+      if (event.key === "F4") {
+        event.preventDefault();
+        setBillWise((current) => !current);
+        return;
+      }
+
+      if (event.key === "F6") {
+        event.preventDefault();
+        const autoButton = document.querySelector<HTMLButtonElement>(
+          '[data-supplier-ledger-action="auto"]',
+        );
+        if (autoButton && !autoButton.disabled) autoButton.click();
+        return;
+      }
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        const saveButton = document.querySelector<HTMLButtonElement>(
+          '[data-supplier-ledger-field="save"]',
+        );
+        if (saveButton && !saveButton.disabled) saveButton.click();
+      }
+    };
+
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      window.clearTimeout(focusInitial);
+      window.removeEventListener("keydown", onKey, true);
+    };
   }, [isOpen, onClose]);
 
   // Reset cheque fields when mode changes
@@ -484,10 +625,15 @@ export default function LedgerModal({
                 <h3 className="text-base font-semibold text-white">
                   {supplierName || "Ledger"}
                 </h3>
+                <p className="mt-0.5 hidden text-[10px] font-medium text-white/45 md:block">
+                  F2 Amount · F3 Bills · F4 Bill-wise · F6 Auto · Ctrl+S Save ·
+                  Esc Close
+                </p>
               </div>
             </div>
             <button
               onClick={onClose}
+              title="Close (Esc)"
               className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/15 bg-white/10 text-white transition hover:bg-white/20 cursor-pointer"
             >
               <X className="h-3.5 w-3.5" />
@@ -533,8 +679,12 @@ export default function LedgerModal({
                     step="0.01"
                     value={payAmount || ""}
                     onChange={(e) => setPayAmount(Number(e.target.value || 0))}
+                    onFocus={(e) => e.currentTarget.select()}
+                    onKeyDown={(e) => handlePaymentFieldKeyDown("amount", e)}
+                    data-supplier-ledger-field="amount"
                     className={inputCls}
                     placeholder="0.00"
+                    title="Amount (F2)"
                   />
                 </Field>
 
@@ -545,12 +695,14 @@ export default function LedgerModal({
                     onChange={(e) =>
                       setPayDate(new Date(e.target.value).toISOString())
                     }
+                    onKeyDown={(e) => handlePaymentFieldKeyDown("date", e)}
+                    data-supplier-ledger-field="date"
                     className={inputCls}
                   />
                 </Field>
 
                 <Field label="Mode">
-                  <Dropdown
+                  <CompactDropdown
                     value={payMode}
                     onChange={(v) => setPayMode(v as any)}
                     options={[
@@ -558,6 +710,35 @@ export default function LedgerModal({
                       { value: "BANK", label: "Bank Transfer" },
                       { value: "CHEQUE", label: "Cheque" },
                     ]}
+                    selectedLabel={
+                      payMode === "BANK"
+                        ? "Bank Transfer"
+                        : payMode === "CHEQUE"
+                          ? "Cheque"
+                          : "Cash"
+                    }
+                    menuPortal
+                    menuMinWidth={210}
+                    hideMenuScrollbar
+                    onEnter={(direction) => {
+                      if (direction === -1) {
+                        focusPaymentField("date");
+                        return;
+                      }
+                      window.setTimeout(() => {
+                        const chequeField = document.querySelector<HTMLElement>(
+                          '[data-supplier-ledger-field="chequeNo"]',
+                        );
+                        focusPaymentField(chequeField ? "chequeNo" : "notes");
+                      }, 0);
+                    }}
+                    buttonProps={{
+                      "data-supplier-ledger-field": "mode",
+                      title:
+                        "Payment mode. Arrow keys choose; Enter continues.",
+                      className:
+                        "min-h-[42px] rounded-xl border-slate-200 bg-white px-3.5 py-2.5 text-sm shadow-[0_1px_4px_rgba(0,0,0,0.06)] focus:border-[#20b7ff] focus:bg-[#1e3a5f] focus:text-white focus:ring-2 focus:ring-[#20b7ff]/30",
+                    }}
                   />
                 </Field>
 
@@ -565,6 +746,8 @@ export default function LedgerModal({
                   <input
                     value={payNotes}
                     onChange={(e) => setPayNotes(e.target.value)}
+                    onKeyDown={(e) => handlePaymentFieldKeyDown("notes", e)}
+                    data-supplier-ledger-field="notes"
                     className={inputCls}
                     placeholder="Optional note"
                   />
@@ -585,6 +768,10 @@ export default function LedgerModal({
                     <input
                       value={chequeNo}
                       onChange={(e) => setChequeNo(e.target.value)}
+                      onKeyDown={(e) =>
+                        handlePaymentFieldKeyDown("chequeNo", e)
+                      }
+                      data-supplier-ledger-field="chequeNo"
                       className={inputCls}
                       placeholder="e.g. 001234"
                     />
@@ -594,6 +781,10 @@ export default function LedgerModal({
                       type="date"
                       value={chequeIssueDate}
                       onChange={(e) => setChequeIssueDate(e.target.value)}
+                      onKeyDown={(e) =>
+                        handlePaymentFieldKeyDown("chequeIssueDate", e)
+                      }
+                      data-supplier-ledger-field="chequeIssueDate"
                       className={inputCls}
                     />
                   </Field>
@@ -602,6 +793,10 @@ export default function LedgerModal({
                       type="date"
                       value={chequeClearanceDate}
                       onChange={(e) => setChequeClearanceDate(e.target.value)}
+                      onKeyDown={(e) =>
+                        handlePaymentFieldKeyDown("chequeClearanceDate", e)
+                      }
+                      data-supplier-ledger-field="chequeClearanceDate"
                       className={inputCls}
                       required
                     />
@@ -617,6 +812,7 @@ export default function LedgerModal({
                       type="checkbox"
                       checked={billWise}
                       onChange={(e) => setBillWise(e.target.checked)}
+                      title="Toggle bill-wise allocation (F4)"
                       className="rounded"
                       style={{ accentColor: "#1e3a5f" }}
                     />
@@ -630,6 +826,8 @@ export default function LedgerModal({
                       <button
                         type="button"
                         onClick={autoDistribute}
+                        data-supplier-ledger-action="auto"
+                        title="Auto-distribute across outstanding bills (F6)"
                         className="inline-flex items-center gap-1.5 rounded-xl border border-[#1e3a5f]/30 bg-[#1e3a5f]/8 px-3 py-2 text-xs font-semibold text-[#1e3a5f] transition hover:bg-[#1e3a5f] hover:text-white cursor-pointer"
                       >
                         <Wand2 className="h-3.5 w-3.5" />
@@ -649,7 +847,9 @@ export default function LedgerModal({
                 <button
                   onClick={handleCreatePayment}
                   disabled={!addEnabled}
-                  className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#20b7ff] to-[#b026ff] px-6 py-2.5 text-sm font-semibold text-white shadow-[0_4px_20px_rgba(32,183,255,0.22)] hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition cursor-pointer"
+                  data-supplier-ledger-field="save"
+                  title="Save payment (Ctrl+S)"
+                  className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#20b7ff] to-[#b026ff] px-6 py-2.5 text-sm font-semibold text-white shadow-[0_4px_20px_rgba(32,183,255,0.22)] hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-cyan-400/40"
                 >
                   {saving ? (
                     <>
@@ -689,8 +889,11 @@ export default function LedgerModal({
                     setBillPage(1);
                     setBillQuery(e.target.value);
                   }}
+                  onKeyDown={(e) => handlePaymentFieldKeyDown("billSearch", e)}
+                  data-supplier-ledger-field="billSearch"
                   placeholder="Search bill no / SL no…"
                   className={`${inputCls} max-w-xs`}
+                  title="Outstanding bill search (F3)"
                 />
                 <div className="text-[11px] font-semibold text-slate-500">
                   {billsLoading
@@ -779,12 +982,16 @@ export default function LedgerModal({
                                   }
                                   onFocus={(e) => e.currentTarget.select()}
                                   onKeyDown={(e) => {
-                                    if (e.key === "Enter" && addEnabled) {
-                                      e.preventDefault();
-                                      handleCreatePayment();
-                                    }
+                                    if (e.key !== "Enter") return;
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    focusAllocation(
+                                      e.shiftKey ? -1 : 1,
+                                      e.currentTarget,
+                                    );
                                   }}
-                                  className="w-28 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-right text-xs text-slate-800 outline-none shadow-[0_1px_4px_rgba(0,0,0,0.06)] transition focus:border-cyan-400 focus:ring-4 focus:ring-cyan-400/15"
+                                  data-supplier-ledger-allocation
+                                  className="w-28 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-right text-xs text-slate-800 outline-none shadow-[0_1px_4px_rgba(0,0,0,0.06)] transition selection:bg-white selection:text-[#1e3a5f] focus:border-[#20b7ff] focus:bg-[#1e3a5f] focus:text-white focus:ring-2 focus:ring-[#20b7ff]/30"
                                   placeholder="0.00"
                                 />
                               </td>

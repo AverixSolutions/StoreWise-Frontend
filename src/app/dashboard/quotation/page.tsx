@@ -6,8 +6,14 @@ import { platform } from "@/platform";
 import QuotationsTable from "@/components/quotations/QuotationsTable";
 import QuotationFormModal from "@/components/quotations/QuotationFormModal";
 import QuotationViewModal from "@/components/quotations/QuotationViewModal";
+import QuotationEntrySettingsModal from "@/components/quotations/QuotationEntrySettingsModal";
 import CustomerFormModal from "@/components/customers/CustomerFormModal";
-import { ArrowLeft, FileText, Plus } from "lucide-react";
+import { ArrowLeft, FileText, Plus, Settings } from "lucide-react";
+import {
+  loadQuotationUiSettings,
+  saveQuotationUiSettings,
+  type QuotationUiSettings,
+} from "@/components/quotations/quotationUiSettings";
 
 export default function QuotationPage() {
   const router = useRouter();
@@ -25,6 +31,10 @@ export default function QuotationPage() {
   const [editId, setEditId] = useState<string | null>(null);
   const [viewId, setViewId] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [showSettings, setShowSettings] = useState(false);
+  const [uiSettings, setUiSettings] = useState<QuotationUiSettings>(() =>
+    loadQuotationUiSettings(),
+  );
 
   const loadCustomers = useCallback(async () => {
     if (!licenseId) return;
@@ -51,6 +61,45 @@ export default function QuotationPage() {
     setEditId(null);
     setShowForm(true);
   }, []);
+
+  const openSettings = useCallback(() => {
+    setUiSettings(loadQuotationUiSettings());
+    setShowSettings(true);
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (showForm || showCustomerModal || viewId || showSettings) return;
+
+      if (event.key === "F7") {
+        event.preventDefault();
+        openSettings();
+        return;
+      }
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "n") {
+        event.preventDefault();
+        handleNew();
+        return;
+      }
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "b") {
+        event.preventDefault();
+        router.push("/dashboard/entries");
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [
+    handleNew,
+    openSettings,
+    router,
+    showCustomerModal,
+    showForm,
+    showSettings,
+    viewId,
+  ]);
 
   const handleView = useCallback((id: string) => {
     setViewId(id);
@@ -106,11 +155,27 @@ export default function QuotationPage() {
 
             <button
               type="button"
+              onClick={openSettings}
+              className="inline-flex items-center gap-2 rounded-2xl border border-white/15 bg-white/[0.07] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-white/[0.12] cursor-pointer"
+              title="Quotation settings (F7)"
+            >
+              <Settings className="h-4 w-4" />
+              Settings
+              <span className="rounded-md border border-white/15 bg-white/10 px-1.5 py-0.5 font-mono text-[9px] text-white/70">
+                F7
+              </span>
+            </button>
+
+            <button
+              type="button"
               onClick={handleNew}
               className="inline-flex items-center gap-2 rounded-2xl border border-white/15 bg-white/[0.07] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-white/[0.12] cursor-pointer"
             >
               <Plus className="h-4 w-4" />
               New Quotation
+              <span className="rounded-md border border-white/15 bg-white/10 px-1.5 py-0.5 font-mono text-[9px] text-white/70">
+                Ctrl+N
+              </span>
             </button>
           </div>
         </div>
@@ -121,6 +186,16 @@ export default function QuotationPage() {
         onView={handleView}
         onEdit={handleEdit}
         refreshKey={refreshKey}
+      />
+
+      <QuotationEntrySettingsModal
+        open={showSettings}
+        settings={uiSettings}
+        onClose={() => setShowSettings(false)}
+        onSave={(nextSettings) => {
+          setUiSettings(nextSettings);
+          saveQuotationUiSettings(nextSettings);
+        }}
       />
 
       <QuotationFormModal
