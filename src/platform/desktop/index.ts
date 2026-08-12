@@ -177,6 +177,8 @@ function mapProductLookup(row: any): ProductLookupResult {
     batchSalePrice: row.batchSalePrice ?? null,
     batchCostPrice: row.batchCostPrice ?? null,
     batchNo: row.batchNo ?? null,
+    purchaseBatchNo: row.purchaseBatchNo ?? null,
+    purchaseId: row.purchaseId ?? null,
     mfgDate: row.mfgDate ?? null,
     expiryDate: row.expiryDate ?? null,
     batchStock: row.batchStock ?? undefined,
@@ -193,6 +195,13 @@ function mapBatchRow(row: any) {
     salePrice: row.salePrice ?? null,
     costPrice: row.costPrice ?? null,
     batchNo: row.batchNo ?? null,
+    purchaseBatchNo: row.purchaseBatchNo ?? null,
+    purchaseId: row.purchaseId ?? null,
+    purchaseBillNo: row.purchaseBillNo ?? null,
+    supplierName: row.supplierName ?? null,
+    purchaseDate: row.purchaseDate ?? null,
+    lotNumber: row.lotNumber == null ? null : Number(row.lotNumber),
+    rateSummary: row.rateSummary ?? null,
     mfgDate: row.mfgDate ?? null,
     expiryDate: row.expiryDate ?? null,
     receivedAt: row.receivedAt ?? null,
@@ -436,7 +445,7 @@ export const desktopPlatform: PlatformAPI = {
     };
   },
 
-  createBarcodeForProduct: (payload: any) => {
+  createBarcodeForProduct: async (payload: any) => {
     if (!canUseBarcode()) {
       return Promise.resolve({
         success: false,
@@ -444,17 +453,21 @@ export const desktopPlatform: PlatformAPI = {
         error: "Barcode Support is disabled for this license.",
       });
     }
-    return requireElectronAPI().createBarcodeForProduct(payload);
+    const result = await requireElectronAPI().createBarcodeForProduct(payload);
+    if (result?.success) triggerDesktopSync("productBatch");
+    return result;
   },
 
-  deleteBarcode: (licenseId: string, batchId: string) => {
+  deleteBarcode: async (licenseId: string, batchId: string) => {
     if (!canUseBarcode()) {
       return Promise.resolve({
         success: false,
         error: "Barcode Support is disabled for this license.",
       });
     }
-    return requireElectronAPI().deleteBarcode(licenseId, batchId);
+    const result = await requireElectronAPI().deleteBarcode(licenseId, batchId);
+    if (result?.success) triggerDesktopSync("productBatch");
+    return result;
   },
 
   deleteBatch: (batchId: string) => {

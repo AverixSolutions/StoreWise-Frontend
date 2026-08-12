@@ -1,7 +1,7 @@
 // src/components/purchase/BatchSelectModal.tsx
 "use client";
 
-import { Barcode, Boxes, CalendarDays, Plus, X, Zap } from "lucide-react";
+import { Barcode, Boxes, Plus, X, Zap } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { BatchInfo } from "./types";
 
@@ -28,6 +28,14 @@ function formatMoney(value?: number | null) {
   return value == null ? "—" : `₹${Number(value).toFixed(2)}`;
 }
 
+function isExpired(value?: string | null) {
+  if (!value) return false;
+  const expiry = new Date(value);
+  if (Number.isNaN(expiry.getTime())) return false;
+  expiry.setHours(23, 59, 59, 999);
+  return expiry.getTime() < Date.now();
+}
+
 export default function BatchSelectModal({
   isOpen,
   onClose,
@@ -36,7 +44,7 @@ export default function BatchSelectModal({
   onAddNewBatch,
   productName,
   nextBarcode,
-  allowCreateNew = true,
+  allowCreateNew = false,
   barcodeEnabled = true,
 }: BatchSelectModalProps) {
   const firstButtonRef = useRef<HTMLButtonElement>(null);
@@ -101,7 +109,7 @@ export default function BatchSelectModal({
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="flex max-h-[84vh] w-full max-w-[860px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+      <div className="flex max-h-[88vh] w-full max-w-[1240px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
         <div className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-gradient-to-r from-slate-50 to-white px-4 py-2.5">
           <div className="flex min-w-0 items-center gap-2.5">
             <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#1e3a5f]/10">
@@ -109,7 +117,7 @@ export default function BatchSelectModal({
             </span>
             <div className="min-w-0">
               <h3 className="text-sm font-semibold text-slate-900">
-                {barcodeEnabled ? "Choose Barcode / Batch" : "Choose Batch"}
+                Choose Stock Lot
               </h3>
               {productName ? (
                 <p className="max-w-[520px] truncate text-xs text-slate-500">
@@ -160,7 +168,7 @@ export default function BatchSelectModal({
 
         <div className="shrink-0 border-b border-sky-100 bg-sky-50 px-4 py-1.5 text-[11px] text-sky-800">
           {tab === "existing"
-            ? "Use ↑ / ↓ and Enter to choose. Stock and dates are shown inline."
+            ? "Use ↑ / ↓ and Enter. Lots are grouped by their source purchase and show the values that make them different."
             : `Create a separate barcode batch${
                 nextBarcode ? ` • Next: ${nextBarcode}` : ""
               }.`}
@@ -194,53 +202,74 @@ export default function BatchSelectModal({
                 className="overflow-hidden rounded-xl border border-slate-200"
               >
                 <div className="overflow-x-auto">
-                  <div className="min-w-[760px]">
-                    <div className="grid grid-cols-[1.25fr_1.1fr_78px_78px_78px_68px_1.25fr] gap-2 border-b border-slate-200 bg-slate-100 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                      <div>{barcodeEnabled ? "Barcode" : "Batch"}</div>
+                  <div className="min-w-[1120px]">
+                    <div className="grid grid-cols-[62px_minmax(300px,2fr)_minmax(170px,1fr)_110px_minmax(220px,1.4fr)_72px_minmax(180px,1.1fr)] gap-3 border-b border-slate-200 bg-slate-100 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                      <div>Lot</div>
                       <div>Purchase Batch</div>
-                      <div>MRP</div>
-                      <div>Sale</div>
-                      <div>Cost</div>
+                      <div>Mfr Batch</div>
+                      <div>MRP / Cost</div>
+                      <div>Selling Rates</div>
                       <div>Stock</div>
-                      <div>Dates</div>
+                      <div>Expiry / Barcode</div>
                     </div>
 
                     <div className="max-h-[48vh] divide-y divide-slate-200 overflow-y-auto">
-                      {batches.map((batch, index) => (
-                        <button
+                      {batches.map((batch, index) => {
+                        const expired = isExpired(batch.expiryDate);
+                        return (
+                          <button
                           key={batch.id}
                           ref={index === 0 ? firstButtonRef : null}
                           type="button"
                           data-batch-btn="1"
                           onClick={() => handleSelect(batch)}
-                          className="grid w-full grid-cols-[1.25fr_1.1fr_78px_78px_78px_68px_1.25fr] items-center gap-2 px-3 py-2 text-left text-xs text-slate-700 outline-none transition hover:bg-sky-50 focus:bg-sky-50 focus:ring-2 focus:ring-inset focus:ring-sky-400"
+                          disabled={expired || Number(batch.stock || 0) <= 0}
+                          className="grid w-full grid-cols-[62px_minmax(300px,2fr)_minmax(170px,1fr)_110px_minmax(220px,1.4fr)_72px_minmax(180px,1.1fr)] items-center gap-3 px-3 py-2.5 text-left text-xs text-slate-700 outline-none transition hover:bg-sky-50 focus:bg-sky-50 focus:ring-2 focus:ring-inset focus:ring-sky-400 disabled:cursor-not-allowed disabled:bg-rose-50/60 disabled:opacity-60"
                         >
-                          <div
-                            className="truncate font-mono font-semibold text-slate-900"
-                            title={
-                              barcodeEnabled
-                                ? batch.barcode || ""
-                                : batch.purchaseBatchNo || batch.batchNo || ""
-                            }
-                          >
-                            {barcodeEnabled
-                              ? batch.barcode || "—"
-                              : batch.purchaseBatchNo || batch.batchNo || "—"}
+                          <div className="font-mono font-semibold text-slate-900">
+                            L
+                            {String(batch.lotNumber || index + 1).padStart(
+                              2,
+                              "0",
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <div
+                              className="break-all font-medium leading-4"
+                              title={batch.purchaseBatchNo || ""}
+                            >
+                              {batch.purchaseBatchNo || "Legacy / manual"}
+                            </div>
+                            <div className="truncate text-[10px] text-slate-500">
+                              {[
+                                batch.supplierName,
+                                batch.purchaseBillNo,
+                                formatDate(batch.purchaseDate),
+                              ]
+                                .filter(Boolean)
+                                .join(" • ")}
+                            </div>
                           </div>
                           <div
-                            className="truncate"
-                            title={batch.purchaseBatchNo || batch.batchNo || ""}
+                            className="break-words font-medium leading-4"
+                            title={batch.batchNo || ""}
                           >
-                            {batch.purchaseBatchNo || batch.batchNo || "—"}
+                            {batch.batchNo || "—"}
                           </div>
-                          <div className="font-medium">
-                            {formatMoney(batch.mrp)}
+                          <div className="text-[10px]">
+                            <div className="font-medium">
+                              M {formatMoney(batch.mrp)}
+                            </div>
+                            <div className="text-slate-500">
+                              C {formatMoney(batch.costPrice)}
+                            </div>
                           </div>
-                          <div className="font-medium text-sky-700">
-                            {formatMoney(batch.salePrice)}
-                          </div>
-                          <div className="font-medium">
-                            {formatMoney((batch as any).costPrice)}
+                          <div
+                            className="text-[10px] font-medium leading-4 text-sky-700"
+                            title={batch.rateSummary || ""}
+                          >
+                            {batch.rateSummary ||
+                              `Default: ${formatMoney(batch.salePrice)}`}
                           </div>
                           <div>
                             <span
@@ -253,14 +282,27 @@ export default function BatchSelectModal({
                               {Number((batch as any).stock || 0)}
                             </span>
                           </div>
-                          <div className="flex items-center gap-1.5 whitespace-nowrap text-[10px] text-slate-500">
-                            <CalendarDays className="h-3 w-3 shrink-0 text-slate-400" />
-                            <span>M {formatDate(batch.mfgDate)}</span>
-                            <span className="text-slate-300">•</span>
-                            <span>E {formatDate(batch.expiryDate)}</span>
+                          <div className="min-w-0 text-[10px] text-slate-500">
+                            <div
+                              className={
+                                expired ? "font-semibold text-rose-700" : ""
+                              }
+                            >
+                              {expired ? "Expired " : "Exp "}
+                              {formatDate(batch.expiryDate)}
+                            </div>
+                            {barcodeEnabled ? (
+                              <div
+                                className="break-all font-mono leading-4"
+                                title={batch.barcode || ""}
+                              >
+                                {batch.barcode || "No barcode"}
+                              </div>
+                            ) : null}
                           </div>
                         </button>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 </div>

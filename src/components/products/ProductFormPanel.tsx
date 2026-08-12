@@ -48,6 +48,7 @@ interface BarcodeEntry {
   isGenerated: boolean;
   saved: boolean;
   batchId?: string;
+  isDefault?: boolean;
 }
 
 interface BulkRow {
@@ -602,9 +603,7 @@ export default function ProductFormPanel({
 
   useEffect(() => {
     if (!isOpen) return;
-    if (barcodeEnabled) {
-      loadNextBarcodePreview();
-    } else {
+    if (!barcodeEnabled) {
       setNextBarcodePreview("00001");
       setBarcodeEntries([]);
       setCustomBarcodeInput("");
@@ -643,13 +642,14 @@ export default function ProductFormPanel({
       setTax(editProduct.tax);
       setHsn(editProduct.hsn ?? "");
       setCostPrice(editProduct.costPrice.toString());
-      if (barcodeEnabled) loadExistingBarcodes(editProduct.id);
+      if (barcodeEnabled)
+        loadExistingBarcodes(editProduct.id, editProduct.code);
       loadExistingProductImage(editProduct.id);
     } else {
       resetForm();
       platform
         .getNextCode(licenseId)
-        .then((nextCode: string) => setCode(nextCode));
+        .then((nextCode: string) => setFreshProductCode(nextCode));
     }
   }, [isOpen, editProduct, barcodeEnabled]);
 
@@ -942,18 +942,44 @@ export default function ProductFormPanel({
     };
   }
 
-  async function loadNextBarcodePreview() {
+  async function loadNextBarcodePreview(
+    itemCode = code,
+    entries = barcodeEntries,
+  ) {
     if (!barcodeEnabled) return;
 
     try {
       const res = await platform.peekNextBarcode?.(licenseId);
-      setNextBarcodePreview(res?.barcode ?? "00001");
+      let candidate = Number(res?.barcode || 1);
+      const used = new Set(
+        [itemCode, ...entries.map((entry) => entry.barcode)]
+          .map((value) => String(value || "").trim())
+          .filter(Boolean),
+      );
+      while (used.has(String(candidate).padStart(5, "0"))) {
+        candidate += 1;
+      }
+      setNextBarcodePreview(String(candidate).padStart(5, "0"));
     } catch {
       setNextBarcodePreview("00001");
     }
   }
 
-  async function loadExistingBarcodes(productId: string) {
+  function setFreshProductCode(nextCode: string) {
+    setCode(nextCode);
+    if (!barcodeEnabled) return;
+    const defaultEntry: BarcodeEntry = {
+      id: `default-${nextCode}`,
+      barcode: nextCode,
+      isGenerated: false,
+      saved: false,
+      isDefault: true,
+    };
+    setBarcodeEntries([defaultEntry]);
+    void loadNextBarcodePreview(nextCode, [defaultEntry]);
+  }
+
+  async function loadExistingBarcodes(productId: string, fallbackCode: string) {
     if (!barcodeEnabled) {
       setBarcodeEntries([]);
       return;
@@ -969,11 +995,27 @@ export default function ProductFormPanel({
       .map((b: any) => ({
         id: b.id,
         barcode: String(b.barcode).trim(),
-        isGenerated: /^\d{5}$/.test(String(b.barcode).trim()),
+        isGenerated: Boolean(b.isSystemGeneratedBarcode),
         saved: true,
         batchId: b.id,
       }));
-    setBarcodeEntries(entries);
+    const nextEntries =
+      entries.length
+        ? entries.map((entry) => ({
+            ...entry,
+            isDefault: entry.barcode === fallbackCode,
+          }))
+        : [
+            {
+              id: `default-${fallbackCode}`,
+              barcode: fallbackCode,
+              isGenerated: false,
+              saved: false,
+              isDefault: true,
+            },
+          ];
+    setBarcodeEntries(nextEntries);
+    void loadNextBarcodePreview(fallbackCode, nextEntries);
   }
 
   function resetForm() {
@@ -1011,21 +1053,31 @@ export default function ProductFormPanel({
       setBarcodeError("No active license found");
       return;
     }
-    const res = await platform.reserveBarcodes?.(licenseId, 1);
-    if (!res?.success || !res.barcodes?.[0]) {
-      setBarcodeError("Failed to generate barcode");
+    let barcode = "";
+    for (let attempt = 0; attempt < 10 && !barcode; attempt += 1) {
+      const res = await platform.reserveBarcodes?.(licenseId, 1);
+      if (!res?.success || !res.barcodes?.[0]) {
+        setBarcodeError("Failed to generate barcode");
+        return;
+      }
+      const candidate = res.barcodes[0];
+      if (!barcodeEntries.some((entry) => entry.barcode === candidate)) {
+        barcode = candidate;
+      }
+    }
+    if (!barcode) {
+      setBarcodeError("Could not find an unused generated barcode");
       return;
     }
-    const barcode = res.barcodes[0];
-    if (barcodeEntries.some((e) => e.barcode === barcode)) {
-      setBarcodeError("Barcode already in the list");
-      return;
-    }
-    setBarcodeEntries((prev) => [
-      ...prev,
-      { id: `temp-${Date.now()}`, barcode, isGenerated: true, saved: false },
-    ]);
-    await loadNextBarcodePreview();
+    const generatedEntry: BarcodeEntry = {
+      id: `temp-${Date.now()}`,
+      barcode,
+      isGenerated: true,
+      saved: false,
+    };
+    const nextEntries = [...barcodeEntries, generatedEntry];
+    setBarcodeEntries(nextEntries);
+    await loadNextBarcodePreview(code, nextEntries);
   }
 
   function addCustomBarcode() {
@@ -1034,6 +1086,12 @@ export default function ProductFormPanel({
     const bc = customBarcodeInput.trim();
     if (!bc) {
       setBarcodeError("Enter a barcode value");
+      return;
+    }
+    if (!/^[A-Za-z0-9_-]{1,50}$/.test(bc)) {
+      setBarcodeError(
+        "Use 1–50 letters, numbers, hyphens, or underscores only",
+      );
       return;
     }
     if (barcodeEntries.some((e) => e.barcode === bc)) {
@@ -1063,7 +1121,13 @@ export default function ProductFormPanel({
       if (!ok) return;
       const res = await platform.deleteBarcode?.(licenseId, entry.batchId);
       if (!res?.success) {
-        showToast("error", res?.error || "Failed to delete barcode.");
+        const message =
+          res?.error === "BARCODE_HAS_STOCK"
+            ? "This barcode is still used by available stock."
+            : res?.error === "BARCODE_HAS_HISTORY"
+              ? "This barcode is part of purchase history and cannot be removed."
+              : res?.error || "Failed to delete barcode.";
+        showToast("error", message);
         return;
       }
     }
@@ -1117,13 +1181,41 @@ export default function ProductFormPanel({
       )
         throw new Error("Invalid sale price");
 
+      const effectiveBarcodeEntries: BarcodeEntry[] = barcodeEnabled
+        ? barcodeEntries.some((entry) => entry.barcode.trim())
+          ? barcodeEntries
+          : [
+              {
+                id: `default-${code}`,
+                barcode: code,
+                isGenerated: false,
+                saved: false,
+                isDefault: true,
+              },
+            ]
+        : [];
       const seen = new Set<string>();
-      for (const entry of barcodeEnabled ? barcodeEntries : []) {
+      for (const entry of effectiveBarcodeEntries) {
         const value = entry.barcode.trim();
         if (!value) continue;
+        if (!/^[A-Za-z0-9_-]{1,50}$/.test(value)) {
+          throw new Error(
+            `Invalid barcode ${value}. Use letters, numbers, hyphens, or underscores only.`,
+          );
+        }
         if (seen.has(value))
           throw new Error(`Duplicate barcode in form: ${value}`);
         seen.add(value);
+        const [barcodeOwner, itemCodeOwner] = await Promise.all([
+          platform.getProductByBarcode(licenseId, value),
+          platform.getProductByCode
+            ? platform.getProductByCode(licenseId, value)
+            : Promise.resolve(null),
+        ]);
+        const owner = barcodeOwner || itemCodeOwner;
+        if (owner && owner.id !== editProduct?.id) {
+          throw new Error(`Barcode ${value} is already used by another item`);
+        }
       }
 
       await ensureMastersForProduct({
@@ -1194,14 +1286,14 @@ export default function ProductFormPanel({
         );
       }
 
-      for (const entry of barcodeEnabled ? barcodeEntries : []) {
+      for (const entry of effectiveBarcodeEntries) {
         const value = entry.barcode.trim();
         if (entry.saved || !value) continue;
         const bcResult = await platform.createBarcodeForProduct?.({
           licenseId,
           productId,
           barcode: value,
-          useGenerated: false,
+          useGenerated: entry.isGenerated,
           costPrice: parsedCostPrice,
           salePrice: parsedSalePrice,
         });
@@ -1218,8 +1310,7 @@ export default function ProductFormPanel({
       if (!editProduct && saveMode === "addAnother") {
         resetForm();
         const nextCode = await platform.getNextCode(licenseId);
-        setCode(nextCode);
-        if (barcodeEnabled) await loadNextBarcodePreview();
+        setFreshProductCode(nextCode);
         requestAnimationFrame(() => categoryRef.current?.focus());
         return;
       }
@@ -1227,8 +1318,7 @@ export default function ProductFormPanel({
       if (isEmbedded) {
         resetForm();
         const nextCode = await platform.getNextCode(licenseId);
-        setCode(nextCode);
-        if (barcodeEnabled) await loadNextBarcodePreview();
+        setFreshProductCode(nextCode);
         onClear?.();
         requestAnimationFrame(() => categoryRef.current?.focus());
         return;
@@ -1381,12 +1471,36 @@ export default function ProductFormPanel({
           rates: bulkRates,
         };
 
+        if (barcodeEnabled) {
+          const owner = await platform.getProductByBarcode(licenseId, nextCode);
+          if (owner) {
+            throw new Error(
+              `Default barcode ${nextCode} is already used by ${owner.name}`,
+            );
+          }
+        }
+
         const result = await platform.createProduct(productData);
         if (!result?.success) {
           throw new Error(result?.error || "Create failed");
         }
         if (!result.productId) {
           throw new Error("Product was created without an id");
+        }
+        if (barcodeEnabled) {
+          const barcodeResult = await platform.createBarcodeForProduct?.({
+            licenseId,
+            productId: result.productId,
+            barcode: nextCode,
+            useGenerated: false,
+            costPrice: r.costPrice,
+            salePrice: r.salePrice ?? null,
+          });
+          if (!barcodeResult?.success) {
+            throw new Error(
+              barcodeResult?.error || `Failed to save barcode ${nextCode}`,
+            );
+          }
         }
         const rateResult = await platform.saveProductRates({
           licenseId,
@@ -1454,8 +1568,7 @@ export default function ProductFormPanel({
     if (isEmbedded) {
       resetForm();
       const nextCode = await platform.getNextCode(licenseId);
-      setCode(nextCode);
-      if (barcodeEnabled) await loadNextBarcodePreview();
+      setFreshProductCode(nextCode);
       onClear?.();
       requestAnimationFrame(() => categoryRef.current?.focus());
       return;
@@ -1487,8 +1600,11 @@ export default function ProductFormPanel({
             <h2 className="text-sm font-semibold tracking-[-0.02em] text-white truncate">
               {editProduct ? "Update product" : "Add to catalog"}
             </h2>
-            <span className="hidden sm:inline-flex items-center rounded-lg bg-white/10 border border-white/15 px-2.5 py-1 font-mono text-[11px] font-semibold text-white/70 tracking-wider">
-              #{code}
+            <span className="hidden sm:inline-flex items-center rounded-lg bg-white/10 border border-white/15 px-2.5 py-1 text-[10px] font-semibold text-white/70 tracking-wide">
+              Item code&nbsp;
+              <span className="font-mono text-[11px] tracking-wider">
+                #{code}
+              </span>
             </span>
             <span
               title="Focus Product Name (F2) | Save Item (Ctrl/Cmd + S)"
@@ -2036,9 +2152,14 @@ export default function ProductFormPanel({
                   Barcodes
                 </span>
                 <span className="text-[10px] text-slate-400">
-                  — each = a batch
+                  reusable item codes
                 </span>
               </div>
+              <p className="text-[10px] leading-4 text-slate-500">
+                A new item starts with its item code as the default barcode.
+                Generated alternates continue after the highest item code or
+                saved numeric barcode.
+              </p>
 
               {barcodeEntries.length > 0 && (
                 <div className="space-y-1.5">
@@ -2047,15 +2168,46 @@ export default function ProductFormPanel({
                       key={entry.id}
                       className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5"
                     >
-                      <span
-                        className={`rounded-md px-1.5 py-0.5 font-mono text-[11px] font-semibold ${
-                          entry.isGenerated
-                            ? "bg-cyan-100 text-cyan-800"
-                            : "bg-fuchsia-100 text-fuchsia-800"
-                        }`}
-                      >
-                        {entry.barcode}
-                      </span>
+                      {entry.saved ? (
+                        <span
+                          className={`rounded-md px-1.5 py-0.5 font-mono text-[11px] font-semibold ${
+                            entry.isDefault
+                              ? "bg-emerald-100 text-emerald-800"
+                              : entry.isGenerated
+                                ? "bg-cyan-100 text-cyan-800"
+                                : "bg-fuchsia-100 text-fuchsia-800"
+                          }`}
+                        >
+                          {entry.barcode}
+                        </span>
+                      ) : (
+                        <input
+                          type="text"
+                          value={entry.barcode}
+                          onChange={(event) => {
+                            const barcode = event.target.value.trim();
+                            setBarcodeEntries((current) =>
+                              current.map((value) =>
+                                value.id === entry.id
+                                  ? {
+                                      ...value,
+                                      barcode,
+                                      isDefault: barcode === code,
+                                    }
+                                  : value,
+                              ),
+                            );
+                            setBarcodeError(null);
+                          }}
+                          aria-label="Item barcode"
+                          className="h-7 min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2 font-mono text-[11px] font-semibold text-slate-800 outline-none focus:border-cyan-400"
+                        />
+                      )}
+                      {entry.isDefault && (
+                        <span className="text-[10px] font-medium text-emerald-600">
+                          item code default
+                        </span>
+                      )}
                       {entry.isGenerated && (
                         <span className="flex items-center gap-1 text-[10px] text-slate-400">
                           <Zap className="h-2.5 w-2.5" /> generated
@@ -2086,7 +2238,8 @@ export default function ProductFormPanel({
                   onClick={addGeneratedBarcode}
                   className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl bg-cyan-600 px-3 py-2 text-[11px] font-semibold text-white transition hover:bg-cyan-700 sm:h-auto sm:justify-start sm:px-2.5 sm:py-1.5"
                 >
-                  <Zap className="h-3 w-3" /> Reserve {nextBarcodePreview}
+                  <Zap className="h-3 w-3" /> Add generated alternate{" "}
+                  {nextBarcodePreview}
                 </button>
                 <div className="flex w-full items-center gap-1.5 sm:min-w-[160px] sm:flex-1">
                   <input
@@ -2124,8 +2277,8 @@ export default function ProductFormPanel({
               )}
               {barcodeEntries.length === 0 && (
                 <p className="text-[11px] italic text-slate-400">
-                  No barcodes added. On purchase, the next available barcode
-                  will be suggested.
+                  The item code is used as the default barcode. Add more only
+                  when the same item has alternate printed barcodes.
                 </p>
               )}
             </div>

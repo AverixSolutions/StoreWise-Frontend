@@ -47,6 +47,12 @@ type PrinterInfo = { name: string; displayName: string; isDefault: boolean };
 
 const billToggles: ToggleDefinition[] = [
   {
+    key: "allowCashSaleWithoutCustomer",
+    label: "Customer optional for Cash",
+    description:
+      "Allow Cash sales without selecting a customer. Credit still requires one.",
+  },
+  {
     key: "showTransactionType",
     label: "Transaction type",
     description: "Keep the selected value active when hidden.",
@@ -84,6 +90,12 @@ const billToggles: ToggleDefinition[] = [
 ];
 
 const columnToggles: ToggleDefinition[] = [
+  {
+    key: "showBarcodeInput",
+    label: "Barcode input",
+    description:
+      "Show the barcode entry column. Stock-lot selection still works when hidden.",
+  },
   {
     key: "showUnit",
     label: "Unit",

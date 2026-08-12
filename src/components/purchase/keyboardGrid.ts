@@ -11,6 +11,7 @@ export const COLS = [
   "salePrice",
   "mrp",
   "lineType",
+  "batchNo",
   "mfgDate",
   "expiryDate",
 ] as const;

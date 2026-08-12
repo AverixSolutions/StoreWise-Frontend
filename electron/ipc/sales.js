@@ -286,6 +286,9 @@ function registerSaleHandlers() {
     } catch (error) {
       return { success: false, error: String(error?.message || error) };
     }
+    if (header.saleType !== "CASH" && !customerId) {
+      return { success: false, error: "Customer is required for CREDIT sales." };
+    }
 
     const newId = header.id || uuidv4();
     const now = new Date().toISOString();
@@ -542,6 +545,10 @@ function registerSaleHandlers() {
         existing.licenseId,
         header.customerId,
       );
+      const effectiveSaleType = header.saleType || existing.saleType;
+      if (effectiveSaleType !== "CASH" && !customerId) {
+        throw new Error("Customer is required for CREDIT sales.");
+      }
 
       const now = new Date().toISOString();
 
@@ -598,7 +605,7 @@ function registerSaleHandlers() {
         offerSavings: Number(header.offerSavings || 0),
         offerOverridesJson: header.offerOverridesJson || null,
         totalAmount,
-        saleType: header.saleType === "CASH" ? "CASH" : "CREDIT",
+        saleType: effectiveSaleType === "CASH" ? "CASH" : "CREDIT",
         now,
       });
 

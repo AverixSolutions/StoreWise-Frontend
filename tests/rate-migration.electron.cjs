@@ -525,9 +525,11 @@ app.whenReady().then(async () => {
       70,
     );
 
+    require("../electron/ipc/barcodes").registerBarcodeHandlers();
     require("../electron/ipc/purchases").registerPurchaseHandlers();
     require("../electron/ipc/sales").registerSaleHandlers();
     require("../electron/ipc/quotations").registerQuotationHandlers();
+    require("../electron/ipc/products").registerProductHandlers();
 
     const sellingRatesJson = JSON.stringify([
       {
@@ -543,6 +545,29 @@ app.whenReady().then(async () => {
         amount: 72,
       },
     ]);
+    const barcodeAlias = await invoke("barcode:createForProduct", {
+      licenseId: "legacy-license",
+      productId: "legacy-product",
+      barcode: "00001",
+      useGenerated: false,
+      costPrice: 50,
+      salePrice: 72,
+    });
+    assert.equal(barcodeAlias.success, true);
+    assert.equal(
+      (
+        await invoke("barcode:createForProduct", {
+          licenseId: "legacy-license",
+          productId: "legacy-product",
+          barcode: "ALT-RICE",
+          useGenerated: false,
+          costPrice: 50,
+          salePrice: 72,
+        })
+      ).success,
+      true,
+    );
+    assert.equal((await invoke("barcode:peekNext", "legacy-license")).barcode, "00002");
     const purchase = await invoke(
       "create-purchase",
       {
@@ -556,6 +581,7 @@ app.whenReady().then(async () => {
       [
         {
           productId: "legacy-product",
+          barcode: "00001",
           quantity: 3,
           unit: "NOS",
           rate: 50,
@@ -564,15 +590,103 @@ app.whenReady().then(async () => {
           discount: 0,
           discountType: "ABS",
           salePrice: 72,
+          batchNo: "MFR-RICE-A",
           lineNo: 1,
+          sellingRatesJson,
+        },
+        {
+          productId: "legacy-product",
+          barcode: "00001",
+          quantity: 1,
+          unit: "NOS",
+          rate: 55,
+          mrp: 100,
+          taxPercent: "NT",
+          discount: 0,
+          discountType: "ABS",
+          salePrice: 72,
+          batchNo: "MFR-RICE-B",
+          lineNo: 2,
+          sellingRatesJson,
+        },
+        {
+          productId: "legacy-product",
+          barcode: "00001",
+          quantity: 2,
+          unit: "NOS",
+          rate: 50,
+          mrp: 100,
+          taxPercent: "NT",
+          discount: 0,
+          discountType: "ABS",
+          salePrice: 72,
+          batchNo: "MFR-RICE-A",
+          lineNo: 3,
+          sellingRatesJson,
+        },
+        {
+          productId: "legacy-product",
+          barcode: "ALT-RICE",
+          quantity: 1,
+          unit: "NOS",
+          rate: 50,
+          mrp: 100,
+          taxPercent: "NT",
+          discount: 0,
+          discountType: "ABS",
+          salePrice: 72,
+          batchNo: "MFR-RICE-A",
+          lineNo: 4,
           sellingRatesJson,
         },
       ],
     );
     assert.equal(purchase.success, true);
     const purchasedItem = db
-      .prepare(`SELECT * FROM purchase_items WHERE purchaseId=?`)
+      .prepare(
+        `SELECT * FROM purchase_items WHERE purchaseId=? AND lineNo=1`,
+      )
       .get(purchase.purchaseId);
+    const purchaseLots = db
+      .prepare(
+        `SELECT pi.batchId, pi.batchNo, pi.barcode, pi.quantity,
+                pi.purchaseBatchNo, pb.purchaseId
+         FROM purchase_items pi
+         JOIN product_batches pb ON pb.id=pi.batchId
+         WHERE pi.purchaseId=?
+         ORDER BY pi.lineNo`,
+      )
+      .all(purchase.purchaseId);
+    assert.equal(purchaseLots.length, 3);
+    assert.equal(purchaseLots[0].quantity, 5);
+    assert.equal(purchaseLots[0].barcode, "00001");
+    assert.equal(purchaseLots[1].barcode, "00001");
+    assert.equal(purchaseLots[2].barcode, "ALT-RICE");
+    assert.notEqual(purchaseLots[0].batchId, purchaseLots[1].batchId);
+    assert.equal(purchaseLots[0].batchNo, "MFR-RICE-A");
+    assert.equal(purchaseLots[1].batchNo, "MFR-RICE-B");
+    assert.equal(purchaseLots[2].batchNo, "MFR-RICE-A");
+    assert.equal(purchaseLots[0].purchaseId, purchase.purchaseId);
+    assert.equal(purchaseLots[1].purchaseId, purchase.purchaseId);
+    assert.equal(purchaseLots[2].purchaseId, purchase.purchaseId);
+    assert.equal(purchaseLots[0].purchaseBatchNo, purchaseLots[1].purchaseBatchNo);
+    assert.match(purchaseLots[0].purchaseBatchNo, /-\d{5}$/);
+    const listedLots = await invoke("product.batch:list", {
+      productId: "legacy-product",
+      includeDeleted: false,
+    });
+    const listedPurchaseLots = listedLots.rows.filter(
+      (row) => row.purchaseId === purchase.purchaseId,
+    );
+    assert.equal(listedPurchaseLots.length, 3);
+    assert.equal(listedPurchaseLots[0].purchaseBillNo, "PUR-TEST-1");
+    assert.ok(listedPurchaseLots.every((row) => row.rateSummary));
+    const listedBarcodes = await invoke("barcode:listForProduct", {
+      licenseId: "legacy-license",
+      productId: "legacy-product",
+    });
+    assert.equal(listedBarcodes.rows.length, 2);
+    assert.equal(listedBarcodes.rows[0].barcode, "00001");
     assert.equal(purchasedItem.sellingRatesJson, sellingRatesJson);
     assert.equal(
       db
@@ -603,6 +717,7 @@ app.whenReady().then(async () => {
               unit: "NOS",
               rate: 50,
               mrp: 100,
+              batchNo: purchasedItem.batchNo,
               taxPercent: "NT",
               taxAmount: 0,
               discount: 0,
@@ -657,6 +772,36 @@ app.whenReady().then(async () => {
       ],
     );
     assert.equal(sale.success, true);
+    const creditWithoutCustomer = await invoke(
+      "create-sale",
+      {
+        licenseId: "legacy-license",
+        userId: "test-user",
+        saleType: "CREDIT",
+        saleDate: now,
+        entryTime: now,
+      },
+      [
+        {
+          productId: "legacy-product",
+          batchId: currentPurchasedItem.batchId,
+          quantity: 1,
+          unit: "NOS",
+          rate: 72,
+          salePrice: 72,
+          taxPercent: "NT",
+          discount: 0,
+          discountType: "ABS",
+          lineNo: 1,
+          rateTypeId: wholesale.id,
+          rateTypeCode: "WHOLESALE",
+          rateTypeName: "Wholesale",
+          rateSource: "MASTER",
+        },
+      ],
+    );
+    assert.equal(creditWithoutCustomer.success, false);
+    assert.match(creditWithoutCustomer.error, /Customer is required for CREDIT/i);
     const savedSaleItem = db
       .prepare(`SELECT * FROM sale_items WHERE saleId=?`)
       .get(sale.saleId);
@@ -872,7 +1017,6 @@ app.whenReady().then(async () => {
       ).success,
       true,
     );
-    require("../electron/ipc/products").registerProductHandlers();
     const createdProduct = await invoke("create-product", {
       licenseId: "legacy-license",
       code: "00002",
@@ -891,6 +1035,21 @@ app.whenReady().then(async () => {
       ],
     });
     assert.equal(createdProduct.success, true);
+    const ownItemCodeBarcode = await invoke("barcode:createForProduct", {
+      licenseId: "legacy-license",
+      productId: createdProduct.productId,
+      barcode: "00002",
+      useGenerated: false,
+    });
+    assert.equal(ownItemCodeBarcode.success, true);
+    const reservedItemCodeConflict = await invoke("barcode:createForProduct", {
+      licenseId: "legacy-license",
+      productId: "legacy-product",
+      barcode: "00002",
+      useGenerated: false,
+    });
+    assert.equal(reservedItemCodeConflict.success, false);
+    assert.equal(reservedItemCodeConflict.code, "BARCODE_IN_USE");
     assert.deepEqual(
       db
         .prepare(

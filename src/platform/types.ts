@@ -166,6 +166,8 @@ export type ProductLookupResult = ProductSummary & {
   batchSalePrice?: number | null;
   batchCostPrice?: number | null;
   batchNo?: string | null;
+  purchaseBatchNo?: string | null;
+  purchaseId?: string | null;
   mfgDate?: string | null;
   expiryDate?: string | null;
   batchStock?: number;
@@ -185,6 +187,13 @@ export type BatchRow = {
   salePrice?: number | null;
   costPrice?: number | null;
   batchNo?: string | null;
+  purchaseBatchNo?: string | null;
+  purchaseId?: string | null;
+  purchaseBillNo?: string | null;
+  supplierName?: string | null;
+  purchaseDate?: string | null;
+  lotNumber?: number | null;
+  rateSummary?: string | null;
   mfgDate?: string | null;
   expiryDate?: string | null;
   receivedAt?: string | null;

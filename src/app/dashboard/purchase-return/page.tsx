@@ -854,9 +854,7 @@ export default function PurchaseReturnPage() {
     try {
       const [product, batchesRes] = await Promise.all([
         platform.getProduct(productId),
-        barcodeEnabled
-          ? platform.listBarcodesForProduct?.(licenseId, productId)
-          : platform.listBatchesForProduct(productId, false),
+        platform.listBatchesForProduct(productId, false),
       ]);
 
       if (!product) return;
@@ -868,6 +866,12 @@ export default function PurchaseReturnPage() {
           barcode: barcodeEnabled ? batch.barcode : "",
           batchNo: batch.batchNo,
           purchaseBatchNo: batch.purchaseBatchNo || batch.batchNo,
+          purchaseId: batch.purchaseId,
+          purchaseBillNo: batch.purchaseBillNo,
+          supplierName: batch.supplierName,
+          purchaseDate: batch.purchaseDate,
+          lotNumber: batch.lotNumber,
+          rateSummary: batch.rateSummary,
           mfgDate: batch.mfgDate,
           expiryDate: batch.expiryDate,
           mrp: batch.mrp,
@@ -914,7 +918,39 @@ export default function PurchaseReturnPage() {
         ),
       );
 
-      if (batches.length) {
+      if (batches.length === 1) {
+        const batch = batches[0];
+        const batchRatePatch = await resolveManualReturnRatePatch(
+          productId,
+          batch.id,
+          batch.salePrice ?? product.salePrice,
+        );
+        setRows((currentRows) =>
+          currentRows.map((row, index) =>
+            index !== rowIndex
+              ? row
+              : {
+                  ...row,
+                  ...batchRatePatch,
+                  batchId: batch.id,
+                  barcode: barcodeEnabled ? batch.barcode || "" : "",
+                  batchNo: batch.batchNo ?? null,
+                  purchaseBatchNo: batch.purchaseBatchNo ?? null,
+                  mfgDate: batch.mfgDate ?? null,
+                  expiryDate: batch.expiryDate ?? null,
+                  mrp: batch.mrp ?? null,
+                  rate:
+                    batch.costPrice != null
+                      ? Number(batch.costPrice)
+                      : row.rate,
+                },
+          ),
+        );
+        window.setTimeout(() => focusCell(rowIndex, "quantity"), 0);
+        return;
+      }
+
+      if (batches.length > 1) {
         setBatchPicker({
           rowIndex,
           productId,
@@ -947,9 +983,7 @@ export default function PurchaseReturnPage() {
     if (!productId) return;
 
     try {
-      const batchesRes = barcodeEnabled
-        ? await platform.listBarcodesForProduct?.(licenseId, productId)
-        : await platform.listBatchesForProduct(productId, false);
+      const batchesRes = await platform.listBatchesForProduct(productId, false);
 
       const liveBatches: BatchInfo[] = (batchesRes?.rows || [])
         .filter((batch: any) => Number(batch.stock || 0) > 0)
@@ -958,6 +992,12 @@ export default function PurchaseReturnPage() {
           barcode: barcodeEnabled ? batch.barcode : "",
           batchNo: batch.batchNo,
           purchaseBatchNo: batch.purchaseBatchNo || batch.batchNo,
+          purchaseId: batch.purchaseId,
+          purchaseBillNo: batch.purchaseBillNo,
+          supplierName: batch.supplierName,
+          purchaseDate: batch.purchaseDate,
+          lotNumber: batch.lotNumber,
+          rateSummary: batch.rateSummary,
           mfgDate: batch.mfgDate,
           expiryDate: batch.expiryDate,
           mrp: batch.mrp,

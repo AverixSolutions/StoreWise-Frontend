@@ -72,6 +72,14 @@ const offerClearPatch: Partial<ItemRow> = {
   offerMeta: null,
 };
 
+function isExpiredStockLot(expiryDate?: string | null) {
+  if (!expiryDate) return false;
+  const expiry = new Date(expiryDate);
+  if (Number.isNaN(expiry.getTime())) return false;
+  expiry.setHours(23, 59, 59, 999);
+  return expiry.getTime() < Date.now();
+}
+
 function offerRowsSignature(rows: ItemRow[]) {
   return JSON.stringify(
     rows.map((r) => ({
@@ -394,6 +402,11 @@ export default function SalesPage() {
   // NEW: Cancel confirmation modal
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const barcodeEnabled = isClient ? canUseBarcode() : true;
+  const customerRequired =
+    header.saleType === "CREDIT" ||
+    !salesUiSettings.allowCashSaleWithoutCustomer;
+  const showBarcodeInput =
+    barcodeEnabled && salesUiSettings.showBarcodeInput;
 
   useEffect(() => {
     rowsRef.current = rows;
@@ -1078,9 +1091,7 @@ export default function SalesPage() {
     const product = await platform.getProduct(productId);
     if (!product) return;
 
-    const batchesRes = barcodeEnabled
-      ? await platform.listBarcodesForProduct?.(licenseId, productId)
-      : await platform.listBatchesForProduct(productId, false);
+    const batchesRes = await platform.listBatchesForProduct(productId, false);
 
     const liveBatches: BatchInfo[] = (batchesRes?.rows || [])
       .filter((b: any) => Number(b.stock || 0) > 0)
@@ -1089,6 +1100,12 @@ export default function SalesPage() {
         barcode: barcodeEnabled ? b.barcode : "",
         batchNo: b.batchNo,
         purchaseBatchNo: b.purchaseBatchNo || b.batchNo,
+        purchaseId: b.purchaseId,
+        purchaseBillNo: b.purchaseBillNo,
+        supplierName: b.supplierName,
+        purchaseDate: b.purchaseDate,
+        lotNumber: b.lotNumber,
+        rateSummary: b.rateSummary,
         mfgDate: b.mfgDate,
         expiryDate: b.expiryDate,
         mrp: b.mrp,
@@ -1097,7 +1114,14 @@ export default function SalesPage() {
         stock: b.stock,
       }));
 
-    const selectedBatchId = liveBatches.length === 1 ? liveBatches[0].id : null;
+    const selectableBatches = liveBatches.filter(
+      (batch) => !isExpiredStockLot(batch.expiryDate),
+    );
+
+    const selectedBatchId =
+      liveBatches.length === 1 && selectableBatches.length === 1
+        ? selectableBatches[0].id
+        : null;
     const ratePatch = await resolveProductRatePatch(
       productId,
       selectedBatchId,
@@ -1121,8 +1145,8 @@ export default function SalesPage() {
     };
 
     // Case 1: exactly one live batch -> auto select it
-    if (liveBatches.length === 1) {
-      const b = liveBatches[0];
+    if (liveBatches.length === 1 && selectableBatches.length === 1) {
+      const b = selectableBatches[0];
 
       setRows((prev) =>
         prev.map((r, i) =>
@@ -1145,7 +1169,10 @@ export default function SalesPage() {
     }
 
     // Case 2: multiple live batches -> open picker
-    if (liveBatches.length > 1) {
+    if (
+      liveBatches.length > 1 ||
+      (liveBatches.length === 1 && selectableBatches.length === 0)
+    ) {
       setRows((prev) =>
         prev.map((r, i) => (i !== rowIndex ? r : { ...r, ...basePatch })),
       );
@@ -1191,9 +1218,7 @@ export default function SalesPage() {
     if (!productId) return;
 
     try {
-      const batchesRes = barcodeEnabled
-        ? await platform.listBarcodesForProduct?.(licenseId, productId)
-        : await platform.listBatchesForProduct(productId, false);
+      const batchesRes = await platform.listBatchesForProduct(productId, false);
 
       const liveBatches: BatchInfo[] = (batchesRes?.rows || [])
         .filter((b: any) => Number(b.stock || 0) > 0)
@@ -1202,6 +1227,12 @@ export default function SalesPage() {
           barcode: barcodeEnabled ? b.barcode : "",
           batchNo: b.batchNo,
           purchaseBatchNo: b.purchaseBatchNo || b.batchNo,
+          purchaseId: b.purchaseId,
+          purchaseBillNo: b.purchaseBillNo,
+          supplierName: b.supplierName,
+          purchaseDate: b.purchaseDate,
+          lotNumber: b.lotNumber,
+          rateSummary: b.rateSummary,
           mfgDate: b.mfgDate,
           expiryDate: b.expiryDate,
           mrp: b.mrp,
@@ -1224,6 +1255,125 @@ export default function SalesPage() {
       });
     } catch (e) {
       console.error("Failed to load sales batches", e);
+    }
+  };
+
+  const handleBarcodeCommit = async (rowIndex: number) => {
+    if (!barcodeEnabled) return;
+    const row = rows[rowIndex];
+    const barcode = String(row?.barcode || "").trim();
+    if (!barcode) return;
+
+    try {
+      const product = await platform.getProductByBarcode(licenseId, barcode);
+      if (!product?.id) {
+        showValidation([`No item was found for barcode ${barcode}.`]);
+        return;
+      }
+      const batchesResult = await platform.listBatchesForProduct(
+        product.id,
+        false,
+      );
+      const barcodeLots: BatchInfo[] = (batchesResult.rows || [])
+        .filter(
+          (batch: any) =>
+            String(batch.barcode || "").trim() === barcode &&
+            Number(batch.stock || 0) > 0,
+        )
+        .map((batch: any) => ({
+          id: batch.id,
+          barcode: batch.barcode,
+          batchNo: batch.batchNo,
+          purchaseBatchNo: batch.purchaseBatchNo,
+          purchaseId: batch.purchaseId,
+          purchaseBillNo: batch.purchaseBillNo,
+          supplierName: batch.supplierName,
+          purchaseDate: batch.purchaseDate,
+          lotNumber: batch.lotNumber,
+          rateSummary: batch.rateSummary,
+          mfgDate: batch.mfgDate,
+          expiryDate: batch.expiryDate,
+          mrp: batch.mrp,
+          salePrice: batch.salePrice,
+          costPrice: batch.costPrice,
+          stock: batch.stock,
+        }));
+      const selectableLots = barcodeLots.filter(
+        (batch) => !isExpiredStockLot(batch.expiryDate),
+      );
+      if (selectableLots.length === 0) {
+        showValidation([
+          barcodeLots.length
+            ? `Every stock lot for barcode ${barcode} is expired.`
+            : `Barcode ${barcode} has no available stock.`,
+        ]);
+        return;
+      }
+
+      const basePatch = {
+        productId: product.id,
+        code: product.code,
+        name: product.name,
+        unit: product.unit,
+        taxPercent: product.tax,
+        barcode,
+        batchId: null,
+        batchNo: null,
+        purchaseBatchNo: null,
+        mfgDate: null,
+        expiryDate: null,
+        mrp: null,
+        ...offerClearPatch,
+      };
+
+      if (selectableLots.length > 1) {
+        setRows((current) =>
+          current.map((value, index) =>
+            index === rowIndex ? { ...value, ...basePatch } : value,
+          ),
+        );
+        setBatchPicker({
+          rowIndex,
+          productId: product.id,
+          batches: selectableLots,
+          productName: product.name,
+          nextBarcode: "",
+        });
+        return;
+      }
+
+      const selectedLot = selectableLots[0];
+
+      const ratePatch = await resolveProductRatePatch(
+        product.id,
+        selectedLot.id,
+        selectedLot.salePrice ?? product.salePrice,
+      );
+      setRows((prev) =>
+        prev.map((current, index) =>
+          index !== rowIndex
+            ? current
+            : {
+                ...current,
+                productId: product.id,
+                code: product.code,
+                name: product.name,
+                unit: product.unit,
+                taxPercent: product.tax,
+                batchId: selectedLot.id,
+                barcode,
+                batchNo: selectedLot.batchNo ?? null,
+                purchaseBatchNo: selectedLot.purchaseBatchNo ?? null,
+                mfgDate: selectedLot.mfgDate ?? null,
+                expiryDate: selectedLot.expiryDate ?? null,
+                mrp: selectedLot.mrp ?? null,
+                ...ratePatch,
+                ...offerClearPatch,
+              },
+        ),
+      );
+    } catch (error) {
+      console.error("Failed to resolve sales barcode", error);
     }
   };
 
@@ -1526,6 +1676,10 @@ export default function SalesPage() {
       header,
       items,
       finalOfferResult.validationWarnings,
+      {
+        allowCashSaleWithoutCustomer:
+          salesUiSettings.allowCashSaleWithoutCustomer,
+      },
     );
     if (errs.length) {
       setValidationMsgs(errs);
@@ -1938,7 +2092,11 @@ export default function SalesPage() {
 
       if (modifier && key === "s") {
         event.preventDefault();
-        if (!billDetailsOpenRef.current && !headerRef.current.customer) {
+        if (
+          !billDetailsOpenRef.current &&
+          customerRequired &&
+          !headerRef.current.customer
+        ) {
           focusBillDetails();
           return;
         }
@@ -1980,6 +2138,7 @@ export default function SalesPage() {
     focusBillDetails,
     focusItemEntry,
     hasBlockingOverlay,
+    customerRequired,
     requestPrintCurrentSale,
     toggleBillDetails,
   ]);
@@ -2239,7 +2398,7 @@ export default function SalesPage() {
                   ? (editingSlNo ?? undefined)
                   : (nextEntryNo ?? undefined)
               }
-              requireCustomer
+              requireCustomer={customerRequired}
               isEditing={Boolean(editingSaleId)}
               isOpen={billDetailsOpen}
               onToggle={toggleBillDetails}
@@ -2253,7 +2412,7 @@ export default function SalesPage() {
             rows={rows}
             products={products}
             onSelectProduct={handleSelectProduct}
-            barcodeEnabled={barcodeEnabled}
+            barcodeEnabled={showBarcodeInput}
             onUpdateRow={updateRow}
             onAddRow={addRow}
             onRemoveRow={removeRow}
@@ -2287,8 +2446,9 @@ export default function SalesPage() {
             onToggleBillDetails={toggleBillDetails}
             onFocusPreviousSection={focusLastBillDetail}
             onOpenMobileSheet={() => setIsMobileSheetOpen(true)}
-            hasMissingFields={!header.customer}
+            hasMissingFields={customerRequired && !header.customer}
             onRequestBatchSelect={handleRequestBatchSelect}
+            onBarcodeCommit={handleBarcodeCommit}
           />
         </div>
       </div>
@@ -2334,7 +2494,7 @@ export default function SalesPage() {
                   ? (editingSlNo ?? undefined)
                   : (nextEntryNo ?? undefined)
               }
-              requireCustomer
+              requireCustomer={customerRequired}
               isEditing={Boolean(editingSaleId)}
               isOpen
               onToggle={() => setIsMobileSheetOpen(false)}

@@ -247,13 +247,10 @@ try {
   db.prepare(`DROP INDEX IF EXISTS idx_batches_barcode_unique`).run();
 } catch (_) {}
 
-db.prepare(
-  `CREATE UNIQUE INDEX IF NOT EXISTS idx_batches_barcode_unique_live
-   ON product_batches(licenseId, barcode)
-   WHERE barcode IS NOT NULL
-     AND barcode <> ''
-     AND COALESCE(deletedAt,'')=''`,
-).run();
+// A barcode identifies a product, not one individual receipt lot. The same
+// product barcode can therefore appear on several purchase lots. Cross-product
+// reuse is rejected by the write handlers.
+db.prepare(`DROP INDEX IF EXISTS idx_batches_barcode_unique_live`).run();
 
 // Purchase Table
 db.prepare(

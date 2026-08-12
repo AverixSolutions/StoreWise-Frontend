@@ -390,6 +390,9 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
     FROM product_batches pb
     WHERE pb.productId = p.id
       AND COALESCE(pb.deletedAt,'') = ''
+      AND (pb.purchaseId IS NOT NULL OR COALESCE(pb.stock,0) <> 0
+           OR pb.batchNo IS NOT NULL OR pb.mfgDate IS NOT NULL
+           OR pb.expiryDate IS NOT NULL OR pb.purchaseBatchNo IS NOT NULL)
   ) AS batchCount,
   p.barcode, p.createdAt
 FROM products p
@@ -489,6 +492,9 @@ SELECT
     FROM product_batches pb
     WHERE pb.productId = p.id
       AND COALESCE(pb.deletedAt,'') = ''
+      AND (pb.purchaseId IS NOT NULL OR COALESCE(pb.stock,0) <> 0
+           OR pb.batchNo IS NOT NULL OR pb.mfgDate IS NOT NULL
+           OR pb.expiryDate IS NOT NULL OR pb.purchaseBatchNo IS NOT NULL)
   ) AS batchCount,
   p.barcode, p.createdAt
 FROM products p
@@ -652,6 +658,8 @@ LIMIT ? OFFSET ?
              b.salePrice AS batchSalePrice,
              b.costPrice AS batchCostPrice,
              b.batchNo,
+             b.purchaseBatchNo,
+             b.purchaseId,
              b.mfgDate,
              b.expiryDate,
              b.stock AS batchStock
@@ -787,11 +795,29 @@ LIMIT ? OFFSET ?
       const rows = db
         .prepare(
           `
-      SELECT id, barcode, mrp, salePrice, costPrice, batchNo, mfgDate, expiryDate,
-             receivedAt, stock, createdAt, updatedAt, deletedAt
-      FROM product_batches
-      WHERE productId=? ${includeDeleted ? "" : "AND COALESCE(deletedAt,'')=''"}
-      ORDER BY date(expiryDate) IS NULL, expiryDate, datetime(receivedAt)
+      SELECT b.id, b.licenseId, b.productId, b.barcode, b.mrp, b.salePrice,
+             b.costPrice, b.batchNo, b.purchaseBatchNo, b.purchaseId,
+             b.mfgDate, b.expiryDate, b.receivedAt, b.stock, b.createdAt,
+             b.updatedAt, b.deletedAt,
+             p.billNo AS purchaseBillNo, p.supplierName, p.purchaseDate,
+             (SELECT MIN(pi.lineNo) FROM purchase_items pi
+              WHERE pi.batchId=b.id AND COALESCE(pi.deletedAt,'')='') AS lotNumber,
+             (SELECT GROUP_CONCAT(rateLabel, ' | ') FROM (
+                SELECT rt.name || ': ' || printf('%.2f', pbr.amount) AS rateLabel
+                FROM product_batch_rates pbr
+                JOIN rate_types rt ON rt.id=pbr.rateTypeId
+                WHERE pbr.batchId=b.id
+                  AND COALESCE(pbr.deletedAt,'')=''
+                  AND COALESCE(rt.deletedAt,'')=''
+                ORDER BY rt.sortOrder, rt.name
+             )) AS rateSummary
+      FROM product_batches b
+      LEFT JOIN purchases p ON p.id=b.purchaseId
+      WHERE b.productId=? ${includeDeleted ? "" : "AND COALESCE(b.deletedAt,'')=''"}
+        AND (b.purchaseId IS NOT NULL OR COALESCE(b.stock,0) <> 0
+             OR b.batchNo IS NOT NULL OR b.mfgDate IS NOT NULL
+             OR b.expiryDate IS NOT NULL OR b.purchaseBatchNo IS NOT NULL)
+      ORDER BY date(b.expiryDate) IS NULL, b.expiryDate, datetime(b.receivedAt)
     `,
         )
         .all(productId);
@@ -919,16 +945,17 @@ LIMIT ? OFFSET ?
         WHERE licenseId = ?
           AND COALESCE(deletedAt,'') = ''
           AND barcode = ?
+          AND productId <> ?
           AND id <> ?
         LIMIT 1
         `,
         )
-        .get(existing.licenseId, barcode, existing.id);
+        .get(existing.licenseId, barcode, existing.productId, existing.id);
 
       if (conflict) {
         return {
           success: false,
-          error: `Barcode ${barcode} is already used by another batch`,
+          error: `Barcode ${barcode} is already used by another product`,
         };
       }
     }

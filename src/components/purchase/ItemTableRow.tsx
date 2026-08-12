@@ -386,11 +386,16 @@ export default function ItemTableRow({
               className={cellInput + " h-9 flex-1"}
               value={r.barcode || ""}
               onChange={(e) =>
-                onUpdateRow(idx, { barcode: e.target.value.trim() })
+                onUpdateRow(idx, {
+                  barcode: e.target.value.trim(),
+                })
               }
-              placeholder="Barcode (optional)"
+              placeholder="Item barcode"
               data-cell={`${idx}:barcode`}
-              onFocus={(e) => e.currentTarget.select()}
+              onFocus={(e) => {
+                e.currentTarget.select();
+                if (r.productId) onRequestBatchSelect?.(idx);
+              }}
               onClick={(e) => e.currentTarget.select()}
               onBlur={() => {
                 if (onBarcodeCommit) onBarcodeCommit(idx);
@@ -416,16 +421,6 @@ export default function ItemTableRow({
                 onGridKey(e, idx, "barcode");
               }}
             />
-            <label className="flex items-center gap-1 text-[11px] whitespace-nowrap text-gray-600">
-              <input
-                type="checkbox"
-                checked={r.printBarcode !== false}
-                onChange={(e) =>
-                  onUpdateRow(idx, { printBarcode: e.target.checked })
-                }
-              />
-              Print
-            </label>
           </div>
         </td>
       )}
@@ -1100,6 +1095,21 @@ export default function ItemTableRow({
             />
           </td>
         </>
+      ) : null}
+
+      {mode === "PURCHASE" ? (
+        <td className="min-w-[118px] px-2.5 py-2">
+          <input
+            className={cellInput + " h-9"}
+            value={r.batchNo || ""}
+            onChange={(e) => onUpdateRow(idx, { batchNo: e.target.value })}
+            placeholder="Supplier lot"
+            data-cell={`${idx}:batchNo`}
+            onFocus={(e) => e.currentTarget.select()}
+            onKeyDown={(e) => onGridKey(e, idx, "batchNo")}
+            title="Optional supplier or manufacturer batch number"
+          />
+        </td>
       ) : null}
 
       {uiSettings.showMfgDate ? (

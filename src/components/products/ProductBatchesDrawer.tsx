@@ -15,6 +15,12 @@ type Batch = {
   salePrice?: number | null;
   costPrice?: number | null;
   batchNo?: string | null;
+  purchaseBatchNo?: string | null;
+  purchaseBillNo?: string | null;
+  supplierName?: string | null;
+  purchaseDate?: string | null;
+  lotNumber?: number | null;
+  rateSummary?: string | null;
   mfgDate?: string | null;
   expiryDate?: string | null;
   receivedAt?: string | null;
@@ -185,7 +191,7 @@ export default function ProductBatchesDrawer({
           }
         }
 
-        showToast("success", "Batch updated successfully.");
+        showToast("success", "Stock lot updated successfully.");
       } else {
         const result = await platform.saveBatch({
           ...basePayload,
@@ -196,7 +202,7 @@ export default function ProductBatchesDrawer({
           throw new Error(result?.error || "Failed to save batch");
         }
 
-        showToast("success", "Batch saved successfully.");
+        showToast("success", "Stock lot saved successfully.");
       }
 
       await platform.rebuildProductStock?.(productId);
@@ -220,13 +226,13 @@ export default function ProductBatchesDrawer({
     if (!result?.success) {
       showToast(
         "error",
-        `Failed to delete batch: ${result?.error || "Unknown error"}`,
+        `Failed to delete stock lot: ${result?.error || "Unknown error"}`,
       );
       return;
     }
     setDeleteTarget(null);
     await refresh();
-    showToast("success", "Batch deleted successfully.");
+    showToast("success", "Stock lot deleted successfully.");
   }
 
   if (!open) return null;
@@ -244,10 +250,10 @@ export default function ProductBatchesDrawer({
           <div className="relative flex items-center justify-between gap-3">
             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2.5">
               <span className="kyn-brand-pill shrink-0 inline-flex items-center rounded-full px-2.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.18em] text-white/80 whitespace-nowrap">
-                Batch Management
+                Stock Lot Management
               </span>
               <h2 className="text-sm font-semibold tracking-[-0.02em] text-white truncate">
-                {productName || "Product Batches"}
+                {productName || "Product Stock Lots"}
               </h2>
             </div>
             <button
@@ -278,7 +284,7 @@ export default function ProductBatchesDrawer({
               </p>
             </div>
             <div className="ml-auto text-right">
-              <p className="text-[10px] text-slate-400">Batches</p>
+              <p className="text-[10px] text-slate-400">Stock Lots</p>
               <p className="text-lg font-semibold text-white">{rows.length}</p>
             </div>
           </div>
@@ -301,7 +307,7 @@ export default function ProductBatchesDrawer({
                 )}
               </div>
               <h3 className="text-sm font-semibold text-slate-900">
-                {editTarget ? "Edit Batch" : "Add / Adjust Batch"}
+                {editTarget ? "Edit Stock Lot" : "Manual Stock Adjustment"}
               </h3>
             </div>
 
@@ -329,7 +335,7 @@ export default function ProductBatchesDrawer({
 
                 {/* Batch No */}
                 <div>
-                  <label className={labelClass}>Batch Number</label>
+                    <label className={labelClass}>Manufacturer Batch</label>
                   <input
                     name="batchNo"
                     placeholder="Enter batch no."
@@ -475,9 +481,9 @@ export default function ProductBatchesDrawer({
                       Saving…
                     </span>
                   ) : editTarget ? (
-                    "Update Batch"
+                    "Update Stock Lot"
                   ) : (
-                    "Save Batch"
+                    "Save Manual Stock Lot"
                   )}
                 </button>
               </div>
@@ -487,7 +493,7 @@ export default function ProductBatchesDrawer({
           {/* ── Existing Batches ── */}
           <div className="space-y-2.5">
             <div className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-              Existing Batches
+              Purchase Batches & Stock Lots
             </div>
 
             {rows.length === 0 ? (
@@ -496,10 +502,10 @@ export default function ProductBatchesDrawer({
                   <Boxes className="h-6 w-6 text-slate-300" />
                 </div>
                 <p className="mt-3 text-sm font-medium text-slate-500">
-                  No batches yet
+                  No stock lots yet
                 </p>
                 <p className="mt-1 text-xs text-slate-400">
-                  Add your first batch using the form above.
+                  Stock lots are normally created from Purchase.
                 </p>
               </div>
             ) : (
@@ -513,8 +519,14 @@ export default function ProductBatchesDrawer({
                     <div className="min-w-0 flex-1">
                       {/* Top line */}
                       <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-md border border-indigo-200 bg-indigo-50 px-2 py-0.5 font-mono text-[11px] font-semibold text-indigo-700">
+                          {r.purchaseBatchNo || "Manual / legacy"}
+                          {r.lotNumber
+                            ? ` / L${String(r.lotNumber).padStart(2, "0")}`
+                            : ""}
+                        </span>
                         <span className="max-w-full truncate text-sm font-semibold text-slate-900">
-                          {r.batchNo || "No Batch #"}
+                          {r.batchNo || "No manufacturer batch"}
                         </span>
 
                         {barcodeEnabled && (
@@ -530,6 +542,13 @@ export default function ProductBatchesDrawer({
 
                       {/* Detail chips */}
                       <div className="mt-1.5 flex flex-wrap gap-1">
+                        {r.supplierName || r.purchaseBillNo ? (
+                          <span className="rounded-md bg-indigo-50 px-2 py-0.5 text-[10px] text-indigo-700">
+                            {[r.supplierName, r.purchaseBillNo]
+                              .filter(Boolean)
+                              .join(" • ")}
+                          </span>
+                        ) : null}
                         <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600">
                           <span className="font-semibold text-slate-500">
                             MRP:
@@ -566,6 +585,11 @@ export default function ProductBatchesDrawer({
                           </span>{" "}
                           {shortDate(r.receivedAt)}
                         </span>
+                        {r.rateSummary ? (
+                          <span className="rounded-md bg-sky-50 px-2 py-0.5 text-[10px] text-sky-700">
+                            {r.rateSummary}
+                          </span>
+                        ) : null}
                       </div>
                     </div>
 
@@ -574,7 +598,7 @@ export default function ProductBatchesDrawer({
                       <button
                         onClick={() => startEdit(r)}
                         className="inline-flex h-8 items-center gap-1 rounded-lg border border-cyan-200 bg-cyan-50 px-2.5 text-[11px] font-semibold text-cyan-700 transition hover:bg-cyan-100"
-                        title="Edit batch"
+                        title="Edit stock lot"
                       >
                         <Edit2 className="h-3 w-3" />
                         Edit
@@ -583,7 +607,7 @@ export default function ProductBatchesDrawer({
                       <button
                         onClick={() => requestDelete(r)}
                         className="inline-flex h-8 items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 text-[11px] font-semibold text-rose-700 transition hover:bg-rose-100"
-                        title="Delete batch"
+                        title="Delete stock lot"
                       >
                         <Trash2 className="h-3 w-3" />
                         Delete
@@ -600,10 +624,10 @@ export default function ProductBatchesDrawer({
       {/* ── Confirm Delete Modal ── */}
       <ConfirmModal
         isOpen={!!deleteTarget}
-        title="Delete batch?"
+        title="Delete stock lot?"
         message={
           deleteTarget
-            ? `Are you sure you want to delete batch "${
+            ? `Are you sure you want to delete stock lot "${
                 deleteTarget.batchNo ||
                 (barcodeEnabled ? deleteTarget.barcode : "") ||
                 deleteTarget.id

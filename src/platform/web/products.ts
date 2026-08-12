@@ -41,6 +41,13 @@ type WebBatch = {
   salePrice: number | null;
   costPrice: number | null;
   batchNo: string | null;
+  purchaseBatchNo?: string | null;
+  purchaseId?: string | null;
+  purchaseBillNo?: string | null;
+  supplierName?: string | null;
+  purchaseDate?: string | null;
+  lotNumber?: number | null;
+  rateSummary?: string | null;
   mfgDate: string | null;
   expiryDate: string | null;
   receivedAt: string | null;
@@ -53,6 +60,84 @@ type WebBatch = {
 
 type CodeSeqRecord = { licenseId: string; lastCodeNumber: number };
 type BarcodeSeqRecord = { licenseId: string; lastBarcodeNumber: number };
+
+async function enrichStockLots(rows: WebBatch[]): Promise<WebBatch[]> {
+  if (!rows.length) return rows;
+
+  try {
+    const purchaseIds = Array.from(
+      new Set(rows.map((row) => row.purchaseId).filter(Boolean) as string[]),
+    );
+    const [purchases, purchaseItems, batchRates, rateTypes] = await Promise.all([
+      Promise.all(
+        purchaseIds.map((id) =>
+          idbGetByKey<Record<string, any>>(STORES.PURCHASES, id),
+        ),
+      ),
+      idbGetAll<Record<string, any>>(STORES.PURCHASE_ITEMS),
+      idbGetAll<Record<string, any>>(STORES.PRODUCT_BATCH_RATES),
+      idbGetAll<Record<string, any>>(STORES.RATE_TYPES),
+    ]);
+
+    const purchaseById = new Map(
+      purchases.filter(Boolean).map((purchase) => [purchase!.id, purchase!]),
+    );
+    const lineByBatchId = new Map<string, number>();
+    purchaseItems.forEach((item) => {
+      if (!item.batchId || item.deletedAt) return;
+      const lineNo = Number(item.lineNo || 0);
+      const current = lineByBatchId.get(item.batchId);
+      if (!current || (lineNo > 0 && lineNo < current)) {
+        lineByBatchId.set(item.batchId, lineNo);
+      }
+    });
+    const rateTypeById = new Map(
+      rateTypes
+        .filter((rate) => !rate.deletedAt)
+        .map((rate) => [rate.id, rate]),
+    );
+    const ratesByBatchId = new Map<string, Record<string, any>[]>();
+    batchRates.forEach((rate) => {
+      if (!rate.batchId || rate.deletedAt) return;
+      const list = ratesByBatchId.get(rate.batchId) || [];
+      list.push(rate);
+      ratesByBatchId.set(rate.batchId, list);
+    });
+
+    return rows.map((row) => {
+      const purchase = row.purchaseId
+        ? purchaseById.get(row.purchaseId)
+        : undefined;
+      const rateSummary = (ratesByBatchId.get(row.id) || [])
+        .sort((left, right) => {
+          const a = rateTypeById.get(left.rateTypeId);
+          const b = rateTypeById.get(right.rateTypeId);
+          return (
+            Number(a?.sortOrder || 0) - Number(b?.sortOrder || 0) ||
+            String(a?.name || "").localeCompare(String(b?.name || ""))
+          );
+        })
+        .map((rate) => {
+          const type = rateTypeById.get(rate.rateTypeId);
+          return `${type?.name || type?.code || "Rate"}: ${Number(rate.amount || 0).toFixed(2)}`;
+        })
+        .join(" | ");
+
+      return {
+        ...row,
+        purchaseBatchNo:
+          row.purchaseBatchNo ?? purchase?.purchaseBatchNo ?? null,
+        purchaseBillNo: purchase?.billNo ?? null,
+        supplierName: purchase?.supplierName ?? null,
+        purchaseDate: purchase?.purchaseDate ?? null,
+        lotNumber: lineByBatchId.get(row.id) ?? null,
+        rateSummary: rateSummary || null,
+      };
+    });
+  } catch {
+    return rows;
+  }
+}
 
 // ── Sequence helpers ────────────────────────────────────────────────────────
 
@@ -93,18 +178,37 @@ async function peekNextBarcodeNumber(licenseId: string): Promise<number> {
     STORES.BARCODE_SEQUENCE,
     licenseId,
   );
-  return (seq?.lastBarcodeNumber ?? 0) + 1;
+  const batches = await idbGetAllByIndex<WebBatch>(
+    STORES.PRODUCT_BATCHES,
+    "licenseId",
+    licenseId,
+  );
+  const liveMax = batches.reduce((maximum, batch) => {
+    const barcode = String(batch.barcode || "").trim();
+    return !batch.deletedAt && /^\d{5}$/.test(barcode)
+      ? Math.max(maximum, Number(barcode))
+      : maximum;
+  }, 0);
+  const products = await idbGetAllByIndex<WebProduct>(
+    STORES.PRODUCTS,
+    "licenseId",
+    licenseId,
+  );
+  const productCodeMax = products.reduce(
+    (maximum, product) =>
+      product.deletedAt
+        ? maximum
+        : Math.max(maximum, Number(product.codeNumber || 0)),
+    0,
+  );
+  return Math.max(seq?.lastBarcodeNumber ?? 0, liveMax, productCodeMax) + 1;
 }
 
 async function reserveBarcodeNumbers(
   licenseId: string,
   count: number,
 ): Promise<string[]> {
-  const seq = await idbGetByKey<BarcodeSeqRecord>(
-    STORES.BARCODE_SEQUENCE,
-    licenseId,
-  );
-  const current = seq?.lastBarcodeNumber ?? 0;
+  const current = (await peekNextBarcodeNumber(licenseId)) - 1;
   const next = current + count;
   await idbPut(STORES.BARCODE_SEQUENCE, {
     licenseId,
@@ -337,10 +441,21 @@ export async function webGetProduct(
 async function attachBatchCounts(products: WebProduct[]) {
   const allBatches = await idbGetAll<WebBatch>(STORES.PRODUCT_BATCHES);
 
+  const isStockLot = (batch: WebBatch) =>
+    Boolean(
+      batch.purchaseId ||
+      Number(batch.stock || 0) !== 0 ||
+      batch.batchNo ||
+      batch.mfgDate ||
+      batch.expiryDate ||
+      batch.purchaseBatchNo,
+    );
+
   return products.map((product) => ({
     ...product,
     batchCount: allBatches.filter(
-      (batch) => batch.productId === product.id && !batch.deletedAt,
+      (batch) =>
+        batch.productId === product.id && !batch.deletedAt && isStockLot(batch),
     ).length,
   }));
 }
@@ -458,6 +573,8 @@ export async function webGetProductByBarcode(
     batchSalePrice: batch.salePrice,
     batchCostPrice: batch.costPrice,
     batchNo: batch.batchNo,
+    purchaseBatchNo: batch.purchaseBatchNo ?? null,
+    purchaseId: batch.purchaseId ?? null,
     mfgDate: batch.mfgDate,
     expiryDate: batch.expiryDate,
     batchStock: batch.stock,
@@ -565,7 +682,7 @@ export async function webListBarcodesForProduct(
       productId,
     );
 
-    const rows = batches
+    const sorted = batches
       .filter(
         (b) =>
           !b.deletedAt &&
@@ -573,12 +690,25 @@ export async function webListBarcodesForProduct(
           !!String(b.barcode ?? "").trim(),
       )
       .sort((a, b) => {
+        if (!a.purchaseId && b.purchaseId) return -1;
+        if (!b.purchaseId && a.purchaseId) return 1;
         if ((a.stock || 0) > 0 && (b.stock || 0) <= 0) return -1;
         if ((b.stock || 0) > 0 && (a.stock || 0) <= 0) return 1;
         return (b.receivedAt ?? "").localeCompare(a.receivedAt ?? "");
       });
+    const rows = Array.from(
+      sorted
+        .reduce((byBarcode, batch) => {
+          const barcode = String(batch.barcode || "").trim();
+          if (barcode && !byBarcode.has(barcode)) {
+            byBarcode.set(barcode, batch);
+          }
+          return byBarcode;
+        }, new Map<string, WebBatch>())
+        .values(),
+    );
 
-    return { success: true, rows };
+    return { success: true, rows: await enrichStockLots(rows) };
   } catch (err: any) {
     return {
       success: false,
@@ -613,7 +743,7 @@ export async function webCreateBarcodeForProduct(payload: {
     }
 
     let barcode = payload.barcode?.trim() || null;
-    let isSystemGenerated = 0;
+    let isSystemGenerated = payload.useGenerated ? 1 : 0;
 
     if (!barcode && payload.useGenerated) {
       const reserved = await reserveBarcodeNumbers(payload.licenseId, 1);
@@ -626,6 +756,32 @@ export async function webCreateBarcodeForProduct(payload: {
         success: false,
         error: "Barcode is required",
         code: "MISSING_BARCODE",
+      };
+    }
+    if (!/^[A-Za-z0-9_-]{1,50}$/.test(barcode)) {
+      return {
+        success: false,
+        error: "Invalid barcode format",
+        code: "INVALID_BARCODE",
+      };
+    }
+
+    const allProducts = await idbGetAllByIndex<WebProduct>(
+      STORES.PRODUCTS,
+      "licenseId",
+      payload.licenseId,
+    );
+    const itemCodeConflict = allProducts.find(
+      (product) =>
+        !product.deletedAt &&
+        product.id !== payload.productId &&
+        String(product.code) === barcode,
+    );
+    if (itemCodeConflict) {
+      return {
+        success: false,
+        error: `Barcode ${barcode} is reserved as another item's code`,
+        code: "BARCODE_IN_USE",
       };
     }
 
@@ -669,6 +825,7 @@ export async function webCreateBarcodeForProduct(payload: {
       deletedAt: null,
     };
     await idbPut(STORES.PRODUCT_BATCHES, batch);
+    _triggerProductBatchSync();
     return { success: true, batch, barcode };
   } catch (err: any) {
     return { success: false, error: String(err?.message || err) };
@@ -690,8 +847,21 @@ export async function webDeleteBarcode(
   if (!batch || batch.deletedAt) return { success: false, error: "NOT_FOUND" };
   if (batch.licenseId !== licenseId)
     return { success: false, error: "LICENSE_MISMATCH" };
-  if ((batch.stock || 0) > 0)
+  const sameBarcode = (
+    await idbGetAllByIndex<WebBatch>(
+      STORES.PRODUCT_BATCHES,
+      "productId",
+      batch.productId,
+    )
+  ).filter(
+    (row) =>
+      !row.deletedAt &&
+      String(row.barcode || "").trim() === String(batch.barcode || "").trim(),
+  );
+  if (sameBarcode.reduce((sum, row) => sum + Number(row.stock || 0), 0) > 0)
     return { success: false, error: "BARCODE_HAS_STOCK" };
+  if (batch.purchaseId)
+    return { success: false, error: "BARCODE_HAS_HISTORY" };
 
   const now = new Date().toISOString();
   await idbPut(STORES.PRODUCT_BATCHES, {
@@ -699,6 +869,7 @@ export async function webDeleteBarcode(
     deletedAt: now,
     updatedAt: now,
   });
+  _triggerProductBatchSync();
   return { success: true };
 }
 
@@ -732,11 +903,27 @@ export async function webListBatchesForProduct(
     "productId",
     productId,
   );
-  const rows = includeDeleted ? batches : batches.filter((b) => !b.deletedAt);
+  const isStockLot = (batch: WebBatch) =>
+    Boolean(
+      batch.purchaseId ||
+      Number(batch.stock || 0) !== 0 ||
+      batch.batchNo ||
+      batch.mfgDate ||
+      batch.expiryDate ||
+      batch.purchaseBatchNo,
+    );
+  const stockLots = batches.filter(isStockLot);
+  const rows = includeDeleted
+    ? stockLots
+    : stockLots.filter((b) => !b.deletedAt);
   const totalStock = rows
     .filter((b) => !b.deletedAt)
     .reduce((sum, b) => sum + (b.stock || 0), 0);
-  return { success: true, rows, totalStock };
+  return {
+    success: true,
+    rows: await enrichStockLots(rows),
+    totalStock,
+  };
 }
 
 export async function webSaveBatch(
@@ -793,13 +980,14 @@ export async function webSaveBatch(
         (b) =>
           !b.deletedAt &&
           b.barcode === normalizedBarcode &&
+          b.productId !== payload.productId &&
           b.id !== existing?.id,
       );
 
       if (barcodeConflict) {
         return {
           success: false,
-          error: `Barcode ${normalizedBarcode} is already used by another batch`,
+          error: `Barcode ${normalizedBarcode} is already used by another product`,
         };
       }
     }
@@ -929,13 +1117,14 @@ export async function webUpdateBatch(payload: {
         (b) =>
           !b.deletedAt &&
           b.barcode === normalizedBarcode &&
+          b.productId !== existing.productId &&
           b.id !== existing.id,
       );
 
       if (barcodeConflict) {
         return {
           success: false,
-          error: `Barcode ${normalizedBarcode} is already used by another batch`,
+          error: `Barcode ${normalizedBarcode} is already used by another product`,
         };
       }
     }
@@ -981,6 +1170,15 @@ function _triggerProductSync() {
   import("@/sync/SyncManager")
     .then(({ SyncManager }) => {
       SyncManager.pushEntity("product").catch(() => {});
+    })
+    .catch(() => {});
+}
+
+function _triggerProductBatchSync() {
+  if (typeof window === "undefined") return;
+  import("@/sync/SyncManager")
+    .then(({ SyncManager }) => {
+      SyncManager.pushEntity("productBatch").catch(() => {});
     })
     .catch(() => {});
 }
