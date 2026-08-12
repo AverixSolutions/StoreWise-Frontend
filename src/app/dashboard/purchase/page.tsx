@@ -16,7 +16,7 @@ import {
 import SupplierFormModal from "@/components/suppliers/SupplierFormModal";
 import HoldsModal from "@/components/purchase/HoldsModal";
 import PurchaseReportsModal from "@/components/purchase/PurchaseReportsModal";
-import BatchSelectModal from "@/components/purchase/BatchSelectModal";
+import BarcodeSelectModal from "@/components/purchase/BarcodeSelectModal";
 import PromptModal from "@/components/ui/PromptModal";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import ValidationModal from "@/components/ui/ValidationModal";
@@ -24,7 +24,6 @@ import {
   HeaderForm,
   ItemRow,
   Product,
-  BatchInfo,
 } from "@/components/purchase/types";
 import {
   createEmptyRow,
@@ -34,6 +33,7 @@ import {
   round2,
   headerFromPurchaseDb,
   rowsFromDbItems,
+  mergeIdenticalPurchaseRows,
 } from "@/components/purchase/utils";
 import BarcodePrintCenterButton from "@/components/barcodes/BarcodePrintCenterButton";
 import type { PrintCenterItemRow } from "@/lib/barcode/printCenterTypes";
@@ -50,8 +50,6 @@ import {
   orderActiveRateTypes,
   resolveNamedRate,
 } from "@/lib/rates/rateResolution";
-
-type BatchDecision = "OVERRIDE" | "NEW";
 
 function normalizeHeaderFromHold(
   saved: Partial<HeaderForm>,
@@ -164,34 +162,6 @@ function visiblePurchaseHeaderFields(root: HTMLElement) {
   });
 }
 
-function isNumericBarcode(value?: string | null) {
-  return !!value && /^\d+$/.test(String(value).trim());
-}
-
-function getNextPreviewBarcode(
-  dbPeekBarcode: string,
-  rows: ItemRow[],
-  excludeRowIndex?: number,
-) {
-  const dbNum = Number(dbPeekBarcode || 0);
-
-  const localMax = rows.reduce((max, row, idx) => {
-    if (excludeRowIndex !== undefined && idx === excludeRowIndex) return max;
-
-    const bc = String(row.barcode || "").trim();
-    if (!isNumericBarcode(bc)) return max;
-
-    const num = Number(bc);
-
-    if (num > dbNum + 1000) return max;
-
-    return Math.max(max, num);
-  }, 0);
-
-  const next = Math.max(dbNum, localMax + 1);
-  return String(next).padStart(5, "0");
-}
-
 export default function PurchasePage() {
   const router = useRouter();
   const { pullNow } = useSyncStatus();
@@ -235,18 +205,6 @@ export default function PurchasePage() {
     typeId: null,
   });
 
-  const [batchPicker, setBatchPicker] = useState<{
-    rowIndex: number;
-    productId: string;
-    batches: BatchInfo[];
-    productName?: string;
-    nextBarcode: string;
-  } | null>(null);
-
-  const [batchDecisions, setBatchDecisions] = useState<
-    Record<number, BatchDecision>
-  >({});
-
   const [rows, setRows] = useState<ItemRow[]>([createEmptyRow(1)]);
   const [isDirty, setIsDirty] = useState(false);
   const rowsRef = useRef(rows);
@@ -279,17 +237,14 @@ export default function PurchasePage() {
     Array<{ id: string; name: string; isDefault: number }>
   >([]);
 
-  const [batchConflicts, setBatchConflicts] = useState<{
-    rows: {
-      rowIndex: number;
-      productName: string;
-      barcode?: string | null;
-      diffs: Record<string, { current: any; proposed: any }>;
-    }[];
-  } | null>(null);
-
-  const [batchConfirmOpen, setBatchConfirmOpen] = useState(false);
   const barcodeEnabled = canUseBarcode();
+  const [barcodePicker, setBarcodePicker] = useState<{
+    rowIndex: number;
+    productId: string;
+    productName: string;
+    itemCode: string;
+    barcodes: string[];
+  } | null>(null);
 
   useEffect(() => {
     rowsRef.current = rows;
@@ -499,38 +454,35 @@ export default function PurchasePage() {
 
   const handleSelectProduct = async (rowIndex: number, productId: string) => {
     try {
-      const [product, peekRes, batchesRes] = await Promise.all([
+      const [product, barcodeResult] = await Promise.all([
         platform.getProduct(productId),
-        barcodeEnabled
-          ? platform.peekNextBarcode?.(licenseId)
-          : Promise.resolve(null),
         barcodeEnabled
           ? platform.listBarcodesForProduct?.(licenseId, productId)
           : Promise.resolve({ success: true, rows: [] }),
       ]);
 
       if (!product) return;
-
-      const nextBarcode = getNextPreviewBarcode(
-        peekRes?.barcode || "00000",
-        rows,
-        rowIndex,
+      const knownBarcodes = Array.from(
+        new Set(
+          [
+            ...(barcodeResult?.rows || []).map((row: any) => row.barcode),
+            ...rowsRef.current
+              .filter((row) => row.productId === productId)
+              .map((row) => row.barcode),
+          ]
+            .map((value) => String(value || "").trim())
+            .filter(Boolean),
+        ),
       );
+      if (barcodeEnabled && knownBarcodes.length === 0 && product.code) {
+        knownBarcodes.push(product.code);
+      }
+      const selectedBarcode =
+        barcodeEnabled && knownBarcodes.length > 0 ? knownBarcodes[0] : "";
 
-      const batches: BatchInfo[] = (batchesRes?.rows || []).map((b: any) => ({
-        id: b.id,
-        barcode: b.barcode,
-        batchNo: b.batchNo,
-        mfgDate: b.mfgDate,
-        expiryDate: b.expiryDate,
-        mrp: b.mrp,
-        salePrice: b.salePrice,
-        stock: b.stock,
-      }));
-      const selectedBatchId = batches.length === 1 ? batches[0].id : null;
       const sellingRatePatch = await resolvePurchaseRatePatch(
         productId,
-        selectedBatchId,
+        null,
         product.salePrice,
       );
 
@@ -547,11 +499,13 @@ export default function PurchasePage() {
                 unit: product.unit,
                 taxPercent: product.tax,
                 rate: Number(product.costPrice) || 0,
-                barcode: "",
+                barcode: selectedBarcode,
+                batchId: null,
                 batchNo: "",
+                purchaseBatchNo: null,
                 mfgDate: null,
                 expiryDate: null,
-                forceNewBatch: false,
+                forceNewBatch: true,
                 mrp:
                   (product as any).mrp != null &&
                   !Number.isNaN(Number((product as any).mrp))
@@ -562,90 +516,15 @@ export default function PurchasePage() {
         ),
       );
 
-      if (!barcodeEnabled) return;
-
-      // No existing barcodes -> suggest next barcode
-      if (batches.length === 0) {
-        setRows((prev) =>
-          prev.map((r, i) =>
-            i !== rowIndex
-              ? r
-              : {
-                  ...r,
-                  barcode: nextBarcode,
-                  forceNewBatch: true,
-                },
-          ),
-        );
-
-        setTimeout(() => {
-          const el = document.querySelector<HTMLInputElement>(
-            `[data-cell="${rowIndex}:barcode"]`,
-          );
-          if (el) {
-            el.focus();
-            el.select();
-          }
-        }, 0);
-
-        return;
+      if (barcodeEnabled && knownBarcodes.length > 1) {
+        setBarcodePicker({
+          rowIndex,
+          productId,
+          productName: product.name,
+          itemCode: product.code,
+          barcodes: knownBarcodes,
+        });
       }
-
-      // Exactly one existing barcode -> auto use it
-      if (batches.length === 1) {
-        const b = batches[0];
-
-        setRows((prev) =>
-          prev.map((r, i) =>
-            i !== rowIndex
-              ? r
-              : {
-                  ...r,
-                  barcode: b.barcode || "",
-                  batchId: b.id,
-                  batchNo: b.batchNo ?? "",
-                  mfgDate: b.mfgDate ?? null,
-                  expiryDate: b.expiryDate ?? null,
-                  forceNewBatch: false,
-                  mrp:
-                    b.mrp != null && !Number.isNaN(Number(b.mrp))
-                      ? Number(b.mrp)
-                      : r.mrp,
-                },
-          ),
-        );
-
-        setTimeout(() => {
-          const el = document.querySelector<HTMLInputElement>(
-            `[data-cell="${rowIndex}:barcode"]`,
-          );
-          if (el) {
-            el.focus();
-            el.select();
-          }
-        }, 0);
-
-        return;
-      }
-
-      // Multiple existing barcodes -> let user choose
-      setBatchPicker({
-        rowIndex,
-        productId,
-        batches,
-        productName: product.name,
-        nextBarcode,
-      });
-
-      setTimeout(() => {
-        const el = document.querySelector<HTMLInputElement>(
-          `[data-cell="${rowIndex}:barcode"]`,
-        );
-        if (el) {
-          el.focus();
-          el.select();
-        }
-      }, 0);
     } catch (e) {
       console.error("Failed to select product", e);
     }
@@ -711,49 +590,125 @@ export default function PurchasePage() {
     rowIndex: number,
     explicitProductId?: string,
   ) => {
-    if (!barcodeEnabled) return;
-
+    if (!barcodeEnabled) {
+      focusCell(rowIndex, "batchNo");
+      return;
+    }
     const row = rows[rowIndex];
     const productId = explicitProductId || row?.productId;
     if (!productId) return;
-
-    try {
-      const [batchesRes, peekRes] = await Promise.all([
-        platform.listBarcodesForProduct?.(licenseId, productId),
-        platform.peekNextBarcode?.(licenseId),
-      ]);
-
-      const batches: BatchInfo[] = (batchesRes?.rows || []).map((b: any) => ({
-        id: b.id,
-        barcode: b.barcode,
-        batchNo: b.batchNo,
-        mfgDate: b.mfgDate,
-        expiryDate: b.expiryDate,
-        mrp: b.mrp,
-        salePrice: b.salePrice,
-        stock: b.stock,
-      }));
-
-      const nextBarcode = getNextPreviewBarcode(
-        peekRes?.barcode || "00000",
-        rows,
-        rowIndex,
-      );
-
-      const productName =
-        products.find((p) => p.id === productId)?.name || row?.name;
-
-      setBatchPicker({
-        rowIndex,
-        productId,
-        batches,
-        productName,
-        nextBarcode,
-      });
-    } catch (e) {
-      console.error("Failed to load product barcodes", e);
+    const product = await platform.getProduct(productId);
+    if (!product) return;
+    const result = await platform.listBarcodesForProduct?.(licenseId, productId);
+    const barcodes = Array.from(
+      new Set(
+        [
+          ...(result?.rows || []).map((value: any) => value.barcode),
+          ...rowsRef.current
+            .filter((value) => value.productId === productId)
+            .map((value) => value.barcode),
+        ]
+          .map((value) => String(value || "").trim())
+          .filter(Boolean),
+      ),
+    );
+    if (barcodes.length === 0 && product.code) barcodes.push(product.code);
+    if (barcodes.length <= 1) {
+      if (
+        barcodes[0] &&
+        !String(rowsRef.current[rowIndex]?.barcode || "").trim()
+      ) {
+        updateRow(rowIndex, { barcode: barcodes[0] });
+      }
+      return;
     }
+    setBarcodePicker({
+      rowIndex,
+      productId,
+      productName: product.name,
+      itemCode: product.code,
+      barcodes,
+    });
   };
+
+  async function applyPurchaseBarcode(
+    rowIndex: number,
+    barcodeValue: string,
+    options: { persistIfNew?: boolean } = {},
+  ) {
+    const row = rowsRef.current[rowIndex];
+    if (!row?.productId) return false;
+    const barcode = barcodeValue.trim();
+    if (!/^[A-Za-z0-9_-]{1,50}$/.test(barcode)) {
+      setValidationMsgs([
+        "Barcode must be 1–50 letters, numbers, hyphens, or underscores.",
+      ]);
+      setValidationOpen(true);
+      return false;
+    }
+
+    const [barcodeOwner, itemCodeOwner] = await Promise.all([
+      platform.getProductByBarcode(licenseId, barcode),
+      platform.getProductByCode
+        ? platform.getProductByCode(licenseId, barcode)
+        : Promise.resolve(null),
+    ]);
+    const owner = barcodeOwner || itemCodeOwner;
+    if (owner && owner.id !== row.productId) {
+      setValidationMsgs([
+        `Barcode "${barcode}" already belongs to ${owner.name}.`,
+        "One barcode cannot identify two different items.",
+      ]);
+      setValidationOpen(true);
+      return false;
+    }
+    const draftConflict = rowsRef.current.find(
+      (value, index) =>
+        index !== rowIndex &&
+        value.productId &&
+        value.productId !== row.productId &&
+        String(value.barcode || "").trim() === barcode,
+    );
+    if (draftConflict) {
+      setValidationMsgs([
+        `Barcode "${barcode}" is already entered for ${draftConflict.name || "another item"} in this purchase.`,
+      ]);
+      setValidationOpen(true);
+      return false;
+    }
+
+    if (options.persistIfNew && !barcodeOwner) {
+      const saved = await platform.createBarcodeForProduct?.({
+        licenseId,
+        productId: row.productId,
+        barcode,
+        mrp: row.mrp ?? null,
+        salePrice: row.salePrice ?? null,
+        costPrice: row.rate ?? null,
+      });
+      if (!saved?.success) {
+        setValidationMsgs([
+          saved?.error || `Barcode "${barcode}" could not be saved.`,
+        ]);
+        setValidationOpen(true);
+        return false;
+      }
+    }
+
+    setRows((current) =>
+      current.map((value, index) =>
+        index === rowIndex
+          ? {
+              ...value,
+              barcode,
+              batchId: null,
+              forceNewBatch: true,
+            }
+          : value,
+      ),
+    );
+    return true;
+  }
 
   async function handleBarcodeCommit(rowIndex: number) {
     if (!barcodeEnabled) return;
@@ -765,134 +720,7 @@ export default function PurchasePage() {
     if (!typedBarcode) return;
 
     try {
-      const existingProduct = await platform.getProductByBarcode(
-        licenseId,
-        typedBarcode,
-      );
-
-      if (
-        existingProduct &&
-        existingProduct.id &&
-        existingProduct.id !== row.productId
-      ) {
-        setValidationMsgs([
-          `Barcode "${typedBarcode}" already belongs to another product.`,
-          "Use a different barcode or clear it.",
-        ]);
-        setValidationOpen(true);
-
-        setRows((prev) =>
-          prev.map((r, i) =>
-            i !== rowIndex
-              ? r
-              : {
-                  ...r,
-                  barcode: "",
-                },
-          ),
-        );
-        return;
-      }
-
-      const res = await platform.listBarcodesForProduct?.(
-        licenseId,
-        row.productId,
-      );
-
-      const batches: BatchInfo[] = (res?.rows || []).map((b: any) => ({
-        id: b.id,
-        barcode: b.barcode,
-        batchNo: b.batchNo,
-        mfgDate: b.mfgDate,
-        expiryDate: b.expiryDate,
-        mrp: b.mrp,
-        salePrice: b.salePrice,
-        stock: b.stock,
-      }));
-
-      if (!batches.length) {
-        setRows((prev) =>
-          prev.map((r, i) =>
-            i !== rowIndex
-              ? r
-              : {
-                  ...r,
-                  barcode: typedBarcode,
-                  forceNewBatch: true,
-                },
-          ),
-        );
-        return;
-      }
-
-      const exactMatches = batches.filter(
-        (b) => String(b.barcode || "").trim() === typedBarcode,
-      );
-
-      if (exactMatches.length === 1) {
-        const b = exactMatches[0];
-
-        setRows((prev) =>
-          prev.map((r, i) =>
-            i !== rowIndex
-              ? r
-              : {
-                  ...r,
-                  barcode: typedBarcode,
-                  batchNo: b.batchNo ?? r.batchNo,
-                  mfgDate: b.mfgDate ?? r.mfgDate,
-                  expiryDate: b.expiryDate ?? r.expiryDate,
-                  forceNewBatch: false,
-                  mrp:
-                    typeof r.mrp === "number" && r.mrp > 0
-                      ? r.mrp
-                      : b.mrp != null
-                        ? Number(b.mrp)
-                        : r.mrp,
-                  salePrice:
-                    typeof r.salePrice === "number" && r.salePrice > 0
-                      ? r.salePrice
-                      : b.salePrice != null
-                        ? Number(b.salePrice)
-                        : r.salePrice,
-                },
-          ),
-        );
-
-        return;
-      }
-
-      if (exactMatches.length > 1) {
-        const productName =
-          products.find((p) => p.id === row.productId)?.name || row.name;
-
-        const peekRes = await platform.peekNextBarcode?.(licenseId);
-
-        setBatchPicker({
-          rowIndex,
-          productId: row.productId,
-          batches: exactMatches,
-          productName,
-          nextBarcode: getNextPreviewBarcode(
-            peekRes?.barcode || "00000",
-            rows,
-            rowIndex,
-          ),
-        });
-        return;
-      }
-
-      setRows((prev) =>
-        prev.map((r, i) =>
-          i !== rowIndex
-            ? r
-            : {
-                ...r,
-                barcode: typedBarcode,
-                forceNewBatch: true,
-              },
-        ),
-      );
+      await applyPurchaseBarcode(rowIndex, typedBarcode);
     } catch (e) {
       console.error("handleBarcodeCommit failed", e);
     }
@@ -1100,69 +928,6 @@ export default function PurchasePage() {
     await executePurchasePrint(purchaseId);
   }
 
-  async function checkBatchConflicts(
-    items: ReturnType<typeof mapItems>,
-  ): Promise<
-    {
-      rowIndex: number;
-      productName: string;
-      barcode?: string | null;
-      diffs: Record<string, { current: any; proposed: any }>;
-    }[]
-  > {
-    const conflicts: {
-      rowIndex: number;
-      productName: string;
-      barcode?: string | null;
-      diffs: Record<string, { current: any; proposed: any }>;
-    }[] = [];
-
-    for (let i = 0; i < items.length; i++) {
-      const it = items[i];
-      if (!it.productId) continue;
-
-      const row = rows[i];
-      if (row?.overrideBatchPrices) continue;
-
-      if (!it.barcode) continue;
-
-      try {
-        const res = await (window as any).electronAPI.resolveProductBatch({
-          licenseId,
-          productId: it.productId,
-          barcode: it.barcode,
-          mrp: it.mrp ?? null,
-          salePrice: it.salePrice ?? null,
-          batchNo: it.batchNo ?? null,
-          mfgDate: it.mfgDate ?? null,
-          expiryDate: it.expiryDate ?? null,
-        });
-
-        if (
-          res?.success &&
-          res.decision === "CONFLICT_BARCODE" &&
-          res.diffs &&
-          Object.keys(res.diffs).length > 0
-        ) {
-          const productName =
-            products.find((p) => p.id === it.productId)?.name ||
-            `Row #${i + 1}`;
-
-          conflicts.push({
-            rowIndex: i,
-            productName,
-            barcode: it.barcode,
-            diffs: res.diffs,
-          });
-        }
-      } catch (err) {
-        console.error("batch resolve failed for row", i + 1, err);
-      }
-    }
-
-    return conflicts;
-  }
-
   async function consumeResumedHoldAfterSave() {
     if (!resumedHoldId) return;
 
@@ -1195,7 +960,51 @@ export default function PurchasePage() {
     skipBatchCheck?: boolean;
     rowsOverride?: ItemRow[];
   }) => {
-    const rowsToUse = opts?.rowsOverride ?? rows;
+    const originalRows = opts?.rowsOverride ?? rows;
+    const rowsWithBarcodeDefaults = barcodeEnabled
+      ? originalRows.map((row) =>
+          row.productId && !String(row.barcode || "").trim()
+            ? { ...row, barcode: String(row.code || "").trim() }
+            : row,
+        )
+      : originalRows;
+    const rowsToUse = mergeIdenticalPurchaseRows(rowsWithBarcodeDefaults);
+    if (JSON.stringify(rowsToUse) !== JSON.stringify(originalRows)) {
+      setRows(rowsToUse);
+    }
+
+    if (barcodeEnabled) {
+      const draftOwnerByBarcode = new Map<string, string>();
+      for (const row of rowsToUse.filter((value) => value.productId)) {
+        const barcode = String(row.barcode || "").trim();
+        if (!barcode) continue;
+        const draftOwner = draftOwnerByBarcode.get(barcode);
+        if (draftOwner && draftOwner !== row.productId) {
+          setValidationMsgs([
+            `Barcode "${barcode}" is assigned to two different items in this purchase.`,
+          ]);
+          setValidationOpen(true);
+          return false;
+        }
+        draftOwnerByBarcode.set(barcode, row.productId);
+      }
+      for (const [barcode, productId] of draftOwnerByBarcode) {
+        const [barcodeOwner, itemCodeOwner] = await Promise.all([
+          platform.getProductByBarcode(licenseId, barcode),
+          platform.getProductByCode
+            ? platform.getProductByCode(licenseId, barcode)
+            : Promise.resolve(null),
+        ]);
+        const savedOwner = barcodeOwner || itemCodeOwner;
+        if (savedOwner && savedOwner.id !== productId) {
+          setValidationMsgs([
+            `Barcode "${barcode}" already belongs to ${savedOwner.name}.`,
+          ]);
+          setValidationOpen(true);
+          return false;
+        }
+      }
+    }
 
     const items = mapItems(rowsToUse);
     const errs = validatePurchaseBill(header, items);
@@ -1211,23 +1020,6 @@ export default function PurchasePage() {
       setValidationOpen(true);
       setBillDetailsOpen(true);
       return false;
-    }
-
-    if (!opts?.skipBatchCheck) {
-      const conflicts = await checkBatchConflicts(items);
-
-      if (conflicts.length > 0) {
-        setBatchConflicts({ rows: conflicts });
-
-        setBatchDecisions(
-          Object.fromEntries(
-            conflicts.map((c) => [c.rowIndex, "OVERRIDE" as BatchDecision]),
-          ),
-        );
-
-        setBatchConfirmOpen(true);
-        return false;
-      }
     }
 
     // === EDITING FLOW ===
@@ -1525,18 +1317,18 @@ export default function PurchasePage() {
     showHolds ||
     showReports ||
     showTitlePrompt ||
-    batchConfirmOpen ||
-    Boolean(batchPicker) ||
     printConfirmOpen ||
     cancelConfirmOpen ||
     leaveOpen ||
     validationOpen ||
     showBarcodePrint ||
-    isMobileSheetOpen;
+    isMobileSheetOpen ||
+    Boolean(barcodePicker);
 
   // Purchase keyboard map:
   // F3 Item | F4 Focus Bill Number | F6 Reports | F7 Settings | F8 Holds | F9 Hold
-  // Ctrl/Cmd+S Save | Ctrl/Cmd+P Print | Ctrl/Cmd+N New/Clear
+  // Ctrl/Cmd+S Save | Ctrl/Cmd+P Print | Ctrl/Cmd+Shift+P Barcode labels
+  // Ctrl/Cmd+N New/Clear
   // Ctrl/Cmd+\ Toggle Bill Details | Ctrl/Cmd+B Back (navigation component)
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -1577,6 +1369,12 @@ export default function PurchasePage() {
         }
 
         void handleSaveRef.current();
+        return;
+      }
+
+      if (modifier && event.shiftKey && key === "p" && barcodeEnabled) {
+        event.preventDefault();
+        setShowBarcodePrint(true);
         return;
       }
 
@@ -1738,7 +1536,9 @@ export default function PurchasePage() {
                     showBarcodePrint ? getPrintCenterRowsFromPurchaseRows() : []
                   }
                   defaultShopName={shopName}
-                  buttonText="Print Barcodes"
+                  buttonText=""
+                  shortcut="Ctrl+Shift+P"
+                  title="Barcode printing (Ctrl+Shift+P)"
                   className="inline-flex items-center gap-2 rounded-md bg-white/10 border border-white/20 text-white/90 hover:bg-white/20 px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer"
                   open={showBarcodePrint}
                   onOpen={() => setShowBarcodePrint(true)}
@@ -1833,6 +1633,25 @@ export default function PurchasePage() {
         categoryRecords={categoryRecords}
       />
 
+      <BarcodeSelectModal
+        isOpen={Boolean(barcodePicker)}
+        productName={barcodePicker?.productName}
+        itemCode={barcodePicker?.itemCode}
+        barcodes={barcodePicker?.barcodes || []}
+        onClose={() => setBarcodePicker(null)}
+        onSelect={async (barcode, options) => {
+          if (!barcodePicker) return;
+          const rowIndex = barcodePicker.rowIndex;
+          const accepted = await applyPurchaseBarcode(rowIndex, barcode, {
+            persistIfNew: options.createNew,
+          });
+          if (!accepted) return false;
+          setBarcodePicker(null);
+          setTimeout(() => focusCell(rowIndex, "quantity"), 0);
+          return true;
+        }}
+      />
+
       {/* Holds list */}
       <HoldsModal
         isOpen={showHolds}
@@ -1865,293 +1684,11 @@ export default function PurchasePage() {
         }}
       />
 
-      {/* Batch conflict modal with per-row choices */}
-      {batchConfirmOpen && batchConflicts && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full mx-4 max-h-[80vh] flex flex-col">
-            {/* Header */}
-            <div className="px-5 py-3 border-b">
-              <h2 className="text-lg font-semibold text-gray-900">
-                Batch price conflicts
-              </h2>
-              <p className="mt-1 text-xs text-gray-600">
-                For each product, choose whether to update the existing batch
-                prices or create a new batch.
-              </p>
-            </div>
-
-            {/* Body */}
-            <div className="px-5 py-3 overflow-auto flex-1">
-              <div className="space-y-4 text-xs">
-                {batchConflicts.rows.map((c) => {
-                  const decision = batchDecisions[c.rowIndex] ?? "OVERRIDE";
-                  return (
-                    <div
-                      key={c.rowIndex}
-                      className="border border-gray-200 rounded-md p-3 bg-gray-50/60"
-                    >
-                      <div className="flex justify-between items-start gap-4">
-                        <div>
-                          <div className="font-medium text-gray-900">
-                            Row #{c.rowIndex + 1} – {c.productName}
-                          </div>
-                          {barcodeEnabled && c.barcode && (
-                            <div className="text-[11px] text-gray-500">
-                              Barcode: {c.barcode}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Per-row radio options */}
-                        <div className="flex gap-3 text-[11px]">
-                          <label className="inline-flex items-center gap-1 cursor-pointer">
-                            <input
-                              type="radio"
-                              className="h-3 w-3"
-                              checked={decision === "OVERRIDE"}
-                              onChange={() =>
-                                setBatchDecisions((prev) => ({
-                                  ...prev,
-                                  [c.rowIndex]: "OVERRIDE",
-                                }))
-                              }
-                            />
-                            <span>Override existing batch</span>
-                          </label>
-                          <label className="inline-flex items-center gap-1 cursor-pointer">
-                            <input
-                              type="radio"
-                              className="h-3 w-3"
-                              checked={decision === "NEW"}
-                              onChange={() =>
-                                setBatchDecisions((prev) => ({
-                                  ...prev,
-                                  [c.rowIndex]: "NEW",
-                                }))
-                              }
-                            />
-                            <span>Create new batch</span>
-                          </label>
-                        </div>
-                      </div>
-
-                      {/* Diff cards */}
-                      <div className="mt-2 grid grid-cols-2 gap-2">
-                        {Object.entries(c.diffs).map(([field, diff]) => (
-                          <div
-                            key={field}
-                            className="text-[11px] bg-white rounded border border-gray-200 px-2 py-1"
-                          >
-                            <div className="font-semibold text-gray-700">
-                              {field}
-                            </div>
-                            <div className="text-gray-500 line-through">
-                              Current: {diff.current ?? "—"}
-                            </div>
-                            <div className="text-emerald-700">
-                              New: {diff.proposed ?? "—"}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Footer buttons */}
-            <div className="px-5 py-3 border-t flex justify-between items-center gap-3">
-              {/* Confirm-all helpers */}
-              <div className="flex gap-2 text-[11px]">
-                <button
-                  type="button"
-                  className="px-2.5 py-1.5 rounded border border-gray-300 text-gray-700 hover:bg-gray-50"
-                  onClick={() => {
-                    setBatchDecisions((prev) => {
-                      const next = { ...prev };
-                      batchConflicts.rows.forEach((c) => {
-                        next[c.rowIndex] = "OVERRIDE";
-                      });
-                      return next;
-                    });
-                  }}
-                >
-                  Override all
-                </button>
-                <button
-                  type="button"
-                  className="px-2.5 py-1.5 rounded border border-gray-300 text-gray-700 hover:bg-gray-50"
-                  onClick={() => {
-                    setBatchDecisions((prev) => {
-                      const next = { ...prev };
-                      batchConflicts.rows.forEach((c) => {
-                        next[c.rowIndex] = "NEW";
-                      });
-                      return next;
-                    });
-                  }}
-                >
-                  New batch for all
-                </button>
-              </div>
-
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  className="px-3 py-1.5 rounded border border-gray-300 text-sm text-gray-700 hover:bg-gray-50"
-                  onClick={() => {
-                    setBatchConfirmOpen(false);
-                    setBatchConflicts(null);
-                    setBatchDecisions({});
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className="px-3 py-1.5 rounded-md bg-[#1e3a5f] text-sm text-white hover:bg-[#16304f] transition-colors"
-                  onClick={async () => {
-                    if (!batchConflicts) return;
-
-                    const indices = new Set(
-                      batchConflicts.rows.map((c) => c.rowIndex),
-                    );
-
-                    const patchedRows = rows.map((r, idx) => {
-                      if (!indices.has(idx)) return r;
-                      const decision =
-                        batchDecisions[idx] ?? ("OVERRIDE" as BatchDecision);
-                      return {
-                        ...r,
-                        overrideBatchPrices: decision === "OVERRIDE",
-                        forceNewBatch: decision === "NEW",
-                      };
-                    });
-
-                    setRows(patchedRows);
-
-                    setBatchConfirmOpen(false);
-                    setBatchConflicts(null);
-                    setBatchDecisions({});
-
-                    await handleSave({
-                      skipBatchCheck: true,
-                      rowsOverride: patchedRows,
-                    });
-                  }}
-                >
-                  Confirm & Save
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Validation modal */}
       <ValidationModal
         isOpen={validationOpen}
         messages={validationMsgs}
         onClose={() => setValidationOpen(false)}
-      />
-
-      {/* Batch picker modal */}
-      <BatchSelectModal
-        isOpen={Boolean(batchPicker)}
-        onClose={() => setBatchPicker(null)}
-        batches={batchPicker?.batches || []}
-        productName={batchPicker?.productName}
-        nextBarcode={batchPicker?.nextBarcode || ""}
-        onSelect={(batch) => {
-          if (!batchPicker) return;
-
-          const rowIndex = batchPicker.rowIndex;
-
-          if (!batch) {
-            setBatchPicker(null);
-            setTimeout(() => {
-              const el = document.querySelector<HTMLInputElement>(
-                `[data-cell="${rowIndex}:barcode"]`,
-              );
-              if (el) {
-                el.focus();
-                el.select();
-              }
-            }, 0);
-            return;
-          }
-
-          void resolvePurchaseRatePatch(
-            batchPicker.productId,
-            batch.id,
-            batch.salePrice,
-          ).then((sellingRatePatch) => {
-            setRows((prev) =>
-              prev.map((r, i) =>
-                i !== rowIndex
-                  ? r
-                  : {
-                      ...r,
-                      batchId: batch.id,
-                      barcode: batch.barcode || r.barcode,
-                      batchNo: batch.batchNo ?? r.batchNo,
-                      mfgDate: batch.mfgDate ?? r.mfgDate,
-                      expiryDate: batch.expiryDate ?? r.expiryDate,
-                      forceNewBatch: false,
-                      mrp:
-                        typeof r.mrp === "number" && r.mrp > 0
-                          ? r.mrp
-                          : batch.mrp != null
-                            ? Number(batch.mrp)
-                            : r.mrp,
-                      ...sellingRatePatch,
-                    },
-              ),
-            );
-          });
-
-          setBatchPicker(null);
-
-          setTimeout(() => {
-            const el = document.querySelector<HTMLInputElement>(
-              `[data-cell="${rowIndex}:barcode"]`,
-            );
-            if (el) {
-              el.focus();
-              el.select();
-            }
-          }, 0);
-        }}
-        onAddNewBatch={(barcode: string) => {
-          if (!batchPicker) return;
-          const rowIndex = batchPicker.rowIndex;
-
-          setRows((prev) =>
-            prev.map((r, i) =>
-              i !== rowIndex
-                ? r
-                : {
-                    ...r,
-                    barcode,
-                    forceNewBatch: true,
-                  },
-            ),
-          );
-
-          setBatchPicker(null);
-
-          setTimeout(() => {
-            const el = document.querySelector<HTMLInputElement>(
-              `[data-cell="${rowIndex}:barcode"]`,
-            );
-            if (el) {
-              el.focus();
-              el.select();
-            }
-          }, 0);
-        }}
-        barcodeEnabled={barcodeEnabled}
       />
 
       {/* Print confirm modal */}

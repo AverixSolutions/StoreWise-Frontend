@@ -717,14 +717,18 @@ function SalesReturnPageInner() {
 
   const getBatches = useCallback(
     async (productId: string) => {
-      const res = barcodeEnabled
-        ? await platform.listBarcodesForProduct?.(licenseId, productId)
-        : await platform.listBatchesForProduct(productId, false);
+      const res = await platform.listBatchesForProduct(productId, false);
       return (res?.rows || []).map((b: any) => ({
         id: b.id,
         barcode: barcodeEnabled ? b.barcode : "",
         batchNo: b.batchNo,
         purchaseBatchNo: b.purchaseBatchNo || b.batchNo,
+        purchaseId: b.purchaseId,
+        purchaseBillNo: b.purchaseBillNo,
+        supplierName: b.supplierName,
+        purchaseDate: b.purchaseDate,
+        lotNumber: b.lotNumber,
+        rateSummary: b.rateSummary,
         mfgDate: b.mfgDate,
         expiryDate: b.expiryDate,
         mrp: b.mrp,
@@ -769,7 +773,34 @@ function SalesReturnPageInner() {
             : r,
         ),
       );
-      if (batches.length > 0) {
+      if (batches.length === 1) {
+        const batch = batches[0];
+        const batchRatePatch = await resolveReturnRatePatch(
+          productId,
+          batch.id,
+          batch.salePrice,
+        );
+        setRows((prev) =>
+          prev.map((row, rowIndex) =>
+            rowIndex === index
+              ? (calcRow({
+                  ...row,
+                  batchId: batch.id,
+                  barcode: barcodeEnabled ? batch.barcode || "" : "",
+                  batchNo: batch.batchNo ?? null,
+                  purchaseBatchNo: batch.purchaseBatchNo ?? null,
+                  mfgDate: batch.mfgDate ?? null,
+                  expiryDate: batch.expiryDate ?? null,
+                  mrp: batch.mrp ?? null,
+                  ...batchRatePatch,
+                } as ItemRow) as SalesReturnItemRow)
+              : row,
+          ),
+        );
+        window.setTimeout(() => focusSalesReturnCell(index, "quantity"), 20);
+        return;
+      }
+      if (batches.length > 1) {
         setBatchPicker({
           rowIndex: index,
           productId,

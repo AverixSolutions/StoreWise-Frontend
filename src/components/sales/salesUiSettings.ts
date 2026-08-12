@@ -1,6 +1,7 @@
 "use client";
 
 export type SalesUiSettings = {
+  allowCashSaleWithoutCustomer: boolean;
   showTransactionType: boolean;
   showSaleTime: boolean;
   showEntryDate: boolean;
@@ -16,9 +17,11 @@ export type SalesUiSettings = {
   showMfgDate: boolean;
   showExpiryDate: boolean;
   showUnitBilled: boolean;
+  showBarcodeInput: boolean;
 };
 
 export const DEFAULT_SALES_UI_SETTINGS: SalesUiSettings = {
+  allowCashSaleWithoutCustomer: false,
   showTransactionType: true,
   showSaleTime: true,
   showEntryDate: true,
@@ -34,6 +37,7 @@ export const DEFAULT_SALES_UI_SETTINGS: SalesUiSettings = {
   showMfgDate: false,
   showExpiryDate: false,
   showUnitBilled: true,
+  showBarcodeInput: true,
 };
 
 // V2 intentionally starts Sales with optional Unit, Tax, MFG and Expiry hidden.

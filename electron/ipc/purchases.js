@@ -109,9 +109,6 @@ function applySellingRatesSnapshot({
     `).run(defaultAmount, now, batchId, productId, licenseId);
   }
 }
-const { reserveOneBarcode } = require("./barcodes");
-const { canUseBarcode } = require("../licenseFeatures");
-
 // ========= BATCH HELPER FUNCTIONS =========
 
 function bumpBatchAndProductStock({ batchId, productId, deltaQty }) {
@@ -150,6 +147,86 @@ function bumpBatchAndProductStock({ batchId, productId, deltaQty }) {
 
 function sum(arr) {
   return arr.reduce((s, n) => s + (Number(n) || 0), 0);
+}
+
+function normalizeIdentityValue(value) {
+  if (value === undefined || value === null) return null;
+  return typeof value === "string" ? value.trim() || null : value;
+}
+
+function normalizedRates(value) {
+  if (!value) return null;
+  try {
+    const parsed = typeof value === "string" ? JSON.parse(value) : value;
+    if (!Array.isArray(parsed)) return String(value);
+    return JSON.stringify(
+      [...parsed].sort((a, b) =>
+        String(a?.rateTypeId || a?.code || "").localeCompare(
+          String(b?.rateTypeId || b?.code || ""),
+        ),
+      ),
+    );
+  } catch {
+    return String(value);
+  }
+}
+
+function mergeIdenticalPurchaseItems(items = []) {
+  const grouped = new Map();
+  items.forEach((item, index) => {
+    const discountType = item.discountType || "ABS";
+    const key = JSON.stringify({
+      productId: item.productId,
+      barcode: normalizeIdentityValue(item.barcode),
+      unit: item.unit,
+      rate: Number(item.rate || 0),
+      mrp: item.mrp == null ? null : Number(item.mrp),
+      taxPercent: item.taxPercent,
+      discountType,
+      discount: Number(item.discount || 0),
+      salePrice: item.salePrice == null ? null : Number(item.salePrice),
+      profitPercent: Number(item.profitPercent || 0),
+      batchNo: normalizeIdentityValue(item.batchNo),
+      mfgDate: normalizeIdentityValue(item.mfgDate),
+      expiryDate: normalizeIdentityValue(item.expiryDate),
+      isFree: Boolean(item.isFree),
+      sellingRatesJson: normalizedRates(item.sellingRatesJson),
+    });
+    const existing = grouped.get(key);
+    if (!existing) {
+      grouped.set(key, { ...item, lineNo: grouped.size + 1 });
+      return;
+    }
+    existing.quantity = Number(existing.quantity || 0) + Number(item.quantity || 0);
+    if (discountType === "ABS") {
+      existing.discount = Number(existing.discount || 0) + Number(item.discount || 0);
+    }
+  });
+  return Array.from(grouped.values()).map((item, index) => {
+    const quantity = Number(item.quantity || 0);
+    const rate = Number(item.rate || 0);
+    const isFree = Boolean(item.isFree);
+    const taxPct =
+      item.taxPercent === "NT"
+        ? 0
+        : Number(String(item.taxPercent || "").replace("P", "")) || 0;
+    const taxAmount = isFree ? 0 : rate * quantity * (taxPct / 100);
+    const totalCost = isFree ? 0 : rate * quantity + taxAmount;
+    const discount = Number(item.discount || 0);
+    const discountAbs =
+      item.discountType === "PCT"
+        ? totalCost * (Math.max(0, Math.min(100, discount)) / 100)
+        : discount;
+    const billedValue = isFree ? 0 : Math.max(0, totalCost - discountAbs);
+    return {
+      ...item,
+      lineNo: index + 1,
+      taxAmount,
+      totalCost,
+      billedValue,
+      effectiveUnitValue: isFree ? 0 : billedValue / Math.max(1, quantity),
+    };
+  });
 }
 
 function getItemsForPurchase(purchaseId) {
@@ -196,7 +273,7 @@ function getNextHoldNo(licenseId) {
   return next;
 }
 
-function makePurchaseBatchNo(billNo, purchaseDate) {
+function makePurchaseBatchNo(billNo, purchaseDate, slNo) {
   const rawBill = String(billNo || "NO-BILL")
     .trim()
     .replace(/[^\w-]/g, "");
@@ -206,7 +283,8 @@ function makePurchaseBatchNo(billNo, purchaseDate) {
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
 
-  return `PB-${rawBill}-${dd}-${mm}-${yyyy}`;
+  const serial = String(Number(slNo || 0)).padStart(5, "0");
+  return `PB-${rawBill}-${dd}-${mm}-${yyyy}-${serial}`;
 }
 
 function createPurchaseItemBatch(payload) {
@@ -263,7 +341,7 @@ function findLiveBatchById({ licenseId, productId, batchId }) {
     .get(batchId, licenseId, productId);
 }
 
-function findLiveBatchByBarcode({ licenseId, barcode }) {
+function findBarcodeProductConflict({ licenseId, productId, barcode }) {
   if (!barcode) return null;
 
   return db
@@ -273,66 +351,57 @@ function findLiveBatchByBarcode({ licenseId, barcode }) {
       FROM product_batches
       WHERE licenseId = ?
         AND barcode = ?
+        AND productId <> ?
         AND COALESCE(deletedAt,'') = ''
       LIMIT 1
     `,
     )
-    .get(licenseId, barcode);
+    .get(licenseId, barcode, productId);
 }
 
-// ──────── NEW HELPERS FOR PURCHASE-GROUP IDENTITY MATCHING ────────
-
-function normalizeNullable(v) {
-  return v === undefined || v === null || v === "" ? null : v;
-}
-
-function sameValue(a, b) {
-  return normalizeNullable(a) === normalizeNullable(b);
-}
-
-function findExistingPurchaseGroupBatch({
+function ensureProductBarcodeAlias({
   licenseId,
   productId,
-  purchaseBatchNo,
   barcode,
   mrp,
   salePrice,
   costPrice,
-  batchNo,
-  mfgDate,
-  expiryDate,
+  receivedAt,
 }) {
-  const rows = db
+  if (!barcode) return null;
+  const existing = db
     .prepare(
-      `
-      SELECT *
-      FROM product_batches
-      WHERE licenseId = ?
-        AND productId = ?
-        AND purchaseBatchNo = ?
-        AND COALESCE(deletedAt,'') = ''
-      ORDER BY createdAt ASC
-    `,
+      `SELECT * FROM product_batches
+       WHERE licenseId=? AND productId=? AND barcode=?
+         AND purchaseId IS NULL
+         AND COALESCE(deletedAt,'')=''
+       LIMIT 1`,
     )
-    .all(licenseId, productId, purchaseBatchNo);
+    .get(licenseId, productId, barcode);
+  if (existing) return existing;
 
-  return (
-    rows.find((r) => {
-      if (barcode && !sameValue(r.barcode, barcode)) return false;
-
-      return (
-        sameValue(r.mrp, mrp) &&
-        sameValue(r.salePrice, salePrice) &&
-        sameValue(r.costPrice, costPrice) &&
-        sameValue(r.batchNo, batchNo) &&
-        sameValue(r.mfgDate, mfgDate) &&
-        sameValue(r.expiryDate, expiryDate)
-      );
-    }) || null
-  );
+  return createPurchaseItemBatch({
+    licenseId,
+    productId,
+    barcode,
+    mrp,
+    salePrice,
+    costPrice,
+    batchNo: null,
+    purchaseBatchNo: null,
+    purchaseId: null,
+    mfgDate: null,
+    expiryDate: null,
+    receivedAt,
+    stock: 0,
+    isSystemGeneratedBarcode: false,
+  });
 }
 
-// ──────── UPDATED FUNCTION WITH GROUP MERGE LOGIC ────────
+// ──────── STOCK LOT IDENTITY HELPERS ────────
+
+// Each distinct Purchase line creates a stock lot. A barcode is a reusable
+// product identifier, so the same product barcode may be attached to many lots.
 
 function resolveOrCreatePurchaseBatch({
   licenseId,
@@ -351,37 +420,46 @@ function resolveOrCreatePurchaseBatch({
   isSystemGeneratedBarcode = false,
 }) {
   let batch = findLiveBatchById({ licenseId, productId, batchId });
-  if (batch) return batch;
-
-  // If barcode explicitly provided, barcode must stay global-unique
-  if (barcode) {
-    batch = findLiveBatchByBarcode({ licenseId, barcode });
-    if (batch) {
-      if (batch.productId !== productId) {
-        throw new Error(
-          `BARCODE_IN_USE: Barcode ${barcode} already belongs to another product`,
-        );
-      }
-      return batch;
+  if (batch) {
+    if (batch.purchaseId && batch.purchaseId !== purchaseId) {
+      throw new Error("Selected stock lot belongs to another purchase");
     }
+    return batch;
   }
 
-  // Merge inside same purchase batch group if identity matches
-  batch = findExistingPurchaseGroupBatch({
-    licenseId,
-    productId,
-    purchaseBatchNo,
-    barcode: barcode || null,
-    mrp: mrp ?? null,
-    salePrice: salePrice ?? null,
-    costPrice: costPrice ?? null,
-    batchNo: batchNo ?? null,
-    mfgDate: mfgDate ?? null,
-    expiryDate: expiryDate ?? null,
-  });
-
-  if (batch) {
-    return batch;
+  // A barcode may be reused only by the same product.
+  if (barcode) {
+    if (!/^[A-Za-z0-9_-]{1,50}$/.test(barcode)) {
+      throw new Error(`INVALID_BARCODE: ${barcode}`);
+    }
+    const codeConflict = db
+      .prepare(
+        `SELECT id FROM products
+         WHERE licenseId=? AND code=? AND id<>?
+           AND COALESCE(deletedAt,'')=''
+         LIMIT 1`,
+      )
+      .get(licenseId, barcode, productId);
+    if (codeConflict) {
+      throw new Error(
+        `BARCODE_IN_USE: Barcode ${barcode} is reserved as another item's code`,
+      );
+    }
+    batch = findBarcodeProductConflict({ licenseId, productId, barcode });
+    if (batch) {
+      throw new Error(
+        `BARCODE_IN_USE: Barcode ${barcode} already belongs to another product`,
+      );
+    }
+    ensureProductBarcodeAlias({
+      licenseId,
+      productId,
+      barcode,
+      mrp,
+      salePrice,
+      costPrice,
+      receivedAt,
+    });
   }
 
   return createPurchaseItemBatch({
@@ -514,6 +592,7 @@ function registerPurchaseHandlers() {
     const purchaseBatchNo = makePurchaseBatchNo(
       purchase.billNo,
       purchase.purchaseDate || now,
+      slNo,
     );
 
     let totalAmount = 0;
@@ -559,8 +638,6 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
         purchase.purchaseType || "CREDIT",
       );
 
-      const barcodeEnabled = canUseBarcode(purchase.licenseId);
-
       items.forEach((item, index) => {
         const taxPercentValue =
           parseInt(String(item.taxPercent).replace("P", "")) || 0;
@@ -597,56 +674,27 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
 
         totalAmount += billedValue;
 
-        // ──── BARCODE / BATCH RESOLUTION WITH GROUP MERGING ────
-        let batchBarcode = item.barcode?.trim() || null;
+        // ──── PURCHASE STOCK LOT / BARCODE CREATION ────
+        const batchBarcode = item.barcode?.trim() || null;
 
-        let existingGroupedBatch = null;
+        const batchNoForInsert = item.batchNo ?? null;
 
-        if (!batchBarcode) {
-          existingGroupedBatch = findExistingPurchaseGroupBatch({
-            licenseId: purchase.licenseId,
-            productId: item.productId,
-            purchaseBatchNo,
-            barcode: null,
-            mrp: item.mrp ?? null,
-            salePrice: salePrice ?? item.salePrice ?? null,
-            costPrice: item.rate ?? null,
-            batchNo: purchaseBatchNo,
-            mfgDate: item.mfgDate ?? null,
-            expiryDate: item.expiryDate ?? null,
-          });
-
-          if (existingGroupedBatch?.barcode) {
-            batchBarcode = existingGroupedBatch.barcode;
-          }
-        }
-
-        let wasAutoGenerated = false;
-        if (!batchBarcode && barcodeEnabled) {
-          batchBarcode = reserveOneBarcode(purchase.licenseId);
-          wasAutoGenerated = true;
-        }
-
-        const batchNoForInsert = purchaseBatchNo;
-
-        const batch = existingGroupedBatch
-          ? existingGroupedBatch
-          : resolveOrCreatePurchaseBatch({
-              licenseId: purchase.licenseId,
-              productId: item.productId,
-              batchId: item.batchId || null,
-              barcode: batchBarcode,
-              mrp: item.mrp ?? null,
-              salePrice: salePrice ?? item.salePrice ?? null,
-              costPrice: item.rate ?? null,
-              batchNo: batchNoForInsert,
-              purchaseBatchNo,
-              purchaseId: newId,
-              mfgDate: item.mfgDate ?? null,
-              expiryDate: item.expiryDate ?? null,
-              receivedAt: purchase.purchaseDate || now,
-              isSystemGeneratedBarcode: wasAutoGenerated,
-            });
+        const batch = resolveOrCreatePurchaseBatch({
+          licenseId: purchase.licenseId,
+          productId: item.productId,
+          batchId: item.batchId || null,
+          barcode: batchBarcode,
+          mrp: item.mrp ?? null,
+          salePrice: salePrice ?? item.salePrice ?? null,
+          costPrice: item.rate ?? null,
+          batchNo: batchNoForInsert,
+          purchaseBatchNo,
+          purchaseId: newId,
+          mfgDate: item.mfgDate ?? null,
+          expiryDate: item.expiryDate ?? null,
+          receivedAt: purchase.purchaseDate || now,
+          isSystemGeneratedBarcode: false,
+        });
 
         if (!item.isFree) {
           bumpBatchAndProductStock({
@@ -749,7 +797,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
       }
     });
 
-    trx(purchase, items);
+    trx(purchase, mergeIdenticalPurchaseItems(items));
     return { success: true, purchaseId: newId, slNo, totalAmount };
   });
 
@@ -768,6 +816,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
       const purchaseBatchNo = makePurchaseBatchNo(
         header.billNo || existing.billNo,
         header.purchaseDate || existing.purchaseDate || now,
+        existing.slNo,
       );
 
       // Reverse stock from OLD items (by batch)
@@ -869,64 +918,33 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
         )
       `);
 
-      const barcodeEnabled = canUseBarcode(licenseId);
-
       items.forEach((it, idx) => {
         const lineNo = it.lineNo ?? idx + 1;
         const qty = Number(it.quantity || 0);
         const isFree = it.isFree ? 1 : 0;
         const effUnit = qty > 0 ? Number(it.billedValue || 0) / qty : 0;
 
-        // ──── BARCODE / BATCH RESOLUTION WITH GROUP MERGING ────
-        let batchBarcode = it.barcode?.trim() || null;
+        // ──── PURCHASE STOCK LOT / BARCODE CREATION ────
+        const batchBarcode = it.barcode?.trim() || null;
 
-        let existingGroupedBatch = null;
-        let wasAutoGenerated = false;
+        const batchNoForInsert = it.batchNo ?? null;
 
-        if (!batchBarcode) {
-          existingGroupedBatch = findExistingPurchaseGroupBatch({
-            licenseId,
-            productId: it.productId,
-            purchaseBatchNo,
-            barcode: null,
-            mrp: it.mrp ?? null,
-            salePrice: it.salePrice ?? null,
-            costPrice: it.rate ?? null,
-            batchNo: purchaseBatchNo,
-            mfgDate: it.mfgDate ?? null,
-            expiryDate: it.expiryDate ?? null,
-          });
-
-          if (existingGroupedBatch?.barcode) {
-            batchBarcode = existingGroupedBatch.barcode;
-          }
-        }
-
-        if (!batchBarcode && barcodeEnabled) {
-          batchBarcode = reserveOneBarcode(licenseId);
-          wasAutoGenerated = true;
-        }
-
-        const batchNoForInsert = purchaseBatchNo;
-
-        const batch = existingGroupedBatch
-          ? existingGroupedBatch
-          : resolveOrCreatePurchaseBatch({
-              licenseId,
-              productId: it.productId,
-              batchId: it.batchId || null,
-              barcode: batchBarcode,
-              mrp: it.mrp ?? null,
-              salePrice: it.salePrice ?? null,
-              costPrice: it.rate ?? null,
-              batchNo: batchNoForInsert,
-              purchaseBatchNo,
-              purchaseId: id,
-              mfgDate: it.mfgDate ?? null,
-              expiryDate: it.expiryDate ?? null,
-              receivedAt: header.purchaseDate || now,
-              isSystemGeneratedBarcode: wasAutoGenerated,
-            });
+        const batch = resolveOrCreatePurchaseBatch({
+          licenseId,
+          productId: it.productId,
+          batchId: it.batchId || null,
+          barcode: batchBarcode,
+          mrp: it.mrp ?? null,
+          salePrice: it.salePrice ?? null,
+          costPrice: it.rate ?? null,
+          batchNo: batchNoForInsert,
+          purchaseBatchNo,
+          purchaseId: id,
+          mfgDate: it.mfgDate ?? null,
+          expiryDate: it.expiryDate ?? null,
+          receivedAt: header.purchaseDate || now,
+          isSystemGeneratedBarcode: false,
+        });
 
         insItem.run({
           purchaseId: id,
@@ -1031,6 +1049,9 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
     });
 
     try {
+      const mergedItems = mergeIdenticalPurchaseItems(items);
+      items.length = 0;
+      items.push(...mergedItems);
       trx();
       return { success: true };
     } catch (e) {

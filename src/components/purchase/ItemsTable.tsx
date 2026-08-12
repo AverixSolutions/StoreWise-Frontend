@@ -121,6 +121,7 @@ export default function ItemsTable({
       : []),
     ...(!uiSettings.showMrp ? (["mrp"] as const) : []),
     ...(!uiSettings.showLineType ? (["lineType"] as const) : []),
+    ...(mode !== "PURCHASE" ? (["batchNo"] as const) : []),
     ...(!uiSettings.showMfgDate ? (["mfgDate"] as const) : []),
     ...(!uiSettings.showExpiryDate ? (["expiryDate"] as const) : []),
   ];
@@ -232,7 +233,12 @@ export default function ItemsTable({
             </th>
             {barcodeEnabled && (
               <th className="px-2.5 py-2 text-center text-[10px] font-semibold text-white/80 uppercase tracking-[0.14em] min-w-[110px]">
-                Barcode
+                <span className="inline-flex items-center gap-1.5">
+                  Barcode
+                  <kbd className="font-mono text-[8px] normal-case tracking-normal text-white/60">
+                    F2
+                  </kbd>
+                </span>
               </th>
             )}
             <th className="px-2.5 py-2 text-center text-[10px] font-semibold text-white/80 uppercase tracking-[0.14em] min-w-[70px]">
@@ -325,6 +331,11 @@ export default function ItemsTable({
             {uiSettings.showLineType ? (
               <th className="hidden min-w-[80px] px-2.5 py-2 text-center text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80 lg:table-cell">
                 Type
+              </th>
+            ) : null}
+            {mode === "PURCHASE" ? (
+              <th className="min-w-[118px] px-2.5 py-2 text-center text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80">
+                Mfr Batch
               </th>
             ) : null}
             {/* Hidden on mobile — show from md breakpoint */}

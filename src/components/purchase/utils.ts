@@ -135,6 +135,81 @@ export function calcRow(row: ItemRow): ItemRow {
   };
 }
 
+function normalizedRateSnapshot(value?: string | null) {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) return value;
+    return JSON.stringify(
+      [...parsed].sort((a, b) =>
+        String(a?.rateTypeId || a?.code || "").localeCompare(
+          String(b?.rateTypeId || b?.code || ""),
+        ),
+      ),
+    );
+  } catch {
+    return value;
+  }
+}
+
+/**
+ * Combines only truly identical lines from the same purchase. Quantity is not
+ * part of lot identity. Any barcode, price, manufacturer batch, date, rate,
+ * discount, free/valued, or print difference keeps the rows separate.
+ */
+export function mergeIdenticalPurchaseRows(rows: ItemRow[]): ItemRow[] {
+  const grouped = new Map<string, ItemRow>();
+  const hadEmptyRow = rows.some((row) => !row.productId);
+
+  rows
+    .filter((row) => row.productId)
+    .forEach((row) => {
+      const discountType = row.discountType || "ABS";
+      const key = JSON.stringify({
+        productId: row.productId,
+        barcode: String(row.barcode || "").trim() || null,
+        unit: row.unit,
+        rate: Number(row.rate || 0),
+        mrp:
+          row.mrp == null || Number(row.mrp) === 0 ? null : Number(row.mrp),
+        taxPercent: row.taxPercent,
+        discountType,
+        discount: Number(row.discount || 0),
+        profitPercent: Number(row.profitPercent || 0),
+        salePrice:
+          row.salePrice == null ? null : Number(row.salePrice),
+        batchNo: String(row.batchNo || "").trim() || null,
+        mfgDate: row.mfgDate || null,
+        expiryDate: row.expiryDate || null,
+        lineType: row.lineType || "VALUED",
+        sellingRatesJson: normalizedRateSnapshot(row.sellingRatesJson),
+        printBarcode: row.printBarcode !== false,
+      });
+      const existing = grouped.get(key);
+      if (!existing) {
+        grouped.set(key, { ...row });
+        return;
+      }
+      existing.quantity =
+        Number(existing.quantity || 0) + Number(row.quantity || 0);
+      if (discountType === "ABS") {
+        existing.discount =
+          Number(existing.discount || 0) + Number(row.discount || 0);
+      }
+    });
+
+  const merged = Array.from(grouped.values()).map((row, index) =>
+    calcRow({
+      ...row,
+      lineNo: index + 1,
+      batchId: null,
+      forceNewBatch: true,
+    }),
+  );
+  if (hadEmptyRow) merged.push(createEmptyRow(merged.length + 1));
+  return merged;
+}
+
 export function validateBill(
   header: HeaderForm,
   itemsMapped: ReturnType<typeof mapItems>,

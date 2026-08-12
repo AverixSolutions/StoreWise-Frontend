@@ -120,6 +120,12 @@ export interface BatchInfo {
   barcode?: string | null;
   batchNo?: string | null;
   purchaseBatchNo?: string | null;
+  purchaseId?: string | null;
+  purchaseBillNo?: string | null;
+  supplierName?: string | null;
+  purchaseDate?: string | null;
+  lotNumber?: number | null;
+  rateSummary?: string | null;
   mfgDate?: string | null;
   expiryDate?: string | null;
   mrp?: number | null;

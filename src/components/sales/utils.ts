@@ -124,13 +124,16 @@ export function validateSaleBill(
   header: HeaderForm,
   items: any[],
   offerValidationWarnings: string[] = [],
+  options: { allowCashSaleWithoutCustomer?: boolean } = {},
 ) {
   const errs: string[] = [];
   const hasLine = items.some(
     (r) => r.productId && (r.quantity ?? 0) > 0 && (r.rate ?? 0) >= 0,
   );
   if (!hasLine) errs.push("Add at least one item with quantity > 0.");
-  if (!header.customer) {
+  const customerIsOptional =
+    header.saleType === "CASH" && options.allowCashSaleWithoutCustomer;
+  if (!header.customer && !customerIsOptional) {
     errs.push("Select a customer for sales bills.");
   }
   for (const [index, row] of items.entries()) {

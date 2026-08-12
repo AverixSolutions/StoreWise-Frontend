@@ -12,8 +12,9 @@ function nowISO() {
 // ─── Core sequence helpers (also exported for use in purchases.js) ───────────
 
 /**
- * Get the maximum numeric barcode actually stored in product_batches.
- * Checks only numeric barcodes (no letters, no special chars).
+ * Get the maximum five-digit numeric barcode stored in product_batches.
+ * Item-code defaults count too, so generated alternates never collide with
+ * defaults such as 00001, 00002, and so on.
  */
 function getLiveMaxBarcodeNumber(licenseId) {
   const row = db
@@ -22,7 +23,6 @@ function getLiveMaxBarcodeNumber(licenseId) {
       SELECT MAX(CAST(barcode AS INTEGER)) AS mx
       FROM product_batches
       WHERE licenseId = ?
-        AND isSystemGeneratedBarcode = 1
         AND barcode IS NOT NULL
         AND length(barcode) = 5
         AND barcode GLOB '[0-9][0-9][0-9][0-9][0-9]'
@@ -31,6 +31,17 @@ function getLiveMaxBarcodeNumber(licenseId) {
     )
     .get(licenseId);
 
+  return Number(row?.mx || 0);
+}
+
+function getLiveMaxProductCodeNumber(licenseId) {
+  const row = db
+    .prepare(
+      `SELECT MAX(codeNumber) AS mx
+       FROM products
+       WHERE licenseId=? AND COALESCE(deletedAt,'')=''`,
+    )
+    .get(licenseId);
   return Number(row?.mx || 0);
 }
 
@@ -54,7 +65,8 @@ function getSequenceBarcodeNumber(licenseId) {
 function getSafeCurrentBarcodeNumber(licenseId) {
   const fromSeq = getSequenceBarcodeNumber(licenseId);
   const fromLive = getLiveMaxBarcodeNumber(licenseId);
-  return Math.max(fromSeq, fromLive);
+  const fromProductCodes = getLiveMaxProductCodeNumber(licenseId);
+  return Math.max(fromSeq, fromLive, fromProductCodes);
 }
 
 /**
@@ -191,18 +203,42 @@ function registerBarcodeHandlers() {
       return { ...barcodeDisabledResult(), rows: [] };
     }
     try {
-      const rows = db
+      const rawRows = db
         .prepare(
-          `SELECT id, barcode, mrp, salePrice, costPrice, batchNo, purchaseBatchNo,
-            mfgDate, expiryDate, receivedAt, stock, createdAt
-     FROM product_batches
-     WHERE productId=? AND licenseId=? AND COALESCE(deletedAt,'')=''
-     ORDER BY 
-       CASE WHEN stock > 0 THEN 0 ELSE 1 END,
-       datetime(receivedAt) DESC,
-       barcode ASC`,
+          `SELECT b.id, b.licenseId, b.productId, b.barcode, b.mrp, b.salePrice,
+            b.costPrice, b.batchNo, b.purchaseBatchNo, b.purchaseId,
+            b.mfgDate, b.expiryDate, b.receivedAt, b.stock, b.createdAt,
+            p.billNo AS purchaseBillNo, p.supplierName, p.purchaseDate,
+            (SELECT MIN(pi.lineNo) FROM purchase_items pi
+             WHERE pi.batchId=b.id AND COALESCE(pi.deletedAt,'')='') AS lotNumber,
+            (SELECT GROUP_CONCAT(rateLabel, ' | ') FROM (
+               SELECT rt.name || ': ' || printf('%.2f', pbr.amount) AS rateLabel
+               FROM product_batch_rates pbr
+               JOIN rate_types rt ON rt.id=pbr.rateTypeId
+               WHERE pbr.batchId=b.id
+                 AND COALESCE(pbr.deletedAt,'')=''
+                 AND COALESCE(rt.deletedAt,'')=''
+               ORDER BY rt.sortOrder, rt.name
+            )) AS rateSummary
+     FROM product_batches b
+     LEFT JOIN purchases p ON p.id=b.purchaseId
+     WHERE b.productId=? AND b.licenseId=? AND COALESCE(b.deletedAt,'')=''
+     ORDER BY
+       b.barcode ASC,
+       CASE WHEN b.purchaseId IS NULL THEN 0 ELSE 1 END,
+       CASE WHEN b.stock > 0 THEN 0 ELSE 1 END,
+       date(b.expiryDate) IS NULL,
+       b.expiryDate,
+       datetime(b.receivedAt)`,
         )
         .all(productId, licenseId);
+      const rows = Array.from(
+        rawRows.reduce((byBarcode, row) => {
+          const barcode = String(row.barcode || "").trim();
+          if (barcode && !byBarcode.has(barcode)) byBarcode.set(barcode, row);
+          return byBarcode;
+        }, new Map()).values(),
+      );
       return { success: true, rows };
     } catch (err) {
       return { success: false, error: String(err?.message || err) };
@@ -235,6 +271,24 @@ function registerBarcodeHandlers() {
         throw Object.assign(new Error("Invalid barcode format"), {
           code: "INVALID_BARCODE",
         });
+      }
+
+      const itemCodeConflict = db
+        .prepare(
+          `SELECT id FROM products
+           WHERE licenseId=? AND code=? AND id<>?
+             AND COALESCE(deletedAt,'')=''
+           LIMIT 1`,
+        )
+        .get(payload.licenseId, barcode, payload.productId);
+      if (itemCodeConflict) {
+        throw Object.assign(
+          new Error(`Barcode ${barcode} is reserved as another item's code`),
+          {
+            code: "BARCODE_IN_USE",
+            existingProductId: itemCodeConflict.id,
+          },
+        );
       }
 
       // Check uniqueness across the entire license
@@ -334,7 +388,9 @@ VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, 0, ?, ?, ?)`,
     try {
       const b = db
         .prepare(
-          `SELECT id, productId, stock, licenseId FROM product_batches WHERE id=? AND COALESCE(deletedAt,'')=''`,
+          `SELECT id, productId, stock, licenseId, barcode, purchaseId
+           FROM product_batches
+           WHERE id=? AND COALESCE(deletedAt,'')=''`,
         )
         .get(batchId);
 
@@ -344,8 +400,24 @@ VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, 0, ?, ?, ?)`,
         return { success: false, error: "LICENSE_MISMATCH" };
       }
 
-      if (Number(b.stock || 0) > 0) {
+      const barcodeStock = b.barcode
+        ? db
+            .prepare(
+              `SELECT COALESCE(SUM(stock), 0) AS qty
+               FROM product_batches
+               WHERE licenseId=? AND productId=? AND barcode=?
+                 AND COALESCE(deletedAt,'')=''`,
+            )
+            .get(licenseId, b.productId, b.barcode)
+        : null;
+
+      if (Number(barcodeStock?.qty || b.stock || 0) > 0) {
         return { success: false, error: "BARCODE_HAS_STOCK" };
+      }
+
+      // Never delete a historical purchase lot just to remove an alias.
+      if (b.purchaseId) {
+        return { success: false, error: "BARCODE_HAS_HISTORY" };
       }
 
       db.prepare(
@@ -378,6 +450,7 @@ module.exports = {
   reserveBarcodes,
   peekNextBarcodeNumber,
   getLiveMaxBarcodeNumber,
+  getLiveMaxProductCodeNumber,
   getSequenceBarcodeNumber,
   getSafeCurrentBarcodeNumber,
 };
